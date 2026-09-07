@@ -48,6 +48,29 @@ Two entrypoints call the exact same `Engine.score_window()`:
 - `WS /v1/stream/{session_id}` — one message in, one score out, for a real
   live client (a browser capturing mic audio, or a telephony bridge).
 
+## The browser dashboard (`app/ui/`)
+
+A plain HTML/CSS/JS page — no build step, no framework, no npm — mounted
+at `/` via Starlette's `StaticFiles(html=True)` in `app/main.py`. It's a
+real client of the two entrypoints above, nothing more:
+
+- **Upload a file** tab → `POST /v1/score/file`, then replays the
+  returned `trace` array through the same rendering code a live session
+  uses.
+- **Microphone (live)** tab → captures mic audio via the Web Audio API
+  (`AudioContext` + `ScriptProcessorNode`, chosen over the more modern
+  `AudioWorkletNode` because it needs no separate module file — a
+  reasonable trade-off for an internal tool), windows it client-side to
+  match `config/risk_formula.yaml`'s `window_ms`/`hop_ms`, and streams
+  each window over `WS /v1/stream/{session_id}` exactly like a real
+  telephony bridge would.
+
+Mount order matters: `app.mount("/", StaticFiles(...))` is registered
+**after** the API routers in `app/main.py`, specifically so `/healthz`,
+`/v1/*`, and FastAPI's own `/docs`/`/redoc` all resolve first — the
+static mount only ever catches what's left (`/`, `/app.js`). See
+`tests/integration/test_ui_served.py`, which guards this ordering.
+
 ## Adding a new risk factor
 
 1. Implement `DetectorPort` (`app/ports/detector.py`):

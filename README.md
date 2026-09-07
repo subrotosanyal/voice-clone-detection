@@ -14,7 +14,9 @@ the roadmap.
 docker compose up --build
 ```
 
-Then, in another terminal:
+Then open **http://localhost:8020/** in a browser — a dashboard to upload a
+recording or speak into your microphone and watch the risk score move
+live, no `curl` needed. If you'd rather script it:
 
 ```bash
 curl -F "file=@services/live-call-api/samples/genuine_tone.wav" \
@@ -22,6 +24,7 @@ curl -F "file=@services/live-call-api/samples/genuine_tone.wav" \
      http://localhost:8020/v1/score/file | python3 -m json.tool
 ```
 
+- **Dashboard:** http://localhost:8020/
 - **API docs (interactive):** http://localhost:8020/docs
 - **Central log viewer (Dozzle):** http://localhost:8888
 - **Current live formula:** http://localhost:8020/v1/config
@@ -51,6 +54,7 @@ services/live-call-api/         # the one service that exists so far
     adapters/                   # concrete detectors + fusion + the plugin registry
     pipeline/                   # windowing + orchestration (engine.py)
     api/                        # FastAPI routes (REST + WebSocket)
+    ui/                         # the browser dashboard (no build step — plain HTML/JS)
   config/risk_formula.yaml      # the formula — weights, thresholds, third-signal mode
   tests/                        # unit + integration, see docs/testing.md
 scripts/gen_test_audio.py       # synthetic (non-voice) smoke-test fixtures

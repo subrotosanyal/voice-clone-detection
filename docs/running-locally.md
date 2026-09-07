@@ -28,6 +28,13 @@ curl http://localhost:8020/v1/config | python3 -m json.tool
 # the exact formula this running instance loaded
 ```
 
+**For anyone who isn't going to type curl commands:** open
+http://localhost:8020/ in a browser. Upload a recording, or click the
+microphone tab and speak — the risk meter, the per-signal breakdown, and
+the score-over-time chart all update from the same two endpoints above.
+Microphone access needs a secure context (`localhost` counts) and browser
+permission on first use.
+
 Score a file:
 
 ```bash

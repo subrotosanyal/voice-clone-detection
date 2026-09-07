@@ -8,6 +8,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from app.adapters.registry import build_pipeline
 from app.api.http_router import router as http_router
@@ -44,3 +45,9 @@ app = FastAPI(
 )
 app.include_router(http_router)
 app.include_router(ws_router)
+
+# Browser dashboard — mounted LAST and at the root, so it only catches
+# paths the routers above didn't already claim (/, /app.js). The routes
+# above (/healthz, /v1/*, and FastAPI's own /docs, /redoc, /openapi.json)
+# always win first. See app/ui/README or docs/architecture.md.
+app.mount("/", StaticFiles(directory="app/ui", html=True), name="ui")

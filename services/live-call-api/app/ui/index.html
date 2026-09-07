@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Satya-Vani — Live Call Path</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+:root{
+  --paper:#f3f4ef;
+  --paper-raised:#fbfbf8;
+  --ink:#12161c;
+  --slate:#535a63;
+  --slate-soft:#7a818a;
+  --line:#dcded6;
+  --line-soft:#e8e9e2;
+  --accent:#0f6e6a;
+  --accent-ink:#0a4f4c;
+  --accent-tint:#dcefec;
+  --risk-low:#2f7d4f;
+  --risk-low-tint:#e1f0e4;
+  --risk-med:#a6720a;
+  --risk-med-tint:#f5ecd6;
+  --risk-high:#a83a3a;
+  --risk-high-tint:#f6e3e1;
+  --shadow: 0 1px 2px rgba(18,22,28,.04), 0 8px 24px -12px rgba(18,22,28,.14);
+  --radius: 12px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#12161a; --paper-raised:#181d22; --ink:#eceee9; --slate:#aab0b6; --slate-soft:#7d848b;
+    --line:#2b3138; --line-soft:#232830; --accent:#4fc8bf; --accent-ink:#bdeee8; --accent-tint:#193230;
+    --risk-low:#7dd6a0; --risk-low-tint:#173226; --risk-med:#e0b358; --risk-med-tint:#332a13;
+    --risk-high:#e88a8a; --risk-high-tint:#38201f;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px -12px rgba(0,0,0,.55);
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#12161a; --paper-raised:#181d22; --ink:#eceee9; --slate:#aab0b6; --slate-soft:#7d848b;
+  --line:#2b3138; --line-soft:#232830; --accent:#4fc8bf; --accent-ink:#bdeee8; --accent-tint:#193230;
+  --risk-low:#7dd6a0; --risk-low-tint:#173226; --risk-med:#e0b358; --risk-med-tint:#332a13;
+  --risk-high:#e88a8a; --risk-high-tint:#38201f;
+  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px -12px rgba(0,0,0,.55);
+}
+*{box-sizing:border-box;}
+html,body{height:100%;}
+body{
+  margin:0; background:var(--paper); color:var(--ink);
+  font-family:'Public Sans', -apple-system, 'Segoe UI', sans-serif; line-height:1.5;
+}
+h1,h2,h3{font-family:'Public Sans',sans-serif; margin:0; text-wrap:balance;}
+.mono{font-family:'IBM Plex Mono', ui-monospace, monospace;}
+button{font-family:inherit;}
+::selection{background:var(--accent-tint); color:var(--accent-ink);}
+
+.shell{max-width:1180px; margin:0 auto; padding:28px 24px 60px 24px;}
+
+header.top{display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:26px; flex-wrap:wrap;}
+.brand{display:flex; align-items:center; gap:12px;}
+.brand svg{width:38px; height:38px; flex-shrink:0;}
+.brand-text{display:flex; flex-direction:column;}
+.brand-name{font-size:19px; font-weight:700; letter-spacing:-0.01em;}
+.brand-name .vani{color:var(--accent-ink);}
+.brand-sub{font-size:12px; color:var(--slate-soft); font-family:'IBM Plex Mono',monospace; letter-spacing:.03em;}
+.health-chip{
+  font-family:'IBM Plex Mono',monospace; font-size:11.5px; padding:5px 10px; border-radius:100px;
+  border:1px solid var(--line); color:var(--slate); display:flex; align-items:center; gap:6px;
+}
+.health-dot{width:7px; height:7px; border-radius:50%; background:var(--slate-soft);}
+.health-chip.ok .health-dot{background:var(--risk-low);}
+.health-chip.ok{color:var(--risk-low); border-color:var(--risk-low-tint); background:var(--risk-low-tint);}
+
+.grid{display:grid; grid-template-columns:minmax(320px,420px) 1fr; gap:22px; align-items:start;}
+@media (max-width:860px){ .grid{grid-template-columns:1fr;} }
+
+.card{
+  background:var(--paper-raised); border:1px solid var(--line); border-radius:var(--radius);
+  padding:22px; box-shadow:var(--shadow);
+}
+.card + .card{margin-top:18px;}
+.card h2{font-size:15px; margin-bottom:4px;}
+.card .hint{font-size:12.5px; color:var(--slate-soft); margin-bottom:16px;}
+
+/* tabs */
+.tabs{display:flex; gap:4px; background:var(--paper); border:1px solid var(--line); border-radius:10px; padding:4px; margin-bottom:18px;}
+.tab-btn{
+  flex:1; border:none; background:transparent; color:var(--slate); font-size:13.5px; font-weight:600;
+  padding:9px 10px; border-radius:7px; cursor:pointer; transition:background .12s ease, color .12s ease;
+}
+.tab-btn.active{background:var(--accent); color:#fff;}
+.tab-panel{display:none;}
+.tab-panel.active{display:block;}
+
+/* dropzone */
+.dropzone{
+  border:1.5px dashed var(--line); border-radius:10px; padding:26px 16px; text-align:center;
+  color:var(--slate); font-size:13.5px; cursor:pointer; transition:border-color .12s ease, background .12s ease;
+}
+.dropzone:hover, .dropzone.drag{border-color:var(--accent); background:var(--accent-tint);}
+.dropzone svg{width:26px; height:26px; margin-bottom:8px; color:var(--slate-soft);}
+.dropzone .filename{margin-top:10px; font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--accent-ink); word-break:break-all;}
+
+/* mic */
+.mic-row{display:flex; align-items:center; gap:14px;}
+.mic-btn{
+  width:64px; height:64px; border-radius:50%; border:none; cursor:pointer; flex-shrink:0;
+  background:var(--accent); color:#fff; display:flex; align-items:center; justify-content:center;
+  box-shadow:var(--shadow); transition:transform .1s ease;
+}
+.mic-btn:active{transform:scale(0.96);}
+.mic-btn.recording{background:var(--risk-high); animation:pulse 1.4s ease-in-out infinite;}
+@keyframes pulse{ 0%,100%{box-shadow:0 0 0 0 rgba(168,58,58,.35);} 50%{box-shadow:0 0 0 10px rgba(168,58,58,0);} }
+.mic-btn svg{width:24px; height:24px;}
+.mic-status{font-size:13px; color:var(--slate);}
+.mic-status .mono{color:var(--ink);}
+.level-meter{height:6px; border-radius:4px; background:var(--line-soft); overflow:hidden; margin-top:12px;}
+.level-meter > div{height:100%; width:0%; background:var(--accent); transition:width .08s linear;}
+
+/* context fields */
+details.context{margin-top:16px; border-top:1px solid var(--line-soft); padding-top:14px;}
+details.context summary{cursor:pointer; font-size:12.5px; font-weight:600; color:var(--slate); list-style:none;}
+details.context summary::-webkit-details-marker{display:none;}
+details.context summary::before{content:"▸ "; color:var(--accent-ink);}
+details.context[open] summary::before{content:"▾ ";}
+.field-grid{display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:14px;}
+.field{display:flex; flex-direction:column; gap:5px;}
+.field label{font-size:11.5px; color:var(--slate-soft); font-family:'IBM Plex Mono',monospace; letter-spacing:.03em; text-transform:uppercase;}
+.field input[type="text"], .field select{
+  border:1px solid var(--line); border-radius:7px; padding:7px 9px; font-size:13px; background:var(--paper);
+  color:var(--ink); font-family:'Public Sans',sans-serif;
+}
+.field.checkbox{flex-direction:row; align-items:center; gap:8px;}
+.field.checkbox label{text-transform:none; font-family:'Public Sans',sans-serif; font-size:13px; color:var(--ink);}
+
+.primary-btn{
+  width:100%; margin-top:16px; padding:11px 16px; border:none; border-radius:8px; background:var(--accent);
+  color:#fff; font-size:14px; font-weight:600; cursor:pointer;
+}
+.primary-btn:disabled{opacity:.55; cursor:not-allowed;}
+.primary-btn:hover:not(:disabled){background:var(--accent-ink);}
+
+.error-box{
+  margin-top:14px; padding:12px 14px; border-radius:8px; background:var(--risk-high-tint); color:var(--risk-high);
+  font-size:13px; display:none;
+}
+.error-box.show{display:block;}
+
+/* results */
+.results-empty{
+  display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center;
+  padding:70px 30px; color:var(--slate-soft); gap:10px;
+}
+.results-empty svg{width:44px; height:44px; opacity:.5;}
+.results-empty p{margin:0; font-size:14px; max-width:36ch;}
+
+.results{display:none;}
+.results.show{display:block;}
+
+.gauge-row{display:flex; align-items:center; gap:26px; flex-wrap:wrap; margin-bottom:22px;}
+.gauge-wrap{position:relative; width:150px; height:150px; flex-shrink:0;}
+.gauge-wrap svg{width:100%; height:100%; transform:rotate(-90deg);}
+.gauge-label{
+  position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
+}
+.gauge-score{font-family:'IBM Plex Mono',monospace; font-size:32px; font-weight:600;}
+.gauge-band{font-size:11px; letter-spacing:.06em; text-transform:uppercase; font-family:'IBM Plex Mono',monospace; margin-top:2px;}
+
+.action-block{flex:1; min-width:220px;}
+.action-band{
+  display:inline-block; font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:.05em;
+  text-transform:uppercase; padding:3px 9px; border-radius:100px; margin-bottom:8px;
+}
+.action-band.low{background:var(--risk-low-tint); color:var(--risk-low);}
+.action-band.elevated{background:var(--risk-med-tint); color:var(--risk-med);}
+.action-band.high{background:var(--risk-high-tint); color:var(--risk-high);}
+.action-text{font-size:14.5px; color:var(--ink); margin:0;}
+
+.components{display:flex; flex-direction:column; gap:12px; margin-bottom:22px;}
+.component-row .top-line{display:flex; justify-content:space-between; align-items:baseline; margin-bottom:5px;}
+.component-row .name{font-size:13px; font-weight:600;}
+.component-row .value{font-family:'IBM Plex Mono',monospace; font-size:12.5px; color:var(--slate);}
+.component-row .bar-track{height:8px; border-radius:5px; background:var(--line-soft); overflow:hidden;}
+.component-row .bar-fill{height:100%; border-radius:5px; background:var(--accent);}
+.component-row.abstained .bar-fill{background:var(--slate-soft); opacity:.3; width:100% !important;}
+.component-row .abstain-note{font-size:11.5px; color:var(--slate-soft); margin-top:4px; font-style:italic;}
+
+.chart-wrap{margin-bottom:18px;}
+.chart-wrap .chart-label{font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:.05em; text-transform:uppercase; color:var(--slate-soft); margin-bottom:8px;}
+.chart-wrap svg{width:100%; height:110px; display:block;}
+
+.raw-toggle{
+  font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:var(--slate-soft); background:none; border:1px solid var(--line);
+  border-radius:6px; padding:5px 10px; cursor:pointer;
+}
+.raw-json{
+  display:none; margin-top:10px; background:var(--paper); border:1px solid var(--line); border-radius:8px;
+  padding:12px; font-size:11.5px; overflow-x:auto; white-space:pre; max-height:280px; overflow-y:auto;
+}
+.raw-json.show{display:block;}
+
+footer.foot{margin-top:36px; padding-top:18px; border-top:1px solid var(--line); font-size:12px; color:var(--slate-soft); display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px;}
+footer.foot a{color:var(--slate-soft);}
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <header class="top">
+    <div class="brand">
+      <svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Satya-Vani mark">
+        <path d="M83,99.8 A46,46 0 1 1 103.2,75.7" fill="none" stroke="var(--accent)" stroke-width="5" stroke-linecap="round"/>
+        <rect x="20.5" y="51" width="7" height="18" rx="3.5" fill="var(--accent)"/>
+        <rect x="32.5" y="44" width="7" height="32" rx="3.5" fill="var(--accent)"/>
+        <rect x="44.5" y="36" width="7" height="48" rx="3.5" fill="var(--accent)"/>
+        <rect x="56.5" y="30" width="7" height="60" rx="3.5" fill="var(--accent)"/>
+        <rect x="68.5" y="38" width="7" height="44" rx="3.5" fill="var(--accent)"/>
+        <rect x="80.5" y="52" width="7" height="7" rx="3.5" fill="var(--risk-high)"/>
+        <rect x="80.5" y="65" width="7" height="9" rx="3.5" fill="var(--risk-high)"/>
+        <rect x="92.5" y="56" width="7" height="18" rx="3.5" fill="var(--risk-high)"/>
+      </svg>
+      <div class="brand-text">
+        <span class="brand-name">Satya<span class="vani">-Vani</span></span>
+        <span class="brand-sub">LIVE CALL PATH · SIH26104</span>
+      </div>
+    </div>
+    <span class="health-chip" id="healthChip"><span class="health-dot"></span><span id="healthText">checking…</span></span>
+  </header>
+
+  <div class="grid">
+    <!-- INPUT -->
+    <div>
+      <div class="card">
+        <h2>Analyse a call</h2>
+        <p class="hint">Upload a recording, or speak into your microphone and watch the risk score move live.</p>
+
+        <div class="tabs">
+          <button class="tab-btn active" data-tab="upload">Upload a file</button>
+          <button class="tab-btn" data-tab="mic">Microphone (live)</button>
+        </div>
+
+        <div class="tab-panel active" id="tab-upload">
+          <div class="dropzone" id="dropzone" tabindex="0">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 16V4M12 4l-4 4M12 4l4 4M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
+            <div>Drop a WAV/FLAC file here, or click to choose one</div>
+            <div class="filename" id="fileName"></div>
+          </div>
+          <input type="file" id="fileInput" accept="audio/*" hidden>
+          <details class="context" id="ctxUpload">
+            <summary>Call details (optional — feeds the contextual signal)</summary>
+            <div class="field-grid"></div>
+          </details>
+          <button class="primary-btn" id="analyzeFileBtn" disabled>Analyse file</button>
+          <div class="error-box" id="uploadError"></div>
+        </div>
+
+        <div class="tab-panel" id="tab-mic">
+          <div class="mic-row">
+            <button class="mic-btn" id="micBtn" title="Start recording">
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a3 3 0 003-3V6a3 3 0 10-6 0v5a3 3 0 003 3z"/><path d="M19 11a1 1 0 00-2 0 5 5 0 01-10 0 1 1 0 00-2 0 7 7 0 006 6.93V20H8a1 1 0 000 2h8a1 1 0 000-2h-3v-2.07A7 7 0 0019 11z"/></svg>
+            </button>
+            <div>
+              <div class="mic-status" id="micStatus">Click to start — your browser will ask for microphone permission.</div>
+              <div class="level-meter"><div id="levelBar"></div></div>
+            </div>
+          </div>
+          <details class="context" id="ctxMic" open>
+            <summary>Call details (optional — feeds the contextual signal)</summary>
+            <div class="field-grid"></div>
+          </details>
+          <div class="error-box" id="micError"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RESULTS -->
+    <div class="card">
+      <div class="results-empty" id="resultsEmpty">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg>
+        <p>Upload a call recording or start the microphone — the risk score and its full breakdown will appear here.</p>
+      </div>
+
+      <div class="results" id="results">
+        <div class="gauge-row">
+          <div class="gauge-wrap">
+            <svg viewBox="0 0 150 150">
+              <circle cx="75" cy="75" r="62" fill="none" stroke="var(--line-soft)" stroke-width="14"/>
+              <circle id="gaugeArc" cx="75" cy="75" r="62" fill="none" stroke="var(--risk-low)" stroke-width="14"
+                stroke-linecap="round" stroke-dasharray="389.6" stroke-dashoffset="389.6"/>
+            </svg>
+            <div class="gauge-label">
+              <div class="gauge-score mono" id="gaugeScore">–</div>
+              <div class="gauge-band" id="gaugeBand" style="color:var(--slate-soft);">no data yet</div>
+            </div>
+          </div>
+          <div class="action-block">
+            <span class="action-band" id="actionBand"></span>
+            <p class="action-text" id="actionText">Run an analysis to see a recommended action here.</p>
+          </div>
+        </div>
+
+        <div class="components" id="components"></div>
+
+        <div class="chart-wrap">
+          <div class="chart-label">Score over time</div>
+          <svg id="traceChart" viewBox="0 0 560 110" preserveAspectRatio="none"></svg>
+        </div>
+
+        <button class="raw-toggle" id="rawToggle">▸ view raw JSON</button>
+        <pre class="raw-json mono" id="rawJson"></pre>
+      </div>
+    </div>
+  </div>
+
+  <footer class="foot">
+    <span>Formula version <span class="mono" id="formulaVersion">–</span></span>
+    <span><a href="/docs">API docs</a> · <a href="https://github.com/clovaai/aasist" target="_blank" rel="noopener">AASIST model</a></span>
+  </footer>
+</div>
+<script src="/app.js"></script>
+</body>
+</html>

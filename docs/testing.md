@@ -9,10 +9,11 @@ pip install -r requirements-dev.txt                   # first time only
 pytest tests/ -v
 ```
 
-40 tests, no Docker needed — unit tests for each detector, the windowing
+43 tests, no Docker needed — unit tests for each detector, the windowing
 math, and the fusion formula (including the abstain/renormalisation
 behaviour), plus integration tests that drive the real FastAPI app with
-`TestClient` (`tests/integration/test_api_score_file.py`).
+`TestClient` (`tests/integration/test_api_score_file.py`,
+`test_ui_served.py`).
 
 **One caveat, not fully offline any more:** the app's default config loads
 the real AASIST checkpoint at startup. `tests/conftest.py`'s
@@ -82,6 +83,17 @@ running the app directly without having fetched it first.
 acoustic detector is a real speech classifier; see the note at the top of
 `scripts/gen_test_audio.py`. Neither fixture is real speech, so neither
 reads as "bonafide" — that's correct model behaviour, not a broken test.
+
+## Debugging the browser dashboard
+
+It's plain JS with no build step, so browser devtools are the whole
+toolchain: open http://localhost:8020/, then devtools' Console tab for
+JS errors and Network tab to inspect the exact request/response of
+`POST /v1/score/file` or the `WS /v1/stream/{id}` messages — the same
+JSON `curl` would get back. The "▸ view raw JSON" toggle under any result
+shows the full `FusedScore` the UI rendered, so a UI bug ("the bar looks
+wrong") and a scoring bug ("the number is wrong") are easy to tell apart:
+if the raw JSON already has the wrong number, it's not the UI's fault.
 
 ## Writing a new test for a new detector
 
