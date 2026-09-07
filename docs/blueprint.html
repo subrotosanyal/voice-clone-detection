@@ -1,0 +1,1352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Satya-Vani Blueprint</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+:root{
+  --paper:#f3f4ef;
+  --paper-raised:#fbfbf8;
+  --ink:#12161c;
+  --slate:#535a63;
+  --slate-soft:#7a818a;
+  --line:#dcded6;
+  --line-soft:#e8e9e2;
+  --accent:#0f6e6a;
+  --accent-ink:#0a4f4c;
+  --accent-tint:#dcefec;
+  --risk-low:#2f7d4f;
+  --risk-low-tint:#e1f0e4;
+  --risk-med:#a6720a;
+  --risk-med-tint:#f5ecd6;
+  --risk-high:#a83a3a;
+  --risk-high-tint:#f6e3e1;
+  --shadow: 0 1px 2px rgba(18,22,28,.04), 0 8px 24px -12px rgba(18,22,28,.12);
+  --radius: 10px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#12161a;
+    --paper-raised:#181d22;
+    --ink:#eceee9;
+    --slate:#aab0b6;
+    --slate-soft:#7d848b;
+    --line:#2b3138;
+    --line-soft:#232830;
+    --accent:#4fc8bf;
+    --accent-ink:#bdeee8;
+    --accent-tint:#193230;
+    --risk-low:#7dd6a0;
+    --risk-low-tint:#173226;
+    --risk-med:#e0b358;
+    --risk-med-tint:#332a13;
+    --risk-high:#e88a8a;
+    --risk-high-tint:#38201f;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px -12px rgba(0,0,0,.5);
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#12161a;
+  --paper-raised:#181d22;
+  --ink:#eceee9;
+  --slate:#aab0b6;
+  --slate-soft:#7d848b;
+  --line:#2b3138;
+  --line-soft:#232830;
+  --accent:#4fc8bf;
+  --accent-ink:#bdeee8;
+  --accent-tint:#193230;
+  --risk-low:#7dd6a0;
+  --risk-low-tint:#173226;
+  --risk-med:#e0b358;
+  --risk-med-tint:#332a13;
+  --risk-high:#e88a8a;
+  --risk-high-tint:#38201f;
+  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px -12px rgba(0,0,0,.5);
+}
+
+*{box-sizing:border-box;}
+body{
+  background:var(--paper);
+  color:var(--ink);
+  font-family:'Public Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size:16px;
+  line-height:1.6;
+}
+h1,h2,h3,h4,h5{
+  font-family:'Public Sans', sans-serif;
+  text-wrap:balance;
+  color:var(--ink);
+  margin:0;
+}
+::selection{background:var(--accent-tint); color:var(--accent-ink);}
+a{color:var(--accent-ink);}
+code, .mono, .tabular{
+  font-family:'IBM Plex Mono', ui-monospace, monospace;
+  font-variant-numeric:tabular-nums;
+}
+
+.layout{
+  display:grid;
+  grid-template-columns:236px minmax(0,1fr);
+  gap:0;
+  max-width:1180px;
+  margin:0 auto;
+}
+.toc{
+  position:sticky;
+  top:0;
+  align-self:start;
+  height:100vh;
+  overflow-y:auto;
+  padding:28px 18px 28px 28px;
+  border-right:1px solid var(--line);
+  font-size:13px;
+}
+.toc-eyebrow{
+  font-family:'IBM Plex Mono', monospace;
+  font-size:11px;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  color:var(--slate-soft);
+  margin-bottom:14px;
+}
+.toc a{
+  display:block;
+  color:var(--slate);
+  text-decoration:none;
+  padding:5px 0;
+  border-left:2px solid transparent;
+  padding-left:10px;
+  margin-left:-1px;
+}
+.toc a:hover{color:var(--ink);}
+.toc a.lvl2{padding-left:20px; font-size:12.5px; color:var(--slate-soft);}
+.toc-section{margin-bottom:4px;}
+
+main{padding:0 40px 90px 40px; min-width:0;}
+
+.masthead{
+  padding:44px 0 30px 0;
+  border-bottom:1px solid var(--line);
+  margin-bottom:30px;
+}
+.eyebrow{
+  font-family:'IBM Plex Mono', monospace;
+  font-size:11.5px;
+  letter-spacing:.09em;
+  text-transform:uppercase;
+  color:var(--accent-ink);
+  background:var(--accent-tint);
+  display:inline-block;
+  padding:3px 9px;
+  border-radius:5px;
+  margin-bottom:16px;
+}
+h1.title{
+  font-size:clamp(28px,4vw,40px);
+  font-weight:700;
+  letter-spacing:-0.01em;
+  max-width:18ch;
+}
+.deck{
+  font-size:17px;
+  color:var(--slate);
+  max-width:64ch;
+  margin-top:14px;
+}
+.meta-row{
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px;
+  margin-top:22px;
+}
+.meta-chip{
+  font-family:'IBM Plex Mono', monospace;
+  font-size:12px;
+  color:var(--slate);
+  background:var(--paper-raised);
+  border:1px solid var(--line);
+  padding:5px 10px;
+  border-radius:7px;
+}
+.meta-chip b{color:var(--ink); font-weight:600;}
+.meta-chip.hot{border-color:var(--accent); color:var(--accent-ink); background:var(--accent-tint);}
+
+section{margin-bottom:56px; scroll-margin-top:20px;}
+.section-head{
+  display:flex;
+  align-items:baseline;
+  gap:12px;
+  margin-bottom:6px;
+}
+.section-num{
+  font-family:'IBM Plex Mono', monospace;
+  font-size:13px;
+  color:var(--slate-soft);
+}
+h2.section-title{font-size:23px; font-weight:700;}
+.section-sub{color:var(--slate); max-width:70ch; margin-top:8px; margin-bottom:22px;}
+
+p{max-width:70ch; margin:0 0 14px 0;}
+.prose p:last-child{margin-bottom:0;}
+ul.plain, ol.plain{max-width:70ch; padding-left:22px; margin:0 0 14px 0;}
+ul.plain li, ol.plain li{margin-bottom:6px;}
+
+.callout{
+  border:1px solid var(--line);
+  background:var(--paper-raised);
+  border-radius:var(--radius);
+  padding:18px 20px;
+  margin:20px 0;
+  max-width:70ch;
+}
+.callout.wide{max-width:none;}
+.callout-title{
+  font-family:'IBM Plex Mono', monospace;
+  font-size:11.5px;
+  letter-spacing:.07em;
+  text-transform:uppercase;
+  color:var(--accent-ink);
+  margin-bottom:8px;
+}
+.callout.source .callout-title{color:var(--risk-med);}
+.callout.source{border-color:var(--risk-med-tint); background:var(--risk-med-tint);}
+.callout.source p{color:var(--ink);}
+.callout.explainer{border-color:var(--accent); background:var(--accent-tint);}
+.callout.explainer .callout-title{color:var(--accent-ink);}
+.callout.explainer p{color:var(--ink);}
+.plain-lead{color:var(--ink); font-weight:600;}
+
+/* scope table */
+.scope-grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:1px;
+  background:var(--line);
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  overflow:hidden;
+  margin:22px 0;
+  max-width:900px;
+}
+.scope-col{background:var(--paper-raised); padding:18px 20px;}
+.scope-col h4{font-size:13px; letter-spacing:.04em; text-transform:uppercase; margin-bottom:12px;}
+.scope-col.in h4{color:var(--risk-low);}
+.scope-col.out h4{color:var(--slate-soft);}
+.scope-col ul{list-style:none; margin:0; padding:0;}
+.scope-col li{
+  font-size:14px; color:var(--slate); padding:6px 0 6px 20px; position:relative; border-top:1px solid var(--line-soft);
+}
+.scope-col li:first-child{border-top:none;}
+.scope-col.in li::before{content:"✓"; position:absolute; left:0; color:var(--risk-low); font-weight:600;}
+.scope-col.out li::before{content:"–"; position:absolute; left:2px; color:var(--slate-soft); font-weight:600;}
+
+/* diagrams */
+.arch-wrap{
+  border:1px solid var(--line);
+  background:var(--paper-raised);
+  border-radius:var(--radius);
+  padding:20px;
+  margin:22px 0;
+  overflow-x:auto;
+  box-shadow:var(--shadow);
+}
+.arch-wrap svg{display:block; min-width:760px;}
+.arch-cap{font-size:13px; color:var(--slate-soft); margin:-8px 0 18px 0;}
+
+/* risk meter */
+.riskmeter{
+  display:flex;
+  gap:14px;
+  flex-wrap:wrap;
+  margin:18px 0;
+}
+.riskmeter-item{
+  flex:1;
+  min-width:170px;
+  border-radius:var(--radius);
+  padding:14px 16px;
+  border:1px solid var(--line);
+}
+.riskmeter-item .band{font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:.06em; text-transform:uppercase; margin-bottom:6px;}
+.riskmeter-item .range{font-family:'IBM Plex Mono',monospace; font-size:22px; font-weight:600;}
+.riskmeter-item .action{font-size:13px; color:var(--slate); margin-top:6px;}
+.riskmeter-item.low{background:var(--risk-low-tint);} .riskmeter-item.low .band, .riskmeter-item.low .range{color:var(--risk-low);}
+.riskmeter-item.med{background:var(--risk-med-tint);} .riskmeter-item.med .band, .riskmeter-item.med .range{color:var(--risk-med);}
+.riskmeter-item.high{background:var(--risk-high-tint);} .riskmeter-item.high .band, .riskmeter-item.high .range{color:var(--risk-high);}
+
+/* generic table */
+.tbl-wrap{overflow-x:auto; margin:20px 0;}
+table.doc{
+  border-collapse:collapse;
+  width:100%;
+  min-width:640px;
+  font-size:14px;
+}
+table.doc th{
+  text-align:left;
+  font-family:'IBM Plex Mono', monospace;
+  font-size:11px;
+  letter-spacing:.06em;
+  text-transform:uppercase;
+  color:var(--slate-soft);
+  border-bottom:1px solid var(--line);
+  padding:9px 14px 9px 0;
+  white-space:nowrap;
+}
+table.doc td{
+  padding:11px 14px 11px 0;
+  border-bottom:1px solid var(--line-soft);
+  color:var(--slate);
+  vertical-align:top;
+}
+table.doc td:first-child, table.doc th:first-child{color:var(--ink); font-weight:500;}
+table.doc tr:last-child td{border-bottom:none;}
+
+/* team / track cards */
+.track-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill, minmax(280px,1fr));
+  gap:14px;
+  margin:22px 0;
+}
+.track-card{
+  border:1px solid var(--line);
+  background:var(--paper-raised);
+  border-radius:var(--radius);
+  padding:18px 20px;
+  box-shadow:var(--shadow);
+}
+.track-head{display:flex; align-items:center; gap:10px; margin-bottom:10px;}
+.track-letter{
+  font-family:'IBM Plex Mono', monospace;
+  font-weight:600;
+  font-size:12.5px;
+  color:var(--accent-ink);
+  background:var(--accent-tint);
+  min-width:26px; height:26px;
+  display:flex; align-items:center; justify-content:center;
+  border-radius:6px;
+  flex-shrink:0;
+  padding:0 4px;
+}
+.track-card h4{font-size:15px; font-weight:600;}
+.track-card p{font-size:13.5px; margin-bottom:10px;}
+.track-meta{display:flex; flex-wrap:wrap; gap:6px; margin-top:10px;}
+.tag{
+  font-family:'IBM Plex Mono', monospace;
+  font-size:10.5px;
+  color:var(--slate-soft);
+  border:1px solid var(--line);
+  padding:2px 7px;
+  border-radius:5px;
+}
+.tag.owner{background:var(--accent-tint); color:var(--accent-ink); border-color:transparent;}
+
+/* pluggable model cards */
+.model-grid{display:grid; grid-template-columns:1fr 1fr; gap:16px; margin:22px 0;}
+.model-card{border:1px solid var(--line); background:var(--paper-raised); border-radius:var(--radius); padding:18px 20px; box-shadow:var(--shadow);}
+.model-card.default{border-color:var(--accent);}
+.model-head{display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-bottom:8px;}
+.model-head h4{font-size:15.5px;}
+.cfg-pill{font-family:'IBM Plex Mono',monospace; font-size:10.5px; background:var(--accent-tint); color:var(--accent-ink); padding:3px 8px; border-radius:100px; white-space:nowrap;}
+.model-desc{font-size:13.5px; color:var(--slate); margin-bottom:14px;}
+.pros-cons{display:grid; grid-template-columns:1fr 1fr; gap:14px;}
+.pc h5{font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; margin-bottom:8px;}
+.pc.pros h5{color:var(--risk-low);}
+.pc.cons h5{color:var(--risk-high);}
+.pc ul{list-style:none; margin:0; padding:0;}
+.pc li{font-size:12.5px; color:var(--slate); padding:4px 0 4px 15px; position:relative; line-height:1.45;}
+.pc.pros li::before{content:"✓"; position:absolute; left:0; color:var(--risk-low); font-weight:600;}
+.pc.cons li::before{content:"–"; position:absolute; left:1px; color:var(--risk-high); font-weight:600;}
+
+/* timeline / gates */
+.timeline{border-left:2px solid var(--line); margin:24px 0 24px 6px; padding-left:22px;}
+.gate{position:relative; padding-bottom:24px;}
+.gate:last-child{padding-bottom:0;}
+.gate::before{
+  content:"";
+  position:absolute;
+  left:-28.5px; top:3px;
+  width:11px; height:11px;
+  border-radius:50%;
+  background:var(--paper);
+  border:2px solid var(--accent);
+}
+.gate-week{font-family:'IBM Plex Mono', monospace; font-size:11.5px; color:var(--accent-ink); letter-spacing:.05em; text-transform:uppercase; margin-bottom:3px;}
+.gate-title{font-weight:600; font-size:15px; margin-bottom:4px;}
+.gate-desc{font-size:14px; color:var(--slate); max-width:64ch;}
+
+/* demo beats */
+.beat-list{display:flex; flex-direction:column; gap:14px; margin:22px 0;}
+.beat{display:flex; gap:14px; align-items:flex-start; border:1px solid var(--line); background:var(--paper-raised); border-radius:var(--radius); padding:14px 18px;}
+.beat-num{font-family:'IBM Plex Mono',monospace; font-weight:600; font-size:13px; color:var(--accent-ink); background:var(--accent-tint); min-width:26px; height:26px; border-radius:50%; display:flex; align-items:center; justify-content:center; flex-shrink:0;}
+.beat p{font-size:14px; margin:0; color:var(--slate);}
+.beat strong{color:var(--ink);}
+
+blockquote.mic-drop{
+  border-left:3px solid var(--accent);
+  margin:24px 0; padding:4px 0 4px 20px;
+  font-size:18px; font-style:italic; color:var(--ink); max-width:56ch;
+}
+
+details.appendix{
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  background:var(--paper-raised);
+  padding:14px 18px;
+  margin:14px 0;
+}
+details.appendix summary{
+  cursor:pointer;
+  font-weight:600;
+  font-size:14.5px;
+  list-style:none;
+}
+details.appendix summary::-webkit-details-marker{display:none;}
+details.appendix summary::before{content:"▸ "; color:var(--accent-ink);}
+details.appendix[open] summary::before{content:"▾ "; }
+details.appendix pre{
+  background:var(--paper);
+  border:1px solid var(--line);
+  border-radius:8px;
+  padding:14px;
+  overflow-x:auto;
+  font-size:12.5px;
+  margin-top:12px;
+  line-height:1.55;
+}
+
+.foot{
+  margin-top:70px;
+  padding-top:20px;
+  border-top:1px solid var(--line);
+  font-size:12.5px;
+  color:var(--slate-soft);
+}
+
+/* diagram figures */
+figure.diagram{margin:22px 0 10px 0;}
+figure.diagram .arch-wrap{margin:0;}
+figure.diagram figcaption{
+  font-size:13px;
+  color:var(--slate-soft);
+  margin-top:10px;
+  max-width:80ch;
+}
+figure.diagram figcaption b{color:var(--slate); font-weight:600;}
+.legend-row{display:flex; gap:18px; flex-wrap:wrap; margin:4px 0 18px 0; font-size:12px; color:var(--slate-soft);}
+.legend-row span{display:inline-flex; align-items:center; gap:6px;}
+.legend-swatch{width:11px; height:11px; border-radius:3px; display:inline-block; flex-shrink:0;}
+.legend-swatch.accent{background:var(--accent-tint); border:1.4px solid var(--accent);}
+.legend-swatch.plain{background:var(--paper-raised); border:1.2px solid var(--line);}
+.legend-swatch.dashed{background:transparent; border:1.2px dashed var(--slate-soft);}
+
+@media (max-width:880px){
+  .layout{grid-template-columns:1fr;}
+  .toc{
+    position:static;
+    height:auto;
+    border-right:none;
+    border-bottom:1px solid var(--line);
+    padding:16px 20px;
+    display:flex;
+    flex-wrap:wrap;
+    gap:2px 16px;
+  }
+  .toc a.lvl2{display:none;}
+  main{padding:0 20px 70px 20px;}
+  .scope-grid{grid-template-columns:1fr;}
+  .model-grid{grid-template-columns:1fr;}
+  .pros-cons{grid-template-columns:1fr;}
+}
+
+/* status pills — used inline to mark something as actually built vs not */
+.status-pill{
+  font-family:'IBM Plex Mono', monospace;
+  font-size:10.5px;
+  letter-spacing:.04em;
+  font-weight:600;
+  padding:2px 8px;
+  border-radius:100px;
+  white-space:nowrap;
+  display:inline-block;
+}
+.status-pill.done{background:var(--risk-low-tint); color:var(--risk-low);}
+.status-pill.partial{background:var(--risk-med-tint); color:var(--risk-med);}
+.status-pill.todo{background:var(--line-soft); color:var(--slate-soft);}
+
+.callout.status-done{border-color:var(--risk-low-tint); background:var(--risk-low-tint);}
+.callout.status-done .callout-title{color:var(--risk-low);}
+.callout.status-done p{color:var(--ink);}
+.callout.status-todo{border-color:var(--risk-high-tint); background:var(--risk-high-tint);}
+.callout.status-todo .callout-title{color:var(--risk-high);}
+.callout.status-todo p{color:var(--ink);}
+
+/* built vs not-built grid — reuses scope-grid's two-column shape */
+.scope-col.built h4{color:var(--risk-low);}
+.scope-col.notbuilt h4{color:var(--risk-high);}
+.scope-col.built li::before{content:"✓"; position:absolute; left:0; color:var(--risk-low); font-weight:600;}
+.scope-col.notbuilt li::before{content:"○"; position:absolute; left:1px; color:var(--risk-high); font-weight:600;}
+
+/* gantt chart */
+.gantt-wrap{
+  border:1px solid var(--line);
+  background:var(--paper-raised);
+  border-radius:var(--radius);
+  padding:20px;
+  margin:22px 0;
+  overflow-x:auto;
+  box-shadow:var(--shadow);
+}
+.gantt-wrap svg{display:block; min-width:820px;}
+</style>
+
+</head>
+<body>
+<div class="layout">
+  <nav class="toc">
+    <div class="toc-eyebrow">SIH26104 · Contents</div>
+    <div class="toc-section"><a href="#status">00 · Build status</a></div>
+    <div class="toc-section"><a href="#overview">01 · What this is</a></div>
+    <div class="toc-section"><a href="#architecture">02 · Architecture</a></div>
+    <div class="toc-section"><a href="#risk">03 · The risk score</a>
+      <a class="lvl2" href="#pluggable">Pluggable third signal</a>
+    </div>
+    <div class="toc-section"><a href="#differentiator">04 · Indian-language differentiator</a></div>
+    <div class="toc-section"><a href="#demo">05 · The demo</a></div>
+    <div class="toc-section"><a href="#risks">06 · Risks, limitations &amp; scale</a>
+      <a class="lvl2" href="#tech-limits">Technical limitations</a>
+      <a class="lvl2" href="#ethics">Ethical considerations</a>
+      <a class="lvl2" href="#scaling">Scaling</a>
+    </div>
+    <div class="toc-section"><a href="#testing">07 · Test strategy</a></div>
+    <div class="toc-section"><a href="#evaluation">08 · Evaluation &amp; success criteria</a>
+      <a class="lvl2" href="#eval-model">Model-level</a>
+      <a class="lvl2" href="#eval-build">Build-level</a>
+      <a class="lvl2" href="#eval-judging">Competition-level</a>
+    </div>
+    <div class="toc-section"><a href="#appendix">09 · Appendix</a></div>
+  </nav>
+
+  <main>
+    <header class="masthead">
+      <span class="eyebrow">SIH26104 · Software · Cybersecurity</span>
+      <h1 class="title">Satya-Vani</h1>
+      <p class="deck">Knowing a real voice from a manufactured one, while the call is still going. This is the team's working build reference — reconciled with the official solution brief you uploaded, which is treated here as the authoritative source on scope, team, and strategy. Where this document adds anything, it's engineering scaffolding underneath that brief, not a second opinion on it. <strong>Updated with real build status</strong> — §00 below shows exactly what's actually running today versus what's still on the plan; the rest of the document is the original blueprint, now annotated with build-status pills wherever reality has caught up to (or diverged from) the plan.</p>
+      <div class="meta-row">
+        <span class="meta-chip hot">PS <b>SIH26104</b></span>
+        <span class="meta-chip">Deadline <b>30 Sep 2026</b></span>
+        <span class="meta-chip">Org <b>AICTE Cyber Security Cell</b></span>
+        <span class="meta-chip">Event <b>36h onsite</b> after 5 weeks of build</span>
+        <span class="meta-chip hot">Status as of <b>07 Sep 2026</b></span>
+      </div>
+    </header>
+
+    <!-- 00 BUILD STATUS -->
+    <section id="status">
+      <div class="section-head"><span class="section-num">00</span><h2 class="section-title">Build status — what's actually running today</h2></div>
+      <p class="section-sub">Everything below §00 is the original blueprint, unchanged in its reasoning. This section is the reality check on top of it: what got built, what still hasn't, and roughly when. Read this section first if all you have time for is one.</p>
+
+      <div class="callout status-done">
+        <div class="callout-title">The short version</div>
+        <p>The pluggable core — acoustic, prosodic, and third-signal detection, fused and explained transparently, with a working dashboard, persistent history, voiceprint enrollment, and speaker diarization — is <strong>built, running in Docker, and covered by 79 passing automated tests</strong>. The single biggest gap is <strong>§04, the Indian-language differentiator</strong>: no consented recordings, no held-out-generator evaluation, and no fine-tuning have happened yet. That's the one item most likely to decide the round, and it hasn't started.</p>
+      </div>
+
+      <p style="font-family:'IBM Plex Mono',monospace; font-size:12px; letter-spacing:.05em; text-transform:uppercase; color:var(--slate-soft); margin-top:30px;">Timeline against the plan</p>
+      <figure class="diagram">
+        <div class="gantt-wrap">
+          <svg viewBox="0 0 1200 470" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Gantt chart against the original 5-week plan. Eight workstreams — pluggable architecture, acoustic detector, dashboard, session history, prosodic detector, voiceprint consistency, diarization, and concurrency/polish — are complete, landing between week 1 and week 3. Three workstreams have not started: the Indian-language dataset and evaluation, the mock banking approval flow, and adversarial/codec robustness plus production scaling — all scheduled for weeks 3 through 5.5 but not yet begun. A 'today' marker sits at the boundary, at week 3.">
+            <!-- week gridlines + labels -->
+            <text x="10" y="30" font-size="11" font-weight="600" fill="var(--slate-soft)" letter-spacing="0.05em">WORKSTREAM</text>
+            <g font-family="'IBM Plex Mono', monospace">
+              <text x="290" y="30" font-size="10.5" fill="var(--slate-soft)">Week 1</text>
+              <text x="450" y="30" font-size="10.5" fill="var(--slate-soft)">Week 2</text>
+              <text x="610" y="30" font-size="10.5" fill="var(--slate-soft)">Week 3</text>
+              <text x="770" y="30" font-size="10.5" fill="var(--slate-soft)">Week 4</text>
+              <text x="930" y="30" font-size="10.5" fill="var(--slate-soft)">Week 5</text>
+              <text x="1090" y="30" font-size="10.5" fill="var(--slate-soft)">36h event</text>
+            </g>
+            <g stroke="var(--line)" stroke-width="1">
+              <line x1="290" y1="42" x2="290" y2="440"></line>
+              <line x1="450" y1="42" x2="450" y2="440"></line>
+              <line x1="610" y1="42" x2="610" y2="440"></line>
+              <line x1="770" y1="42" x2="770" y2="440"></line>
+              <line x1="930" y1="42" x2="930" y2="440"></line>
+              <line x1="1090" y1="42" x2="1090" y2="440"></line>
+            </g>
+
+            <!-- today marker at week 3.0 -->
+            <line x1="610" y1="38" x2="610" y2="444" stroke="var(--accent-ink)" stroke-width="1.6" stroke-dasharray="2 3"></line>
+            <text x="610" y="456" text-anchor="middle" font-size="10" font-weight="700" fill="var(--accent-ink)" font-family="'IBM Plex Mono', monospace">TODAY · 07 SEP</text>
+
+            <!-- row background lines -->
+            <g stroke="var(--line-soft)" stroke-width="1">
+              <line x1="0" y1="70" x2="1180" y2="70"></line>
+              <line x1="0" y1="104" x2="1180" y2="104"></line>
+              <line x1="0" y1="138" x2="1180" y2="138"></line>
+              <line x1="0" y1="172" x2="1180" y2="172"></line>
+              <line x1="0" y1="206" x2="1180" y2="206"></line>
+              <line x1="0" y1="240" x2="1180" y2="240"></line>
+              <line x1="0" y1="274" x2="1180" y2="274"></line>
+              <line x1="0" y1="308" x2="1180" y2="308"></line>
+              <line x1="0" y1="342" x2="1180" y2="342"></line>
+              <line x1="0" y1="376" x2="1180" y2="376"></line>
+              <line x1="0" y1="410" x2="1180" y2="410"></line>
+            </g>
+
+            <!-- row labels -->
+            <g font-size="12" fill="var(--ink)">
+              <text x="10" y="60">Pluggable core architecture + Docker/logging</text>
+              <text x="10" y="94">Acoustic detector — real AASIST model</text>
+              <text x="10" y="128">Browser dashboard — upload / mic / history</text>
+              <text x="10" y="162">Persistent, replayable session history</text>
+              <text x="10" y="196">Prosodic detector — real Praat/Parselmouth</text>
+              <text x="10" y="230">Voiceprint consistency — ECAPA-TDNN + enrollment</text>
+              <text x="10" y="264">Speaker diarization (file-upload only)</text>
+              <text x="10" y="298">Concurrency fix, MP3 support, UX polish</text>
+              <text x="10" y="332" font-weight="600">Indian-language dataset + held-out eval (§04)</text>
+              <text x="10" y="366" font-weight="600">Mock banking approval that actually blocks</text>
+              <text x="10" y="400" font-weight="600">Adversarial/codec testing + production scaling</text>
+            </g>
+
+            <!-- DONE bars (solid accent) -->
+            <g fill="var(--accent)" opacity="0.88">
+              <rect x="290" y="52" width="48" height="14" rx="4"></rect>
+              <rect x="322" y="86" width="80" height="14" rx="4"></rect>
+              <rect x="386" y="120" width="80" height="14" rx="4"></rect>
+              <rect x="450" y="154" width="48" height="14" rx="4"></rect>
+              <rect x="482" y="188" width="64" height="14" rx="4"></rect>
+              <rect x="498" y="222" width="80" height="14" rx="4"></rect>
+              <rect x="546" y="256" width="64" height="14" rx="4"></rect>
+              <rect x="578" y="290" width="32" height="14" rx="4"></rect>
+            </g>
+            <!-- DONE checkmarks -->
+            <g font-family="'IBM Plex Mono', monospace" font-size="10.5" font-weight="700" fill="var(--risk-low)">
+              <text x="346" y="63">✓ done</text>
+              <text x="410" y="97">✓ done</text>
+              <text x="474" y="131">✓ done</text>
+              <text x="506" y="165">✓ done</text>
+              <text x="554" y="199">✓ done</text>
+              <text x="586" y="233">✓ done</text>
+              <text x="618" y="267">✓ done</text>
+              <text x="618" y="301">✓ done</text>
+            </g>
+
+            <!-- NOT STARTED bars (dashed outline) -->
+            <g fill="none" stroke="var(--risk-high)" stroke-width="1.4" stroke-dasharray="4 3">
+              <rect x="610" y="324" width="224" height="14" rx="4"></rect>
+              <rect x="770" y="358" width="96" height="14" rx="4"></rect>
+              <rect x="850" y="392" width="240" height="14" rx="4"></rect>
+            </g>
+            <g font-family="'IBM Plex Mono', monospace" font-size="10.5" font-weight="700" fill="var(--risk-high)">
+              <text x="840" y="335">not started</text>
+              <text x="872" y="369">not started</text>
+              <text x="1096" y="403">not started</text>
+            </g>
+          </svg>
+        </div>
+        <figcaption><b>What this shows:</b> the pluggable detection core (rows 1–8) is complete — built, wired to real pretrained models, and running end to end in Docker, roughly within the first three weeks of the plan's five-week window. The Indian-language differentiator, the mock banking approval, and adversarial/production hardening (rows 9–11) haven't started — they remain scheduled for weeks 3 through the pre-event buffer, exactly as the original plan intended, just not yet begun.</figcaption>
+      </figure>
+
+      <p style="font-family:'IBM Plex Mono',monospace; font-size:12px; letter-spacing:.05em; text-transform:uppercase; color:var(--slate-soft); margin-top:34px;">Built vs. not built</p>
+      <div class="scope-grid">
+        <div class="scope-col built">
+          <h4>Built &amp; running</h4>
+          <ul>
+            <li>Pluggable ports-and-adapters core — swap any detector via one YAML edit</li>
+            <li>Acoustic detector — real AASIST (clovaai/aasist, MIT), checksum-verified, deterministic</li>
+            <li>Prosodic detector — real Praat-derived jitter/shimmer/HNR via Parselmouth</li>
+            <li>Third signal, contextual mode — rule-based call metadata</li>
+            <li>Third signal, consistency mode — real ECAPA-TDNN speaker-embedding comparison</li>
+            <li>Voiceprint enrollment — enroll / list / delete, embedding-only storage</li>
+            <li>Speaker diarization — splits a multi-speaker file, scores each voice separately</li>
+            <li>Fusion — EMA smoothing, abstain-aware reweighting, band thresholds</li>
+            <li>Full per-window explainability — every score traceable to raw feature values</li>
+            <li>Persistent, replayable session history, survives restarts</li>
+            <li>Browser dashboard — upload, live mic, diarization, enrollment, history, help tooltips</li>
+            <li>Docker Compose runtime + central JSON log viewer (Dozzle)</li>
+            <li>79 automated tests passing (unit + integration)</li>
+          </ul>
+        </div>
+        <div class="scope-col notbuilt">
+          <h4>Not built yet</h4>
+          <ul>
+            <li><strong>Indian-language dataset &amp; held-out-generator evaluation (§04)</strong> — the differentiator; zero consented recordings collected so far</li>
+            <li>Independent EER measurement of the acoustic model against a public benchmark — it runs on its pretrained checkpoint, unvalidated by this team</li>
+            <li>Mock banking approval screen that actually blocks a pending transfer on High</li>
+            <li>Adversarial/codec robustness testing (noise, resampling, re-encoding)</li>
+            <li>Real-time diarization on the live microphone path (file-upload only today)</li>
+            <li>Calibrated risk thresholds — several mappings are honestly-documented placeholders, not tuned on labeled data</li>
+            <li>Everything in §06's Scaling table — concurrency beyond one process, an ANN vector store, 22-language coverage, compliance tooling</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="callout">
+        <div class="callout-title">Reading the rest of this document</div>
+        <p style="margin:0;">Sections 01–03 describe the architecture largely as it was actually built — a few "candidate" tools in §02's table turned out not to be needed (there's no separate SSL front-end; AASIST consumes the waveform directly) and are annotated inline. Sections 04–08 remain the original plan and are annotated with <span class="status-pill todo">not started</span> or <span class="status-pill done">built</span> pills wherever it matters, rather than rewritten — the plan's reasoning hasn't changed, only how much of it has happened.</p>
+      </div>
+    </section>
+
+    <!-- 01 OVERVIEW -->
+    <section id="overview">
+      <div class="section-head"><span class="section-num">01</span><h2 class="section-title">What this is</h2></div>
+
+      <div class="callout source">
+        <div class="callout-title">From the brief — read this first</div>
+        <p>Voice deepfakes are a fashionable topic; the pool of competing teams will not stay small. The Indian-language evaluation in §04 is the one part of this build a competing team is unlikely to have — that work starts in week one, not week four.</p>
+      </div>
+
+      <p class="section-sub">One sentence the whole team should be able to repeat back: software that listens to a live call and works out, while the call is still happening, whether the voice on the other end came from a human throat or a machine — and shows a risk score before anyone approves anything.</p>
+
+      <div class="prose">
+        <p><strong>The attack.</strong> Modern speech synthesis clones a voice convincingly from a few seconds of recorded audio — a talk, a voice note, a TV clip. An attacker calls a bank employee or a junior official sounding exactly like the CFO or the Secretary, applies time pressure, and extracts a transfer or a credential. Caller ID is trivially spoofed, recognising the voice is precisely what the attack defeats, and a call-back only works if the target thinks to do it under pressure.</p>
+        <p><strong>Why detection is possible.</strong> A neural vocoder reconstructs a waveform rather than recording one, and the reconstruction leaves traces — phase relationships that don't occur naturally, spectral envelopes that are too smooth, timing that's subtly too regular. A human vocal tract adds breath, micro-tremor, jitter and shimmer that synthesis approximates rather than reproduces.</p>
+      </div>
+
+      <div class="callout">
+        <div class="callout-title">The framing that matters to a judge</div>
+        <p style="margin:0;">This system is not asking <em>who</em> is speaking — that's speaker verification. It's asking <em>how</em> the signal was made. Say that distinction out loud: it's the reason this stops the fraud that voice-recognition alone cannot.</p>
+      </div>
+
+      <p style="font-family:'IBM Plex Mono',monospace; font-size:12px; letter-spacing:.05em; text-transform:uppercase; color:var(--slate-soft); margin-top:28px;">Build this, skip that</p>
+      <p style="font-size:14px; color:var(--slate); max-width:70ch; margin-top:-14px;">The brief lists REST/gRPC APIs, SDKs, telecom integration, compliance modules and multi-channel alerting. Building all of it produces a slide deck, not a system.</p>
+      <div class="scope-grid">
+        <div class="scope-col in">
+          <h4>Build</h4>
+          <ul>
+            <li>Live spoof detection on a streaming call</li>
+            <li>A continuously updating risk score</li>
+            <li>One operator dashboard</li>
+            <li>One mock banking approval that blocks on high risk</li>
+            <li>Indian-language evaluation set and results</li>
+          </ul>
+        </div>
+        <div class="scope-col out">
+          <h4>Skip</h4>
+          <ul>
+            <li>SDKs for third-party platforms</li>
+            <li>Telecom operator infrastructure integration</li>
+            <li>Multi-channel alerting (SMS, email, in-app)</li>
+            <li>A configurable enterprise workflow engine</li>
+            <li>Full compliance and retention tooling</li>
+          </ul>
+        </div>
+      </div>
+      <div class="callout">
+        <div class="callout-title">Say it on stage</div>
+        <p style="margin:0;">"We built depth on detection rather than breadth on integration." Framed that way, the omission reads as judgement, not as an unfinished project.</p>
+      </div>
+    </section>
+
+    <!-- 02 ARCHITECTURE -->
+    <section id="architecture">
+      <div class="section-head"><span class="section-num">02</span><h2 class="section-title">Architecture</h2></div>
+      <p class="section-sub">Audio arrives as a stream, is cut into overlapping windows, each window is scored by three parallel detectors, the scores are smoothed and fused, and context is layered on top. Nothing waits for the call to end. Two diagrams: the live call path that runs during a demo, and the offline pipeline that produces §04's Indian-language numbers before the demo ever starts.</p>
+
+      <p style="font-family:'IBM Plex Mono',monospace; font-size:12px; letter-spacing:.05em; text-transform:uppercase; color:var(--slate-soft); margin-top:6px;" id="runtime-arch">Runtime — the live call path</p>
+
+      <figure class="diagram">
+        <div class="arch-wrap">
+          <svg viewBox="0 0 1500 600" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A live call flows left to right: capture, then windowing, then two feature-extraction branches (acoustic SSL embedding and prosody vector), into three parallel detectors — acoustic countermeasure, prosodic classifier, and a config-selectable third signal (contextual rules or speaker-consistency matching) — which converge on a smoothing-and-fusion stage, then a threshold-band stage, which drives the operator dashboard and the mock banking block. A voiceprint store and a privacy/TTL module sit below the main flow and connect to it with dashed lines; operator decisions feed a separate offline label store, not a live retrain.">
+
+            <defs>
+              <marker id="arrowN" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M0,0 L10,5 L0,10 z" fill="var(--slate-soft)"></path>
+              </marker>
+              <marker id="arrowA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"></path>
+              </marker>
+            </defs>
+
+            <!-- stage headers -->
+            <text x="105" y="128" text-anchor="middle" font-size="10" letter-spacing="0.06em" fill="var(--slate-soft)">1 · CAPTURE</text>
+            <text x="335" y="128" text-anchor="middle" font-size="10" letter-spacing="0.06em" fill="var(--slate-soft)">2 · WINDOW</text>
+            <text x="575" y="128" text-anchor="middle" font-size="10" letter-spacing="0.06em" fill="var(--slate-soft)">3 · FEATURES</text>
+            <text x="835" y="128" text-anchor="middle" font-size="10" letter-spacing="0.06em" fill="var(--slate-soft)">4 · DETECT (parallel)</text>
+            <text x="1095" y="128" text-anchor="middle" font-size="10" letter-spacing="0.06em" fill="var(--slate-soft)">5 · FUSE</text>
+            <text x="1350" y="128" text-anchor="middle" font-size="10" letter-spacing="0.06em" fill="var(--slate-soft)">6 · ACT</text>
+
+            <!-- Col1 Client -->
+            <rect x="20" y="225" width="170" height="70" rx="8" fill="var(--paper-raised)" stroke="var(--line)" stroke-width="1.2"></rect>
+            <text x="105" y="255" text-anchor="middle" font-size="12.5" font-weight="600" fill="var(--ink)">Mic / call audio</text>
+            <text x="105" y="273" text-anchor="middle" font-size="9.5" fill="var(--slate-soft)">WebRTC or file upload</text>
+            <text x="105" y="286" text-anchor="middle" font-size="9" fill="var(--slate-soft)">candidate: FastRTC</text>
+
+            <!-- Col2 Ingest/Window -->
+            <rect x="250" y="225" width="170" height="70" rx="8" fill="var(--paper-raised)" stroke="var(--line)" stroke-width="1.2"></rect>
+            <text x="335" y="252" text-anchor="middle" font-size="12.5" font-weight="600" fill="var(--ink)">Session +</text>
+            <text x="335" y="268" text-anchor="middle" font-size="12.5" font-weight="600" fill="var(--ink)">windowing</text>
+            <text x="335" y="284" text-anchor="middle" font-size="9.5" fill="var(--slate-soft)">2s window, 0.5s step</text>
+
+            <!-- Col3 Feature extraction (2 stacked) -->
+            <rect x="480" y="190" width="190" height="60" rx="8" fill="var(--accent-tint)" stroke="var(--accent)" stroke-width="1" stroke-opacity="0.55"></rect>
+            <text x="575" y="212" text-anchor="middle" font-size="12" font-weight="600" fill="var(--ink)">SSL front-end</text>
+            <text x="575" y="228" text-anchor="middle" font-size="9.5" fill="var(--slate-soft)">candidate: WavLM · wav2vec2</text>
+
+            <rect x="480" y="270" width="190" height="60" rx="8" fill="var(--accent-tint)" stroke="var(--accent)" stroke-width="1" stroke-opacity="0.55"></rect>
+            <text x="575" y="292" text-anchor="middle" font-size="12" font-weight="600" fill="var(--ink)">Prosody extractor</text>
+            <text x="575" y="308" text-anchor="middle" font-size="9.5" fill="var(--slate-soft)">candidate: Parselmouth</text>
+
+            <!-- Col4 Detection (3 stacked, third is accent) -->
+            <rect x="730" y="162" width="210" height="55" rx="8" fill="var(--paper-raised)" stroke="var(--line)" stroke-width="1.2"></rect>
+            <text x="835" y="184" text-anchor="middle" font-size="12" font-weight="600" fill="var(--ink)">Acoustic countermeasure</text>
+            <text x="835" y="200" text-anchor="middle" font-size="9.5" fill="var(--slate-soft)">candidate: AASIST · RawGAT-ST</text>
+
+            <rect x="730" y="232" width="210" height="55" rx="8" fill="var(--paper-raised)" stroke="var(--line)" stroke-width="1.2"></rect>
+            <text x="835" y="254" text-anchor="middle" font-size="12" font-weight="600" fill="var(--ink)">Prosodic classifier</text>
+            <text x="835" y="270" text-anchor="middle" font-size="9.5" fill="var(--slate-soft)">rule / lightweight model</text>
+
+            <rect x="730" y="302" width="210" height="55" rx="8" fill="var(--accent-tint)" stroke="var(--accent)" stroke-width="1.6"></rect>
+            <text x="835" y="322" text-anchor="middle" font-size="12" font-weight="700" fill="var(--accent-ink)">Third signal — config</text>
+            <text x="835" y="337" text-anchor="middle" font-size="9.5" fill="var(--accent-ink)">contextual | consistency | auto</text>
+            <text x="835" y="350" text-anchor="middle" font-size="9" fill="var(--accent-ink)">§03 · candidate: SASV baseline</text>
+
+            <!-- Col5 Fusion (2 stacked) -->
+            <rect x="1000" y="190" width="190" height="60" rx="8" fill="var(--paper-raised)" stroke="var(--line)" stroke-width="1.2"></rect>
+            <text x="1095" y="212" text-anchor="middle" font-size="12" font-weight="600" fill="var(--ink)">Smoothing + fusion</text>
+            <text x="1095" y="228" text-anchor="middle" font-size="9.5" fill="var(--slate-soft)">EMA · weights .6/.2/.2</text>
+
+            <rect x="1000" y="270" width="190" height="60" rx="8" fill="var(--paper-raised)" stroke="var(--line)" stroke-width="1.2"></rect>
+            <text x="1095" y="292" text-anchor="middle" font-size="12" font-weight="600" fill="var(--ink)">Threshold bands</text>
+            <text x="1095" y="308" text-anchor="middle" font-size="9.5" fill="var(--slate-soft)">Low · Elevated · High</text>
+
+            <!-- Col6 Presentation (3 stacked: dashboard, decision log, mock banking) -->
+            <rect x="1250" y="162" width="200" height="55" rx="8" fill="var(--paper-raised)" stroke="var(--line)" stroke-width="1.2"></rect>
+            <text x="1350" y="184" text-anchor="middle" font-size="12" font-weight="600" fill="var(--ink)">Operator dashboard</text>
+            <text x="1350" y="200" text-anchor="middle" font-size="9.5" fill="var(--slate-soft)">risk meter + 3 bars</text>
+
+            <rect x="1250" y="232" width="200" height="55" rx="8" fill="var(--paper-raised)" stroke="var(--line)" stroke-width="1.2"></rect>
+            <text x="1350" y="254" text-anchor="middle" font-size="12" font-weight="600" fill="var(--ink)">Decision log</text>
+            <text x="1350" y="270" text-anchor="middle" font-size="9.5" fill="var(--slate-soft)">genuine / fraud / unsure</text>
+
+            <rect x="1250" y="302" width="200" height="55" rx="8" fill="var(--paper-raised)" stroke="var(--line)" stroke-width="1.2"></rect>
+            <text x="1350" y="324" text-anchor="middle" font-size="12" font-weight="600" fill="var(--ink)">Mock banking approval</text>
+            <text x="1350" y="340" text-anchor="middle" font-size="9.5" fill="var(--slate-soft)">blocks pending action on High</text>
+
+            <!-- satellites -->
+            <rect x="60" y="470" width="340" height="70" rx="8" fill="none" stroke="var(--slate-soft)" stroke-width="1.1" stroke-dasharray="4 3"></rect>
+            <text x="230" y="497" text-anchor="middle" font-size="11.5" font-weight="600" fill="var(--slate)">Privacy / TTL module</text>
+            <text x="230" y="513" text-anchor="middle" font-size="9.5" fill="var(--slate-soft)">raw audio buffer, deleted at session end</text>
+
+            <rect x="480" y="470" width="190" height="70" rx="8" fill="none" stroke="var(--slate-soft)" stroke-width="1.1" stroke-dasharray="4 3"></rect>
+            <text x="575" y="497" text-anchor="middle" font-size="11.5" font-weight="600" fill="var(--slate)">Enrollment</text>
+            <text x="575" y="513" text-anchor="middle" font-size="9.5" fill="var(--slate-soft)">one-time · 3 phrases · consent</text>
+
+            <rect x="730" y="470" width="210" height="70" rx="8" fill="none" stroke="var(--accent)" stroke-width="1.1" stroke-dasharray="4 3"></rect>
+            <text x="835" y="497" text-anchor="middle" font-size="11.5" font-weight="600" fill="var(--accent-ink)">Voiceprint store</text>
+            <text x="835" y="513" text-anchor="middle" font-size="9.5" fill="var(--accent-ink)">embeddings only + TTL</text>
+
+            <rect x="1250" y="470" width="200" height="70" rx="8" fill="none" stroke="var(--slate-soft)" stroke-width="1.1" stroke-dasharray="4 3"></rect>
+            <text x="1350" y="497" text-anchor="middle" font-size="11.5" font-weight="600" fill="var(--slate)">Eval / label store</text>
+            <text x="1350" y="513" text-anchor="middle" font-size="9.5" fill="var(--slate-soft)">for offline calibration only</text>
+
+            <!-- main flow arrows -->
+            <path d="M190,260 L250,260" stroke="var(--slate-soft)" stroke-width="1.3" fill="none" marker-end="url(#arrowN)"></path>
+            <text x="220" y="248" text-anchor="middle" font-size="9.5" fill="var(--slate-soft)">PCM</text>
+
+            <path d="M420,255 L480,220" stroke="var(--slate-soft)" stroke-width="1.3" fill="none" marker-end="url(#arrowN)"></path>
+            <path d="M420,265 L480,300" stroke="var(--slate-soft)" stroke-width="1.3" fill="none" marker-end="url(#arrowN)"></path>
+            <text x="450" y="245" text-anchor="middle" font-size="9" fill="var(--slate-soft)">window</text>
+
+            <path d="M670,220 L730,189" stroke="var(--slate-soft)" stroke-width="1.3" fill="none" marker-end="url(#arrowN)"></path>
+            <text x="705" y="198" text-anchor="middle" font-size="9" fill="var(--slate-soft)">SSL vec</text>
+            <path d="M670,300 L730,259" stroke="var(--slate-soft)" stroke-width="1.3" fill="none" marker-end="url(#arrowN)"></path>
+            <text x="705" y="288" text-anchor="middle" font-size="9" fill="var(--slate-soft)">prosody</text>
+
+            <path d="M420,278 C 545,400 610,400 730,345" stroke="var(--accent)" stroke-width="1.2" fill="none" marker-end="url(#arrowA)"></path>
+            <text x="580" y="405" text-anchor="middle" font-size="9" fill="var(--accent-ink)">call metadata (number, hour, request type)</text>
+
+            <path d="M940,189 L1000,212" stroke="var(--slate-soft)" stroke-width="1.3" fill="none" marker-end="url(#arrowN)"></path>
+            <text x="965" y="196" text-anchor="middle" font-size="9" fill="var(--slate-soft)">0–1</text>
+            <path d="M940,259 L1000,222" stroke="var(--slate-soft)" stroke-width="1.3" fill="none" marker-end="url(#arrowN)"></path>
+            <text x="965" y="248" text-anchor="middle" font-size="9" fill="var(--slate-soft)">0–1</text>
+            <path d="M940,329 L1000,238" stroke="var(--accent)" stroke-width="1.2" fill="none" marker-end="url(#arrowA)"></path>
+            <text x="975" y="300" text-anchor="middle" font-size="9" fill="var(--accent-ink)">0–1 or none</text>
+
+            <path d="M1095,250 L1095,270" stroke="var(--slate-soft)" stroke-width="1.3" fill="none" marker-end="url(#arrowN)"></path>
+            <text x="1130" y="264" text-anchor="middle" font-size="9" fill="var(--slate-soft)">fused 0–100</text>
+
+            <path d="M1190,289 L1250,189" stroke="var(--slate-soft)" stroke-width="1.3" fill="none" marker-end="url(#arrowN)"></path>
+            <text x="1225" y="230" text-anchor="middle" font-size="9" fill="var(--slate-soft)">score + band + bars</text>
+            <path d="M1190,300 L1250,240" stroke="var(--slate-soft)" stroke-width="1.3" fill="none" marker-end="url(#arrowN)"></path>
+            <path d="M1190,311 L1250,320" stroke="var(--slate-soft)" stroke-width="1.3" fill="none" marker-end="url(#arrowN)"></path>
+            <text x="1220" y="340" text-anchor="middle" font-size="9" fill="var(--slate-soft)">block if High</text>
+            <path d="M1350,217 L1350,232" stroke="var(--slate-soft)" stroke-width="1.3" fill="none" marker-end="url(#arrowN)"></path>
+
+            <!-- satellite connections -->
+            <path d="M335,295 L335,470" stroke="var(--slate-soft)" stroke-width="1.1" stroke-dasharray="3 3" fill="none" marker-end="url(#arrowN)"></path>
+            <path d="M575,470 L730,345" stroke="var(--accent)" stroke-width="1.1" stroke-dasharray="3 3" fill="none" marker-end="url(#arrowA)"></path>
+            <text x="640" y="435" text-anchor="middle" font-size="8.5" fill="var(--accent-ink)">embedding + consent</text>
+            <path d="M835,470 L835,357" stroke="var(--accent)" stroke-width="1.1" stroke-dasharray="3 3" fill="none" marker-end="url(#arrowA)"></path>
+            <text x="900" y="430" text-anchor="middle" font-size="8.5" fill="var(--accent-ink)">enrolled embedding, if any</text>
+            <path d="M1350,287 L1350,470" stroke="var(--slate-soft)" stroke-width="1.1" stroke-dasharray="3 3" fill="none" marker-end="url(#arrowN)"></path>
+            <text x="1415" y="400" text-anchor="middle" font-size="8.5" fill="var(--slate-soft)">labeled example</text>
+          </svg>
+        </div>
+        <figcaption><b>What this shows:</b> one 2-second audio window travels left to right through six stages; the three detectors in Stage 4 run in parallel and converge on one fusion point in Stage 5. The accent-colored path is the one architectural decision this document adds on top of the brief — the third detector is chosen by config, not fixed in code (detail in §03). Everything below the main row is support state, not part of the per-window hot path: enrollment happens once, ahead of time; operator decisions land in a separate label store for offline calibration, never a live retrain.</figcaption>
+      </figure>
+
+      <div class="legend-row">
+        <span><span class="legend-swatch plain"></span>fixed component</span>
+        <span><span class="legend-swatch accent"></span>config-selectable / privacy-sensitive</span>
+        <span><span class="legend-swatch dashed"></span>support state, not per-window hot path</span>
+      </div>
+
+      <p style="font-family:'IBM Plex Mono',monospace; font-size:12px; letter-spacing:.05em; text-transform:uppercase; color:var(--slate-soft); margin-top:8px;">Component → open-source candidate <span class="status-pill done" style="text-transform:none; letter-spacing:0;">now: as-built</span></p>
+      <div class="tbl-wrap">
+        <table class="doc">
+          <tr><th>Stage / component</th><th>Candidate(s)</th><th>Role</th><th>Status</th></tr>
+          <tr><td>Capture / streaming</td><td class="mono">Web Audio API (mic) + WebSocket, not FastRTC</td><td>Browser captures mic audio client-side, streams 2s/0.5s-step windows over a plain WebSocket — no separate WebRTC layer needed for this scope</td><td><span class="status-pill done">built</span> (upload path also built)</td></tr>
+          <tr><td>SSL front-end</td><td class="mono"><s>wav2vec2 · WavLM</s> — not used</td><td>Turned out unnecessary: AASIST has its own sinc-filter front end and consumes the raw waveform directly, no separate SSL embedding stage in the pipeline</td><td><span class="status-pill todo">dropped</span></td></tr>
+          <tr><td>Prosody extractor</td><td class="mono">Parselmouth</td><td>Real Praat-backed jitter, shimmer, harmonics-to-noise ratio — exactly as planned</td><td><span class="status-pill done">built</span></td></tr>
+          <tr><td>Acoustic countermeasure</td><td class="mono">AASIST (clovaai/aasist, MIT), checksum-verified fetch</td><td>The pretrained model as published — not yet independently re-evaluated by the team against a benchmark (see §00)</td><td><span class="status-pill partial">wired, not re-validated</span></td></tr>
+          <tr><td>Third signal</td><td class="mono">Rules engine (contextual) · real ECAPA-TDNN comparison (consistency)</td><td>Both modes built and config-selectable, plus an enrollment flow (§03)</td><td><span class="status-pill done">built</span></td></tr>
+          <tr><td>Speaker embeddings (consistency mode + diarization)</td><td class="mono">SpeechBrain ECAPA-TDNN, Apache-2.0, confirmed ungated</td><td>Shared by voiceprint consistency and by a new capability not in the original plan — see below</td><td><span class="status-pill done">built</span></td></tr>
+          <tr><td>Speaker diarization <em>(not in original plan)</em></td><td class="mono">Embedding-clustering (scipy), reusing the ECAPA-TDNN model above</td><td>Splits a multi-speaker recording and scores each voice separately — file-upload only, not the live path</td><td><span class="status-pill done">built</span> (beyond scope)</td></tr>
+        </table>
+      </div>
+
+      <div class="callout">
+        <div class="callout-title">A note on named tools — updated with what actually shipped</div>
+        <p style="margin:0;">The candidates in the original table were starting points to verify, not commitments — and verifying them is exactly what happened: AASIST (MIT), Parselmouth (GPLv3), and SpeechBrain's ECAPA-TDNN (Apache-2.0) were each checked for licence terms and confirmed installable with no authentication/gating before being wired in (pyannote.audio was considered for diarization and rejected — its pretrained pipelines are all gated on HuggingFace, which would break a "docker compose up, no account needed" build). FastRTC and a separate SSL embedding stage were evaluated conceptually and dropped once the simpler Web-Audio+WebSocket and AASIST's-own-front-end approaches proved sufficient for this scope.</p>
+      </div>
+
+      <p style="font-family:'IBM Plex Mono',monospace; font-size:12px; letter-spacing:.05em; text-transform:uppercase; color:var(--slate-soft); margin-top:34px;" id="offline-arch">Build-time — the Indian-language dataset &amp; evaluation pipeline</p>
+      <p style="font-size:14px; color:var(--slate); max-width:70ch;">This runs before the event, produces the two numbers in §04, and never touches the live call path above. The held-out cloning system is the one box that carries meaning here — everything else is plumbing to get to that honest number.</p>
+
+      <figure class="diagram">
+        <div class="arch-wrap">
+          <svg viewBox="0 0 1300 330" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Consented volunteers produce genuine recordings in Hindi, Marathi and Malvi. Two open-source cloning systems generate synthetic versions; one of the two is held out entirely and never used in training, only in the final honest evaluation. The genuine and synthetic corpora fine-tune the acoustic countermeasure, which is then evaluated on an English benchmark and on the Indian-language set, before and after fine-tuning, producing the two headline numbers.">
+            <defs>
+              <marker id="arrowN2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M0,0 L10,5 L0,10 z" fill="var(--slate-soft)"></path>
+              </marker>
+              <marker id="arrowA2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"></path>
+              </marker>
+            </defs>
+
+            <rect x="20" y="95" width="170" height="60" rx="8" fill="var(--paper-raised)" stroke="var(--line)" stroke-width="1.2"></rect>
+            <text x="105" y="120" text-anchor="middle" font-size="12" font-weight="600" fill="var(--ink)">Consented volunteers</text>
+            <text x="105" y="136" text-anchor="middle" font-size="9.5" fill="var(--slate-soft)">Hindi · Marathi · Malvi</text>
+
+            <rect x="230" y="95" width="170" height="60" rx="8" fill="var(--paper-raised)" stroke="var(--line)" stroke-width="1.2"></rect>
+            <text x="315" y="120" text-anchor="middle" font-size="12" font-weight="600" fill="var(--ink)">Genuine recordings</text>
+            <text x="315" y="136" text-anchor="middle" font-size="9.5" fill="var(--slate-soft)">phone, ordinary room</text>
+
+            <rect x="440" y="30" width="190" height="55" rx="8" fill="var(--paper-raised)" stroke="var(--line)" stroke-width="1.2"></rect>
+            <text x="535" y="52" text-anchor="middle" font-size="12" font-weight="600" fill="var(--ink)">Cloning system A</text>
+            <text x="535" y="68" text-anchor="middle" font-size="9.5" fill="var(--slate-soft)">candidate: IndicF5</text>
+
+            <rect x="440" y="165" width="190" height="55" rx="8" fill="var(--accent-tint)" stroke="var(--accent)" stroke-width="1.6"></rect>
+            <text x="535" y="187" text-anchor="middle" font-size="12" font-weight="700" fill="var(--accent-ink)">Cloning system B — held out</text>
+            <text x="535" y="203" text-anchor="middle" font-size="9.5" fill="var(--accent-ink)">candidate: XTTS-v2 · never trained on</text>
+
+            <rect x="680" y="95" width="170" height="60" rx="8" fill="var(--paper-raised)" stroke="var(--line)" stroke-width="1.2"></rect>
+            <text x="765" y="120" text-anchor="middle" font-size="12" font-weight="600" fill="var(--ink)">Synthetic corpus</text>
+            <text x="765" y="136" text-anchor="middle" font-size="9.5" fill="var(--slate-soft)">per system, kept separate</text>
+
+            <rect x="890" y="95" width="180" height="60" rx="8" fill="var(--paper-raised)" stroke="var(--line)" stroke-width="1.2"></rect>
+            <text x="980" y="118" text-anchor="middle" font-size="12" font-weight="600" fill="var(--ink)">Fine-tune acoustic CM</text>
+            <text x="980" y="134" text-anchor="middle" font-size="9.5" fill="var(--slate-soft)">on genuine + system A only</text>
+
+            <rect x="1110" y="55" width="170" height="50" rx="8" fill="var(--paper-raised)" stroke="var(--line)" stroke-width="1.2"></rect>
+            <text x="1195" y="76" text-anchor="middle" font-size="11.5" font-weight="600" fill="var(--ink)">English benchmark %</text>
+            <text x="1195" y="92" text-anchor="middle" font-size="9" fill="var(--slate-soft)">e.g. ASVspoof eval</text>
+
+            <rect x="1110" y="150" width="170" height="50" rx="8" fill="var(--paper-raised)" stroke="var(--line)" stroke-width="1.2"></rect>
+            <text x="1195" y="171" text-anchor="middle" font-size="11.5" font-weight="600" fill="var(--ink)">Indian-language %</text>
+            <text x="1195" y="187" text-anchor="middle" font-size="9" fill="var(--slate-soft)">before / after fine-tune</text>
+
+            <rect x="440" y="255" width="390" height="55" rx="8" fill="none" stroke="var(--slate-soft)" stroke-width="1.1" stroke-dasharray="4 3"></rect>
+            <text x="635" y="277" text-anchor="middle" font-size="11.5" font-weight="600" fill="var(--slate)">MLAAD (existing multilingual set)</text>
+            <text x="635" y="293" text-anchor="middle" font-size="9.5" fill="var(--slate-soft)">check coverage before recording — CC-BY-NC-4.0</text>
+
+            <path d="M190,125 L230,125" stroke="var(--slate-soft)" stroke-width="1.3" fill="none" marker-end="url(#arrowN2)"></path>
+            <path d="M400,110 L440,65" stroke="var(--slate-soft)" stroke-width="1.3" fill="none" marker-end="url(#arrowN2)"></path>
+            <path d="M400,140 L440,192" stroke="var(--accent)" stroke-width="1.2" fill="none" marker-end="url(#arrowA2)"></path>
+            <path d="M630,58 L680,110" stroke="var(--slate-soft)" stroke-width="1.3" fill="none" marker-end="url(#arrowN2)"></path>
+            <path d="M630,192 L680,140" stroke="var(--accent)" stroke-width="1.2" fill="none" marker-end="url(#arrowA2)"></path>
+            <path d="M850,120 L890,120" stroke="var(--slate-soft)" stroke-width="1.3" fill="none" marker-end="url(#arrowN2)"></path>
+            <text x="865" y="108" text-anchor="middle" font-size="8.5" fill="var(--slate-soft)">A only</text>
+            <path d="M1070,110 L1110,80" stroke="var(--slate-soft)" stroke-width="1.3" fill="none" marker-end="url(#arrowN2)"></path>
+            <path d="M1070,130 L1110,175" stroke="var(--slate-soft)" stroke-width="1.3" fill="none" marker-end="url(#arrowN2)"></path>
+            <path d="M1195,155 C 1195,225 900,300 830,290" stroke="var(--accent)" stroke-width="1.1" fill="none" marker-end="url(#arrowA2)"></path>
+            <text x="1000" y="240" text-anchor="middle" font-size="8.5" fill="var(--accent-ink)">held-out set B is the honest number</text>
+            <path d="M440,270 L400,150" stroke="var(--slate-soft)" stroke-width="1.1" stroke-dasharray="3 3" fill="none" marker-end="url(#arrowN2)"></path>
+          </svg>
+        </div>
+        <figcaption><b>What this shows:</b> the acoustic countermeasure is only ever fine-tuned on genuine recordings plus <em>one</em> cloning system's output. System B is generated for evaluation only and never seen during training — its accuracy number is the honest measure of generalisation, and it's the number that feeds the "Indian-language %" tile judges see in §05.</figcaption>
+      </figure>
+
+      <div class="tbl-wrap">
+        <table class="doc">
+          <tr><th>Tool</th><th>What it's for</th><th>Licence note</th></tr>
+          <tr><td>AI4Bharat IndicF5</td><td>Few-shot voice cloning, 11 Indic languages incl. Hindi/Marathi, from a reference prompt</td><td>Open weights — check terms before any commercial use</td></tr>
+          <tr><td>Coqui XTTS-v2</td><td>Cross-lingual cloning from ~6s audio, Hindi supported since v2.0.3</td><td>CPML — non-commercial without a paid tier; fine for a hackathon eval</td></tr>
+          <tr><td>MLAAD</td><td>51-language, 140-TTS-model spoof dataset — check before recording Hindi/Marathi from scratch</td><td>CC-BY-NC-4.0, academic use — and it won't cover Malvi, a regional dialect no public dataset targets</td></tr>
+        </table>
+      </div>
+    </section>
+
+    <!-- 03 RISK SCORE -->
+    <section id="risk">
+      <div class="section-head"><span class="section-num">03</span><h2 class="section-title">The risk score</h2></div>
+      <p class="section-sub">The acoustic model gives one number. What the operator sees should be more than that number, and it should be legible: three components, each with its own bar, combined by a visible formula — not a second model.</p>
+
+      <div class="tbl-wrap">
+        <table class="doc">
+          <tr><th>Layer</th><th>Contributes</th><th>Difficulty</th></tr>
+          <tr><td>Acoustic</td><td>Probability the waveform was synthesised — the core signal</td><td>The main build</td></tr>
+          <tr><td>Prosodic</td><td>Rhythm, pitch contour, pause distribution, breath placement — synthesis is often too even</td><td>Moderate, worth adding if time allows</td></tr>
+          <tr><td>Third signal</td><td>Config-selectable — see below</td><td>Depends on which mode</td></tr>
+        </table>
+      </div>
+
+      <p style="font-family:'IBM Plex Mono',monospace; font-size:12px; letter-spacing:.05em; text-transform:uppercase; color:var(--slate-soft); margin-top:6px;" id="pluggable">Pluggable third signal — chosen at runtime, not hardcoded</p>
+      <p style="font-size:14px; color:var(--slate); max-width:70ch;">The brief's contextual layer (cheap, no enrollment) and a speaker-consistency check (stronger, more infrastructure) solve a similar problem differently. Rather than pick one and lose the other, wire the fusion engine to read which one is active from config — swap it per environment, per demo, or per how much of the team's time is left.</p>
+
+      <div class="model-grid">
+        <div class="model-card default">
+          <div class="model-head">
+            <h4>Contextual signal</h4>
+            <span class="status-pill done">built</span>
+            <span class="cfg-pill">THIRD_SIGNAL_MODE = "contextual"</span>
+          </div>
+          <p class="model-desc">Rule-based: is the number known? First contact? Unusual hour? Is the request financial? Does urgency language appear in the transcript?</p>
+          <div class="pros-cons">
+            <div class="pc pros"><h5>Pros</h5><ul>
+              <li>No ML or enrollment infra — a rules engine, buildable in hours</li>
+              <li>Zero privacy/consent burden — no voiceprint ever stored</li>
+              <li>Legible to judges — each rule is plain English on the bar</li>
+              <li>Works from the first call — no cold-start</li>
+            </ul></div>
+            <div class="pc cons"><h5>Cons</h5><ul>
+              <li>Weak alone — an attacker who knows the target's number and calls in business hours evades it entirely</li>
+              <li>Static rules, easy to game once known</li>
+              <li>Estimates plausibility of context, not identity</li>
+            </ul></div>
+          </div>
+        </div>
+
+        <div class="model-card">
+          <div class="model-head">
+            <h4>Speaker consistency</h4>
+            <span class="status-pill done">built</span>
+            <span class="cfg-pill">THIRD_SIGNAL_MODE = "consistency"</span>
+          </div>
+          <p class="model-desc">Embedding similarity between the live stream and a voiceprint enrolled ahead of time for the claimed identity — built on SpeechBrain's ECAPA-TDNN (Apache-2.0), with a working enrollment flow (enroll / list / delete). The cosine-similarity thresholds are an honest placeholder pending calibration on labeled data, not yet a validated cutoff.</p>
+          <div class="pros-cons">
+            <div class="pc pros"><h5>Pros</h5><ul>
+              <li>Checks identity directly — harder to defeat even for an attacker who knows the system exists</li>
+              <li>Genuinely orthogonal to acoustic: "is this synthetic" vs. "does this match who they claim to be"</li>
+              <li>Answers the sharper judge question: "what if the fraudster avoids the contextual heuristics?"</li>
+            </ul></div>
+            <div class="pc cons"><h5>Cons</h5><ul>
+              <li>Needs an enrollment flow, consent record, embedding store, TTL — real extra build days</li>
+              <li>Cold-start: no signal for anyone not yet enrolled</li>
+              <li>Adds a biometric-adjacent privacy surface a lean build may not want to defend under questioning</li>
+            </ul></div>
+          </div>
+        </div>
+      </div>
+
+      <details class="appendix" open>
+        <summary>Config &amp; fallback logic <span class="status-pill done" style="margin-left:8px;">as-built</span></summary>
+        <p style="margin:10px 0 0 0; font-size:13.5px; color:var(--slate);">Built exactly as planned, down to the weights and the fallback order. Default mode is <code>auto</code>: prefer consistency when a voiceprint is on file for <code>claimed_identity</code>, fall back to contextual otherwise, and if neither produces a score fusion renormalises the remaining weights rather than silently scoring a zero — this abstain-aware behaviour is asserted by an automated test, not just described. The real config lives in <code>config/risk_formula.yaml</code>, loaded and swappable at runtime with no code change:</p>
+        <pre class="mono"># config/risk_formula.yaml (as actually shipped)
+formula_version: "2026.09.3"
+detectors:
+  - name: acoustic
+    class: app.adapters.detectors.acoustic_aasist:AasistAcousticDetector
+    weight: 0.6
+  - name: prosodic
+    class: app.adapters.detectors.prosody_parselmouth:ParselmouthProsodyDetector
+    weight: 0.2
+  - name: third_signal
+    class: app.adapters.detectors.third_signal_router:ThirdSignalRouter
+    weight: 0.2
+    params:
+      mode: auto   # contextual | consistency | auto
+      contextual_class: app.adapters.detectors.contextual_rules:ContextualRulesDetector
+      consistency_class: app.adapters.detectors.voiceprint_consistency:VoiceprintConsistencyDetector
+
+fusion:
+  class: app.adapters.fusion.weighted_sum:WeightedSumFusion
+  smoothing_alpha: 0.35   # EMA smoothing across a session's windows</pre>
+      </details>
+
+      <p style="font-family:'IBM Plex Mono',monospace; font-size:12px; letter-spacing:.05em; text-transform:uppercase; color:var(--slate-soft); margin-top:30px;">risk = 0.6 × acoustic + 0.2 × prosodic + 0.2 × third — bands</p>
+      <div class="riskmeter">
+        <div class="riskmeter-item low">
+          <div class="band">Low</div>
+          <div class="range tabular">0–34</div>
+          <div class="action">Consistent with natural speech. Nothing — silence is the correct behaviour.</div>
+        </div>
+        <div class="riskmeter-item med">
+          <div class="band">Elevated</div>
+          <div class="range tabular">35–69</div>
+          <div class="action">Some synthesis indicators present. A quiet on-screen advisory, no interruption.</div>
+        </div>
+        <div class="riskmeter-item high">
+          <div class="band">High</div>
+          <div class="range tabular">70–100</div>
+          <div class="action">Strong synthesis indicators. Block the pending action; require call-back or a second approver.</div>
+        </div>
+      </div>
+
+      <div class="callout">
+        <div class="callout-title">Design the false-positive path deliberately</div>
+        <p style="margin:0;">A system that cries wolf on genuine callers gets switched off in week one of real deployment, and a sharp judge will ask about exactly this. The high band never blocks the call itself, only the sensitive action, and there's always a documented path to proceed — call back on a number already on file. Tune thresholds so genuine speech almost never reaches High, and say out loud what that costs in missed detections.</p>
+      </div>
+    </section>
+
+    <!-- 04 DIFFERENTIATOR -->
+    <section id="differentiator">
+      <div class="section-head"><span class="section-num">04</span><h2 class="section-title">The differentiator: Indian languages</h2> <span class="status-pill todo">not started</span></div>
+      <div class="callout status-todo">
+        <div class="callout-title">Status — the biggest open gap</div>
+        <p>Nothing in this section has started. No volunteers recruited, no consent forms drafted, no recordings made, no cloning system run, no fine-tuning attempted. The acoustic detector built in §02 is AASIST's own published English checkpoint, used as-is — it has had zero exposure to Hindi, Marathi, or Malvi. This is the single most consequential remaining item: it's the one part of the brief a competing team is unlikely to also have done, and right now it's the one part not yet begun here either.</p>
+      </div>
+      <div class="callout source">
+        <div class="callout-title">From the brief — the single line that decides the project</div>
+        <p style="margin:0;">Public spoof-detection research is overwhelmingly English. Models trained on English corpora degrade markedly on other languages and unfamiliar accents. AICTE explicitly asks for Indian languages and regional accents — almost no team relying on off-the-shelf benchmarks will have measured this gap.</p>
+      </div>
+      <p>Everything in §01–03 is competent engineering a good team elsewhere will also produce, and it's now genuinely built (see §00). This section is the one most teams skip — and, so far, this team too.</p>
+
+      <ol class="plain">
+        <li>Recruit ~20 classmates speaking Hindi, Marathi and Malvi. Written consent — a one-page form naming exactly what the recordings are used for and how long they're kept.</li>
+        <li>Record each person reading the same 8–10 sentences, on a phone, in an ordinary room. Real conditions matter more than studio quality.</li>
+        <li>Generate cloned versions of those same voices using at least two different open-source synthesis systems.</li>
+        <li>Hold one synthesis system back entirely — never train on it. It's the honest test.</li>
+        <li>Measure the English-trained model on this set, fine-tune on the Indian-language data, and measure again.</li>
+      </ol>
+
+      <div class="callout">
+        <div class="callout-title">The two numbers that win the round</div>
+        <p style="margin:0;">Accuracy on English benchmarks, and accuracy on Indian languages before any adaptation. The gap will be large — that's the whole argument. Then show it closing after fine-tuning. A genuine, honest, measured contribution from six undergraduates in five weeks, and exactly what the sponsoring body asked for.</p>
+      </div>
+
+      <p style="font-family:'IBM Plex Mono',monospace; font-size:12px; letter-spacing:.05em; text-transform:uppercase; color:var(--slate-soft); margin-top:26px;">Consent and ethics — non-negotiable, set on day one</p>
+      <ul class="plain">
+        <li>Only voices of consenting team members and volunteers. Never a real official, executive, or public figure, however dramatic the demo would be.</li>
+        <li>Written consent for every recorded voice, kept on file, with a stated retention period.</li>
+        <li>Never publish the cloned audio anywhere. It stays on team machines and is deleted after the event.</li>
+      </ul>
+      <blockquote class="mic-drop">"Every voice in this demonstration belongs to someone in this room, with their written consent."</blockquote>
+    </section>
+
+    <!-- 05 DEMO -->
+    <section id="demo">
+      <div class="section-head"><span class="section-num">05</span><h2 class="section-title">The demo</h2></div>
+      <p class="section-sub">Six minutes. Rehearse it until it's muscle memory.</p>
+      <div class="callout status-done">
+        <div class="callout-title">Status</div>
+        <p style="margin:0;">Beats 1–3 work today, live, in a real browser dashboard (upload a file or speak into a mic, watch the score and the three component bars move) — not a mock-up. Beats 4–6 don't exist yet: no mock banking screen, no Indian-language results table, because §04 hasn't produced one. Rehearsing this demo today would stop after beat 3.</p>
+      </div>
+      <div class="beat-list">
+        <div class="beat"><span class="beat-num">1</span><p><span class="status-pill done">built</span> A team member speaks live into the microphone. The meter sits low and green, and <strong>stays</strong> there. Let the silence work — staying quiet on genuine speech is the harder half.</p></div>
+        <div class="beat"><span class="beat-num">2</span><p><span class="status-pill partial">partial</span> Play a cloned recording of that same person, cloned with consent, saying something plausible. The meter climbs within two seconds and crosses into High. <em>(The scoring and dashboard are real and do this; a genuine consented same-person clone to play has not been recorded yet — §04.)</em></p></div>
+        <div class="beat"><span class="beat-num">3</span><p><span class="status-pill done">built</span> Show the three components — acoustic, prosodic, third signal — so the panel sees <strong>why</strong> the score moved, not just that it did. Every bar links to an inline "?" explaining what it means.</p></div>
+        <div class="beat"><span class="beat-num">4</span><p><span class="status-pill todo">not started</span> Switch to the mock banking screen. A transfer approval is pending. It refuses, and offers call-back on a number already on file.</p></div>
+        <div class="beat"><span class="beat-num">5</span><p><span class="status-pill todo">not started</span> Show the results table: English-benchmark accuracy, Indian-language accuracy before adaptation, and after. Name the synthesis system held back from training.</p></div>
+        <div class="beat"><span class="beat-num">6</span><p><span class="status-pill todo">not started</span> Close on the consent statement, then on the gap that remains and what would close it.</p></div>
+      </div>
+      <blockquote class="mic-drop">"A voice used to be proof. It is not any more. This puts a number on how much you should believe one."</blockquote>
+      <p style="font-size:13px; color:var(--slate-soft);">Then stop talking.</p>
+    </section>
+
+    <!-- 06 RISKS -->
+    <section id="risks">
+      <div class="section-head"><span class="section-num">06</span><h2 class="section-title">Risks, limitations &amp; scale</h2></div>
+      <p class="section-sub">Known risks the brief already names, then a longer honest look at what this design can't currently do — technically, ethically, and at scale. Naming these is not hedging; a system that claims none of this reads as less credible to a technical judge, not more.</p>
+
+      <div class="callout explainer">
+        <div class="callout-title">In plain terms</div>
+        <p style="margin:0;">No detector like this is perfect, forever, or ready for the real world on day one — and that's normal, not a flaw specific to this project. This section is the honest version of "what could still go wrong": some of it is technical (the system can be fooled or confused in specific situations), some of it is about fairness and privacy (the system needs to be used carefully and not blindly trusted), and some of it is about size (a five-week student build is not the same thing as a system a bank could actually switch on tomorrow). Knowing exactly where these gaps are is what makes this a serious piece of engineering rather than a demo trick.</p>
+      </div>
+
+      <div class="tbl-wrap">
+        <table class="doc">
+          <tr><th>Risk</th><th>Mitigation</th><th>What we say</th></tr>
+          <tr><td>Generalisation — the known hard problem</td><td>Hold back one synthesis system entirely; report against it. Testing only on the generator you trained on produces fiction.</td><td>"Here is our accuracy on a synthesis system we never trained on."</td></tr>
+          <tr><td>Latency</td><td>Streaming from week three. Overlapping windows, rolling smoothing, sub-second updates.</td><td>Show it moving mid-sentence rather than describing it.</td></tr>
+          <tr><td>False positives</td><td>Tune so genuine speech rarely reaches High; never block the call, only the sensitive action.</td><td>Name the trade-off explicitly and give the missed-detection cost.</td></tr>
+          <tr><td>Scope creep</td><td>Build only the five items in §01's Build column.</td><td>"Depth on detection over breadth on integration" — a choice, not an omission.</td></tr>
+        </table>
+      </div>
+
+      <h3 id="tech-limits" style="font-size:16px; margin:32px 0 12px 0;">Technical limitations</h3>
+      <p style="font-size:14px; color:var(--slate); max-width:70ch; margin-top:-6px;">Beyond any single mitigatable risk, these are structural limits of this class of system — worth understanding, not worth pretending don't exist. Each starts with the plain-language version, then the technical detail.</p>
+      <div class="tbl-wrap">
+        <table class="doc">
+          <tr><th>Limitation</th><th>Why it matters</th></tr>
+          <tr><td>Codec &amp; compression sensitivity</td><td><span class="plain-lead">In plain terms: squashing a call through a phone network can wipe out the very clues the detector relies on.</span> Real phone audio passes through lossy codecs (AMR-NB/EVS on telecom, Opus on VoIP) that strip exactly the high-frequency and phase artifacts the acoustic countermeasure relies on. A model that scores well on clean ASVspoof-style audio can degrade sharply once it's actually carried over a call — this is precisely why ASVspoof5 built codec robustness into its baseline. Evaluate on codec-compressed copies of the eval set before trusting the accuracy number.</td></tr>
+          <tr><td>Short-window signal starvation</td><td><span class="plain-lead">In plain terms: a short, quiet, or noisy snippet may not give the system enough to work with.</span> A 2-second window is short. Quiet speech, cross-talk, or a noisy line can leave the acoustic model with too little signal to be confident — and that uncertainty needs to be visible on the dashboard as a confidence value, not hidden inside a single score that looks equally sure either way.</td></tr>
+          <tr><td>Adversarial arms race</td><td><span class="plain-lead">In plain terms: because the method is built from public research, someone determined enough could eventually study the same papers and try to beat it.</span> Detection built partly from published, open research (AASIST, RawGAT-ST) can in principle be tuned against by an attacker with the same papers. This is not a solvable-once problem — the honest framing is "raises the cost of the attack," not "closes it."</td></tr>
+          <tr><td>Voiceprint drift &amp; cold start</td><td><span class="plain-lead">In plain terms: a person's voice changes over time, and anyone who never "signed up" in advance gets no benefit from this particular check.</span> Consistency mode only: illness, aging, emotional state, or a bad phone mic can shift a voice enough to look like a mismatch against an old enrollment, and anyone never enrolled gets no signal from this layer at all — exactly why §03 makes it config-selectable with a contextual fallback rather than failing silently.</td></tr>
+          <tr><td>Fusion is only as strong as its weakest live signal</td><td><span class="plain-lead">In plain terms: if one of the three checks can't run, the score is quietly based on the other two — and the screen has to say so, not hide it.</span> If the third signal abstains — no enrollment on file, no usable call metadata — fusion is quietly running on two components, not three. A score that doesn't say so is misleading; the per-component bars in §03 exist specifically so a missing signal is visible rather than absorbed into one number.</td></tr>
+        </table>
+      </div>
+
+      <h3 id="ethics" style="font-size:16px; margin:32px 0 12px 0;">Ethical considerations</h3>
+      <p style="font-size:14px; color:var(--slate); max-width:70ch; margin-top:-6px;">§04 covers consent for recording voices used in the build. This is broader — the ethical exposure of the system itself, once it exists.</p>
+      <ul class="plain">
+        <li><strong>Automation bias.</strong> <span class="plain-lead">In plain terms: people tend to trust a number just because it's a number, even when it's wrong.</span> An operator who sees a score tends to trust the score. A "Low" reading on a genuinely dangerous call is still a real failure mode — the interface must read as an advisory, never as a verdict, and the operator keeps the decision either way.</li>
+        <li><strong>Differential accuracy is a fairness problem, not just an engineering one.</strong> <span class="plain-lead">In plain terms: if the system is trained mostly on some accents or languages, it may work worse for exactly the speakers it's meant to protect.</span> A near-certainty on a five-week build (by §04's own admission) means the false-negative rate is higher for underrepresented voices — the group the Indian-language differentiator is meant to protect could be the least protected in practice, until the fine-tuning claimed in §04 is verified end to end, not just measured in aggregate.</li>
+        <li><strong>Dual-use risk.</strong> <span class="plain-lead">In plain terms: explaining exactly how we catch fake voices could also teach someone how to avoid getting caught.</span> The same acoustic and prosodic signals that reveal synthetic speech are a reasonable guide to what a cloning system would need to fix to evade detection. Publishing results responsibly means sharing the honest accuracy numbers without also publishing a ready-made "how to beat this" recipe.</li>
+        <li><strong>Privacy of the embedding, not just the audio.</strong> <span class="plain-lead">In plain terms: even a mathematical fingerprint of someone's voice is still personal information about them.</span> "We don't store raw audio" is true and necessary, but a voiceprint embedding is still biometric data — it needs the same seriousness the brief already gives audio retention, including a real deletion path tied to consent withdrawal, not just a TTL number in a design doc.</li>
+        <li><strong>Reputational harm of a false positive.</strong> <span class="plain-lead">In plain terms: quietly flagging someone as a possible fake can unfairly embarrass a real, innocent caller if it happens by mistake.</span> Flagging a genuine caller as a probable clone — even privately, to one operator — is not a neutral event for that person if it recurs or leaks. The operator-facing language should match §03's framing: an advisory prompting a call-back, never an accusation.</li>
+      </ul>
+
+      <h3 id="scaling" style="font-size:16px; margin:32px 0 12px 0;">Scaling: prototype vs. production</h3>
+      <p style="font-size:14px; color:var(--slate); max-width:70ch; margin-top:-6px;">Everything below is out of scope by design (§01's Skip column) — but a judge asking "what happens next" deserves an honest answer, not a claim that the prototype already handles it.</p>
+      <div class="tbl-wrap">
+        <table class="doc">
+          <tr><th>Concern</th><th>Where the prototype stops</th><th>What production actually needs</th></tr>
+          <tr><td>Concurrency</td><td>One call at a time, single-process inference</td><td><span class="plain-lead">In plain terms: a real call centre handles thousands of calls at once, not one.</span> Batched/quantised inference and autoscaled workers, not one FastAPI process.</td></tr>
+          <tr><td>Voiceprint store</td><td>A Postgres table of a handful of enrolled testers</td><td><span class="plain-lead">In plain terms: storing a few test voices is easy; storing millions of customers' voiceprints safely is a much bigger job.</span> Needs a proper vector index (ANN search) with access control, not a linear scan.</td></tr>
+          <tr><td>Language/accent coverage</td><td>One held-out honest number, two languages plus one dialect</td><td><span class="plain-lead">In plain terms: India has far more languages and dialects than a five-week build can realistically cover.</span> 22 scheduled languages and hundreds of dialects — each one claimed needs its own consented dataset and its own held-out evaluation, a standing data-operations commitment, not a one-time build.</td></tr>
+          <tr><td>Threshold recalibration</td><td>Thresholds hand-tuned once against a small eval set</td><td><span class="plain-lead">In plain terms: what counts as "suspicious" today may need retuning later as real callers and real fraud patterns change.</span> Needs periodic, monitored recalibration — designed carefully against the "no live retrain" privacy stance in §02, not simply reversed to fix it.</td></tr>
+          <tr><td>Compliance</td><td>Explicitly out of scope (§01)</td><td><span class="plain-lead">In plain terms: a real bank or government deployment has legal obligations this prototype was deliberately built to skip for now.</span> Data-protection law, telecom regulation, and audit-trail requirements.</td></tr>
+        </table>
+      </div>
+
+      <div class="callout">
+        <div class="callout-title">Say it out loud</div>
+        <p style="margin:0;">"This prototype proves the detection mechanism works. It does not yet prove it scales, and we can tell you exactly what would have to be true for it to." That sentence, said before a judge asks, reads as engineering judgement — the same move §01 already makes about integration breadth, applied here to production readiness.</p>
+      </div>
+    </section>
+
+    <!-- 07 TESTING -->
+    <section id="testing">
+      <div class="section-head"><span class="section-num">07</span><h2 class="section-title">Test strategy</h2></div>
+      <p class="section-sub">The brief's held-out-generator rule is the centrepiece; the layers below are the scaffolding that makes the Gate 3 and Gate 5 numbers in §08 reproducible on demand, not just claimed.</p>
+
+      <div class="tbl-wrap">
+        <table class="doc">
+          <tr><th>Layer</th><th>What it catches</th><th>How</th></tr>
+          <tr><td>Unit</td><td>Broken windowing, schema drift, fusion math errors</td><td>Feed a known tone, assert pitch extraction returns it; validate every interface contract (Appendix) with Pydantic on both sides.</td></tr>
+          <tr><td>Offline model eval</td><td>A detector that doesn't actually discriminate</td><td>Run the acoustic model over a held-out public benchmark and over the Indian-language set from §04 — compute accuracy/EER for both, per §08's Gate 3 and Gate 5.</td></tr>
+          <tr><td>Held-out generator</td><td>A model that only recognises its own training-time synthesis tool</td><td>Per §04 step 4 — one cloning system is never touched in training and is the only one used for the honest number.</td></tr>
+          <tr><td>Adversarial robustness</td><td>Score collapsing under trivial evasion</td><td>Re-run the eval set through added noise, resampling, mp3 re-encoding; the score should degrade, not flip sign.</td></tr>
+          <tr><td>Integration / E2E</td><td>Components working alone but not together</td><td>Genuine clip → assert Low within budget; cloned clip → assert High within budget, mock approval blocks.</td></tr>
+          <tr><td>UAT</td><td>An alert nobody understands what to do with</td><td>Someone outside the team walks the demo cold; time-to-correct-action is the metric.</td></tr>
+          <tr><td>Ethics / consent</td><td>Retention or consent gaps</td><td>Automated check: no raw audio persists past session end; every enrolled/recorded voice has a consent record with a retention date.</td></tr>
+        </table>
+      </div>
+    </section>
+
+    <!-- 08 EVALUATION -->
+    <section id="evaluation">
+      <div class="section-head"><span class="section-num">08</span><h2 class="section-title">Evaluation &amp; success criteria</h2></div>
+      <p class="section-sub">Three different questions, at three different levels: does the model actually detect cloned speech, did the team actually build the thing, and does the finished prototype actually satisfy what a judging panel is scoring. Each gets a number or a yes/no — not a feeling.</p>
+
+      <h3 id="eval-model" style="font-size:16px; margin:32px 0 12px 0;">Model-level: does detection actually work</h3>
+      <p style="font-size:14px; color:var(--slate); max-width:70ch; margin-top:-6px;">The scorecard version of §07's test strategy — fill in the measured column as each one is run, rather than waiting until the end to check.</p>
+      <div class="tbl-wrap">
+        <table class="doc">
+          <tr><th>Metric</th><th>Target</th><th>Measured on</th><th>Status</th></tr>
+          <tr><td class="tabular">EER (spectral countermeasure)</td><td class="tabular">&lt; 10%</td><td>Held-out public benchmark eval split</td><td><span class="status-pill todo">not measured yet</span></td></tr>
+          <tr><td class="tabular">Chunk-to-score latency, p95</td><td class="tabular">&lt; 2.5s</td><td>Concurrent-session load test</td><td><span class="status-pill done">~2s/window observed</span></td></tr>
+          <tr><td class="tabular">Alert precision at High band</td><td class="tabular">&gt; 80%</td><td>Scripted E2E set, manually labelled</td><td><span class="status-pill todo">not measured yet</span></td></tr>
+          <tr><td class="tabular">Indian-language gap</td><td class="tabular">reported, not hidden</td><td>Before/after fine-tune, held-out synthesis system (§04)</td><td><span class="status-pill todo">not started</span></td></tr>
+        </table>
+      </div>
+
+      <h3 id="eval-build" style="font-size:16px; margin:32px 0 12px 0;">Build-level: did we actually build it</h3>
+      <p style="font-size:14px; color:var(--slate); max-width:70ch; margin-top:-6px;">Each milestone has a binary answer — reproducible on demand, not claimed from memory. Don't call the next one done until the previous one actually is.</p>
+      <div class="timeline">
+        <div class="gate">
+          <div class="gate-week">Week 1 · Gate 1</div>
+          <div class="gate-title">Data and licences <span class="status-pill partial">partial</span></div>
+          <div class="gate-desc">A written list of datasets and the pre-trained model, each with its licence checked. Done for the models actually used (AASIST/MIT, Parselmouth/GPLv3, SpeechBrain ECAPA-TDNN/Apache-2.0 — each verified installable with no auth). Not done for §04's Indian-language dataset — no recordings, no licences, because nothing has been collected yet.</div>
+        </div>
+        <div class="gate">
+          <div class="gate-week">Week 1 · Gate 2</div>
+          <div class="gate-title">Compute <span class="status-pill done">done</span></div>
+          <div class="gate-desc">GPU access confirmed, and something already run on it. Turned out unnecessary for this scope — every model runs CPU-only (inference on pretrained checkpoints, no training), verified running in a plain Docker container with no GPU.</div>
+        </div>
+        <div class="gate">
+          <div class="gate-week">Week 2 · Gate 3</div>
+          <div class="gate-title">Baseline number <span class="status-pill partial">partial</span></div>
+          <div class="gate-desc">An accuracy figure on a public benchmark, reproduced live, not just quoted. The model is wired in and produces real scores reproducibly — but no EER/accuracy figure has been independently measured by the team against a public benchmark split yet; it's running on its published checkpoint as-is.</div>
+        </div>
+        <div class="gate">
+          <div class="gate-week">Week 3 · Gate 4</div>
+          <div class="gate-title">Streaming <span class="status-pill done">done</span></div>
+          <div class="gate-desc">The score visibly changes while audio is still playing. Not batch. Real: a browser dashboard streams microphone audio over a WebSocket and the risk meter updates live, window by window.</div>
+        </div>
+        <div class="gate">
+          <div class="gate-week">Week 4 · Gate 5</div>
+          <div class="gate-title">Indian-language result <span class="status-pill todo">not started</span></div>
+          <div class="gate-desc">Two measured numbers: English benchmark, and the Indian-language set. Nothing yet — see §04 and §00.</div>
+        </div>
+        <div class="gate">
+          <div class="gate-week">Week 5 · Gate 6</div>
+          <div class="gate-title">End to end <span class="status-pill partial">partial</span></div>
+          <div class="gate-desc">Call in, meter rises, approval blocks. Ugly is acceptable. Call-in and meter-rises are real and working (file upload or live mic, in a real dashboard with history and voiceprint enrollment). "Approval blocks" is not: the API returns a <code>recommended_action</code> string; no UI actually enforces a block yet.</div>
+        </div>
+      </div>
+
+      <h3 id="eval-judging" style="font-size:16px; margin:32px 0 12px 0;">Competition-level: what a judging panel is actually scoring</h3>
+      <div class="tbl-wrap">
+        <table class="doc">
+          <tr><th>What's being judged</th><th>What this build points to</th></tr>
+          <tr><td>Innovation / uniqueness</td><td>The held-out-generator Indian-language methodology in §04 — the one thing a competing team is unlikely to also have measured</td></tr>
+          <tr><td>Technical feasibility</td><td>The architecture in §02 actually running end to end, live, not simulated — Gate 4 above</td></tr>
+          <tr><td>Usefulness / relevance to the problem statement</td><td>The Build/Skip discipline in §01, and a mock banking approval that actually blocks on High risk</td></tr>
+          <tr><td>Scalability &amp; sustainability</td><td>Answered honestly in §06's Scaling section, not glossed over or claimed solved</td></tr>
+          <tr><td>Presentation</td><td>The six-minute demo script in §05</td></tr>
+        </table>
+      </div>
+
+      <div class="callout">
+        <div class="callout-title">The one-sentence success bar</div>
+        <p style="margin:0;">A sceptical judge watches a genuine and a cloned clip diverge live, asks what happens with background noise and gets a straight adversarial-test answer, then asks what happens to voice data and gets a straight privacy answer. Everything above exists to make that moment survive contact with someone who pushes back.</p>
+      </div>
+    </section>
+
+    <!-- 09 APPENDIX -->
+    <section id="appendix">
+      <div class="section-head"><span class="section-num">09</span><h2 class="section-title">Appendix</h2></div>
+
+      <details class="appendix" open>
+        <summary>Interface contract — freeze before wiring components together</summary>
+        <p style="margin:10px 0 0 0; font-size:13.5px; color:var(--slate);">This is what stops a change in one detector's output from silently breaking the fusion logic downstream. Agree these shapes before any two components are wired together for real, not after.</p>
+        <pre class="mono">// window → detector(s)
+{ "session_id": "sess_8f2a", "seq": 42, "sample_rate": 16000,
+  "pcm_f32": [ /* one 2s window, 0.5s step */ ], "window_start_ms": 126000 }
+
+// detector → fusion
+{ "session_id": "sess_8f2a", "seq": 42, "detector": "acoustic" | "prosodic" | "third",
+  "score": 0.0-1.0, "mode": "contextual" | "consistency" | null }
+
+// fusion → dashboard
+{ "session_id": "sess_8f2a", "fused_score": 0-100, "band": "low" | "elevated" | "high",
+  "components": {"acoustic": 0.81, "prosodic": 0.44, "third": 0.30},
+  "recommended_action": "Request call-back on registered number" }</pre>
+      </details>
+
+      <details class="appendix">
+        <summary>Glossary</summary>
+        <div style="margin-top:10px; font-size:14px; color:var(--slate);">
+          <p><strong>Countermeasure (CM):</strong> the research term for a spoof-detection model — what the acoustic detector in §02 wraps.</p>
+          <p><strong>EER (Equal Error Rate):</strong> the point where false-accept and false-reject rates are equal; lower is better.</p>
+          <p><strong>Embedding:</strong> a fixed-length vector representing a voice, used for similarity comparison instead of storing raw audio — only relevant in <code>consistency</code> mode.</p>
+          <p style="margin-bottom:0;"><strong>Held-out generator:</strong> a voice-cloning tool deliberately excluded from training, used only to measure honest generalisation.</p>
+        </div>
+      </details>
+    </section>
+
+    <div class="foot">Satya-Vani Blueprint · SIH26104 · reconciled with the team's uploaded solution brief — that brief is authoritative on scope, team, and strategy; update the interface contract in the Appendix before changing any component boundary, not after.</div>
+  </main>
+</div>
+</body>
+</html>

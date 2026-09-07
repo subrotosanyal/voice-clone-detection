@@ -67,6 +67,8 @@ services/live-call-api/         # the one service that exists so far
   tests/                        # unit + integration, see docs/testing.md
 scripts/gen_test_audio.py       # synthetic (non-voice) smoke-test fixtures
 docs/                           # architecture, risk model, running, testing
+docs/blueprint.html             # the original SIH26104 planning blueprint, annotated
+                                 # with real build status + a progress Gantt chart (§00)
 ```
 
 ## Adding a new risk factor
