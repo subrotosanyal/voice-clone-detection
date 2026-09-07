@@ -82,6 +82,23 @@ discipline: real license/fetchability verification before adoption)
 - **Coqui XTTS-v2 for Marathi** — XTTS-v2 supports 17 languages including
   Hindi (added in v2.0.3) but not Marathi. Used for Hindi only.
 
+### Under investigation — not yet adopted
+
+- **[TheAIchemist13/gramvaani_preprocessed_hi_train](https://huggingface.co/datasets/TheAIchemist13/gramvaani_preprocessed_hi_train)**
+  — real, natural (not studio-read) Hindi speech: 37,080 examples, ~15GB
+  compressed, from GramVaani/Mobile Vaani's community-journalism audio.
+  Ungated, but **its dataset card has no license field at all**
+  ("[More Information needed]") — unlike the two corpora above, this has
+  not been verified and is not part of the eval pipeline. 10 sample
+  utterances were fetched to `data/unverified_license/gramvaani_hi/` for
+  manual inspection only (gitignored, ~3MB) — real, natural field
+  recordings (community-news style content, not read speech), which would
+  be a genuinely useful complement to IndicTTS-Hindi's studio recordings
+  if the license clears. **Do not use this data in the committed pipeline
+  (fetch_genuine_corpus.py, fine-tuning, or anything reported as a result)
+  until its licence is actually confirmed** — the original GramVaani ASR
+  Challenge terms would be the place to check next.
+
 ## Sentence set
 
 `prompts/sentences.md` — 10 fixed sentences (English source + Hindi +
