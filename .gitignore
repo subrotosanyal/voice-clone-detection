@@ -17,3 +17,10 @@ services/live-call-api/app/adapters/embeddings/.cache/
 # session history — local runtime data, not committed. See
 # app/adapters/history/sqlite_store.py and docker-compose.yml's volume for it.
 services/live-call-api/data/
+
+# Indian-language eval pipeline — fetched/generated audio, not committed
+# (see eval/indian_language/README.md). Only results/summary.json (numbers,
+# no audio) is tracked.
+eval/indian_language/.venv/
+eval/indian_language/data/
+eval/indian_language/results/*.wav

@@ -1,0 +1,23 @@
+{
+  "languages": {
+    "hi": {
+      "n_genuine": 20,
+      "n_synthetic": 0,
+      "bonafide_accuracy": 0.85,
+      "spoof_accuracy": null,
+      "eer": null,
+      "mean_spoof_probability_genuine": 0.1542560460868117
+    },
+    "mr": {
+      "n_genuine": 20,
+      "n_synthetic": 0,
+      "bonafide_accuracy": 0.95,
+      "spoof_accuracy": null,
+      "eer": null,
+      "mean_spoof_probability_genuine": 0.06554454403158161
+    }
+  },
+  "notes": [
+    "No synthetic corpus found — this run only measures AASIST's false-positive rate on genuine speech, not full bonafide-vs-spoof EER. Run scripts/generate_synthetic_corpus.py to add the spoof side."
+  ]
+}

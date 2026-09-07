@@ -637,20 +637,27 @@ figure.diagram figcaption b{color:var(--slate); font-weight:600;}
               <text x="618" y="301">✓ done</text>
             </g>
 
+            <!-- row 9 (Indian-language) is now PARTIAL: solid portion done, dashed remainder -->
+            <g fill="var(--risk-med)" opacity="0.88">
+              <rect x="610" y="324" width="70" height="14" rx="4"></rect>
+            </g>
+            <g font-family="'IBM Plex Mono', monospace" font-size="10.5" font-weight="700" fill="var(--risk-med)">
+              <text x="688" y="335">◐ in progress</text>
+            </g>
+
             <!-- NOT STARTED bars (dashed outline) -->
             <g fill="none" stroke="var(--risk-high)" stroke-width="1.4" stroke-dasharray="4 3">
-              <rect x="610" y="324" width="224" height="14" rx="4"></rect>
+              <rect x="680" y="324" width="154" height="14" rx="4"></rect>
               <rect x="770" y="358" width="96" height="14" rx="4"></rect>
               <rect x="850" y="392" width="240" height="14" rx="4"></rect>
             </g>
             <g font-family="'IBM Plex Mono', monospace" font-size="10.5" font-weight="700" fill="var(--risk-high)">
-              <text x="840" y="335">not started</text>
               <text x="872" y="369">not started</text>
               <text x="1096" y="403">not started</text>
             </g>
           </svg>
         </div>
-        <figcaption><b>What this shows:</b> the pluggable detection core (rows 1–8) is complete — built, wired to real pretrained models, and running end to end in Docker, roughly within the first three weeks of the plan's five-week window. The Indian-language differentiator, the mock banking approval, and adversarial/production hardening (rows 9–11) haven't started — they remain scheduled for weeks 3 through the pre-event buffer, exactly as the original plan intended, just not yet begun.</figcaption>
+        <figcaption><b>What this shows:</b> the pluggable detection core (rows 1–8) is complete — built, wired to real pretrained models, and running end to end in Docker, roughly within the first three weeks of the plan's five-week window. The Indian-language differentiator (row 9) has now started — real, license-verified genuine Hindi/Marathi speech scored through the same AASIST model, a first real number in hand (see §04) — with the synthetic/spoof side, a second held-out system, and Malvi still remaining. The mock banking approval and adversarial/production hardening (rows 10–11) haven't started at all.</figcaption>
       </figure>
 
       <p style="font-family:'IBM Plex Mono',monospace; font-size:12px; letter-spacing:.05em; text-transform:uppercase; color:var(--slate-soft); margin-top:34px;">Built vs. not built</p>
@@ -671,12 +678,13 @@ figure.diagram figcaption b{color:var(--slate); font-weight:600;}
             <li>Browser dashboard — upload, live mic, diarization, enrollment, history, help tooltips</li>
             <li>Docker Compose runtime + central JSON log viewer (Dozzle)</li>
             <li>79 automated tests passing (unit + integration)</li>
+            <li>Indian-language eval pipeline (§04) — real CC BY 4.0 Hindi/Marathi genuine speech fetched and scored: <strong>85%/95%</strong> correctly recognised as bonafide</li>
           </ul>
         </div>
         <div class="scope-col notbuilt">
           <h4>Not built yet</h4>
           <ul>
-            <li><strong>Indian-language dataset &amp; held-out-generator evaluation (§04)</strong> — the differentiator; zero consented recordings collected so far</li>
+            <li><strong>Indian-language dataset &amp; held-out-generator evaluation (§04)</strong> — genuine-speech side started (see left); synthetic/spoof side, a second held-out system, and any Malvi data (needs a real volunteer — no digital resources exist) are not</li>
             <li>Independent EER measurement of the acoustic model against a public benchmark — it runs on its pretrained checkpoint, unvalidated by this team</li>
             <li>Mock banking approval screen that actually blocks a pending transfer on High</li>
             <li>Adversarial/codec robustness testing (noise, resampling, re-encoding)</li>
@@ -1109,16 +1117,16 @@ fusion:
 
     <!-- 04 DIFFERENTIATOR -->
     <section id="differentiator">
-      <div class="section-head"><span class="section-num">04</span><h2 class="section-title">The differentiator: Indian languages</h2> <span class="status-pill todo">not started</span></div>
+      <div class="section-head"><span class="section-num">04</span><h2 class="section-title">The differentiator: Indian languages</h2> <span class="status-pill partial">started</span></div>
       <div class="callout status-todo">
-        <div class="callout-title">Status — the biggest open gap</div>
-        <p>Nothing in this section has started. No volunteers recruited, no consent forms drafted, no recordings made, no cloning system run, no fine-tuning attempted. The acoustic detector built in §02 is AASIST's own published English checkpoint, used as-is — it has had zero exposure to Hindi, Marathi, or Malvi. This is the single most consequential remaining item: it's the one part of the brief a competing team is unlikely to also have done, and right now it's the one part not yet begun here either.</p>
+        <div class="callout-title">Status — in progress, real first number in hand</div>
+        <p>Started, using existing licensed public corpora instead of recruiting classmates first — see <code>eval/indian_language/README.md</code> for the full pipeline. Real, license-verified (CC BY 4.0) genuine Hindi and Marathi speech has been fetched and scored through the exact same AASIST model §02 wired in: <strong>85% of genuine Hindi speech and 95% of genuine Marathi speech is correctly recognised as bonafide</strong> (not flagged as synthetic), on a small n=20-per-language sample. That's a real, reproducible measurement of the English-trained model's false-positive rate on languages it never saw — not yet the full bonafide-vs-spoof gap, which still needs a synthetic (cloned) side. Still not started: any Malvi data at all (no digital resources exist for it — needs an actual volunteer), a synthetic/spoof Marathi corpus (no ungated open TTS system covering Marathi was found), a second held-out synthesis system, and fine-tuning.</p>
       </div>
       <div class="callout source">
         <div class="callout-title">From the brief — the single line that decides the project</div>
         <p style="margin:0;">Public spoof-detection research is overwhelmingly English. Models trained on English corpora degrade markedly on other languages and unfamiliar accents. AICTE explicitly asks for Indian languages and regional accents — almost no team relying on off-the-shelf benchmarks will have measured this gap.</p>
       </div>
-      <p>Everything in §01–03 is competent engineering a good team elsewhere will also produce, and it's now genuinely built (see §00). This section is the one most teams skip — and, so far, this team too.</p>
+      <p>Everything in §01–03 is competent engineering a good team elsewhere will also produce, and it's now genuinely built (see §00). This section is the one most teams skip — this team has now started it, with a real first measurement instead of a plan.</p>
 
       <ol class="plain">
         <li>Recruit ~20 classmates speaking Hindi, Marathi and Malvi. Written consent — a one-page form naming exactly what the recordings are used for and how long they're kept.</li>
