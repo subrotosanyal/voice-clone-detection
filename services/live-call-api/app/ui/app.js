@@ -37,6 +37,7 @@ document.querySelectorAll(".tab-btn").forEach((btn) => {
     btn.classList.add("active");
     document.getElementById("tab-" + btn.dataset.tab).classList.add("active");
     if (isRecording) stopMic(); // switching tabs mid-recording ends it cleanly
+    if (btn.dataset.tab === "history") loadHistoryList();
   });
 });
 
@@ -337,4 +338,66 @@ function stopMic() {
   if (audioCtx) audioCtx.close();
   if (mediaStream) mediaStream.getTracks().forEach((t) => t.stop());
   if (ws && ws.readyState === WebSocket.OPEN) ws.close();
+}
+
+// ---------- history tab ----------
+document.getElementById("refreshHistoryBtn").addEventListener("click", loadHistoryList);
+
+async function loadHistoryList() {
+  clearError("historyError");
+  const listEl = document.getElementById("historyList");
+  listEl.innerHTML = '<div class="history-empty">Loading…</div>';
+  try {
+    const res = await fetch("/v1/sessions?limit=50");
+    if (!res.ok) throw new Error("could not load session history");
+    const sessions = await res.json();
+
+    if (sessions.length === 0) {
+      listEl.innerHTML = '<div class="history-empty">No sessions yet — upload a file or use the microphone, then check back here.</div>';
+      return;
+    }
+
+    listEl.innerHTML = "";
+    sessions.forEach((s) => listEl.appendChild(buildHistoryRow(s)));
+  } catch (err) {
+    showError("historyError", err.message || String(err));
+    listEl.innerHTML = "";
+  }
+}
+
+function buildHistoryRow(s) {
+  const row = document.createElement("div");
+  row.className = "history-row";
+  const started = new Date(s.started_at).toLocaleString();
+  row.innerHTML = `
+    <span class="history-band-dot ${s.final_band}"></span>
+    <div class="history-main">
+      <div class="history-id">${s.session_id}</div>
+      <div class="history-meta">${started} · ${s.window_count} window${s.window_count === 1 ? "" : "s"}</div>
+    </div>
+    <span class="history-score mono" style="color:${BAND_COLOR[s.final_band] || "var(--slate-soft)"}">${s.final_smoothed_score.toFixed(0)}</span>
+    <button class="history-delete" title="Delete this session">✕</button>
+  `;
+  row.querySelector(".history-main").addEventListener("click", () => openHistorySession(s.session_id));
+  row.querySelector(".history-score").addEventListener("click", () => openHistorySession(s.session_id));
+  row.querySelector(".history-delete").addEventListener("click", async (e) => {
+    e.stopPropagation();
+    if (!confirm(`Delete session ${s.session_id}? This can't be undone.`)) return;
+    await fetch(`/v1/sessions/${encodeURIComponent(s.session_id)}`, { method: "DELETE" });
+    loadHistoryList();
+  });
+  return row;
+}
+
+async function openHistorySession(sessionId) {
+  clearError("historyError");
+  try {
+    const res = await fetch(`/v1/sessions/${encodeURIComponent(sessionId)}`);
+    if (!res.ok) throw new Error("could not load that session — it may have been deleted");
+    const body = await res.json();
+    resetResults();
+    body.trace.forEach(renderFusedScore); // same replay pattern as the upload tab
+  } catch (err) {
+    showError("historyError", err.message || String(err));
+  }
 }

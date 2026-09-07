@@ -15,8 +15,9 @@ docker compose up --build
 ```
 
 Then open **http://localhost:8020/** in a browser — a dashboard to upload a
-recording or speak into your microphone and watch the risk score move
-live, no `curl` needed. If you'd rather script it:
+recording, speak into your microphone and watch the risk score move
+live, or look back through every past session's full explainability
+breakdown — no `curl` needed. If you'd rather script it:
 
 ```bash
 curl -F "file=@services/live-call-api/samples/genuine_tone.wav" \
@@ -50,12 +51,13 @@ docker-compose.yml              # docker compose up — the whole thing
 services/live-call-api/         # the one service that exists so far
   app/
     domain/models.py            # framework-free core types
-    ports/                      # the interfaces — detector.py, fusion.py
-    adapters/                   # concrete detectors + fusion + the plugin registry
+    ports/                      # the interfaces — detector.py, fusion.py, history_store.py
+    adapters/                   # concrete detectors + fusion + history store + the plugin registry
     pipeline/                   # windowing + orchestration (engine.py)
-    api/                        # FastAPI routes (REST + WebSocket)
+    api/                        # FastAPI routes (REST + WebSocket + session history)
     ui/                         # the browser dashboard (no build step — plain HTML/JS)
   config/risk_formula.yaml      # the formula — weights, thresholds, third-signal mode
+  data/sessions.db              # session history (SQLite, gitignored — fetched/created at runtime)
   tests/                        # unit + integration, see docs/testing.md
 scripts/gen_test_audio.py       # synthetic (non-voice) smoke-test fixtures
 docs/                           # architecture, risk model, running, testing
@@ -84,6 +86,8 @@ doesn't prove. The prosodic detector is still a heuristic v0 baseline
 (documented in its own docstring); a lightweight, torch-free acoustic
 fallback is still available via a one-line config swap.
 
-Not built yet: the Indian-language dataset/eval pipeline, the operator
-dashboard UI, the mock banking approval flow, voiceprint enrollment. See
-`docs/architecture.md`, "What's not built yet".
+A browser dashboard exists (upload, live microphone, and session
+history — every past score kept and replayable, persisted across
+restarts via a SQLite-backed history store). Not built yet: the
+Indian-language dataset/eval pipeline, the mock banking approval flow,
+voiceprint enrollment. See `docs/architecture.md`, "What's not built yet".

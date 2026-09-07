@@ -33,7 +33,14 @@ http://localhost:8020/ in a browser. Upload a recording, or click the
 microphone tab and speak — the risk meter, the per-signal breakdown, and
 the score-over-time chart all update from the same two endpoints above.
 Microphone access needs a secure context (`localhost` counts) and browser
-permission on first use.
+permission on first use. The **History** tab lists every session ever
+scored (persisted in `services/live-call-api/data/sessions.db`, mounted
+as a docker-compose volume — it survives `docker compose down` and
+rebuilds); click one to replay its full breakdown, or delete it.
+
+To reset history entirely: stop the stack and delete
+`services/live-call-api/data/sessions.db` — it's recreated empty on next
+startup.
 
 Score a file:
 

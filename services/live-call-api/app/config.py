@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="", extra="ignore")
 
     risk_config_path: str = "config/risk_formula.yaml"
+    history_db_path: str = "data/sessions.db"
     log_level: str = "INFO"
     host: str = "0.0.0.0"
     port: int = 8000

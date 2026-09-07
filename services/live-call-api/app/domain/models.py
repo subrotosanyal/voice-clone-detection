@@ -86,3 +86,16 @@ class FusedScore:
     third_signal_mode: str
     components: list[ComponentContribution]
     recommended_action: str
+
+
+@dataclass(frozen=True)
+class SessionSummary:
+    """One row in the session history list — enough to pick a session to
+    open, without pulling its whole trace."""
+
+    session_id: str
+    window_count: int
+    started_at: str  # ISO 8601 UTC
+    ended_at: str
+    final_smoothed_score: float
+    final_band: Band

@@ -10,7 +10,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
+from app.adapters.history.sqlite_store import SqliteHistoryStore
 from app.adapters.registry import build_pipeline
+from app.api.history_router import router as history_router
 from app.api.http_router import router as http_router
 from app.api.ws_router import router as ws_router
 from app.config import settings
@@ -24,8 +26,10 @@ logger = get_logger(component="startup")
 async def lifespan(app: FastAPI):
     configure_logging(settings.log_level)
     pipeline = build_pipeline(settings.risk_config_path)
+    history = SqliteHistoryStore(settings.history_db_path)
     app.state.pipeline = pipeline
-    app.state.engine = Engine(pipeline)
+    app.state.history = history
+    app.state.engine = Engine(pipeline, history=history)
     logger.info(
         "pipeline_loaded",
         formula_version=pipeline.config["formula_version"],
@@ -45,6 +49,7 @@ app = FastAPI(
 )
 app.include_router(http_router)
 app.include_router(ws_router)
+app.include_router(history_router)
 
 # Browser dashboard — mounted LAST and at the root, so it only catches
 # paths the routers above didn't already claim (/, /app.js). The routes

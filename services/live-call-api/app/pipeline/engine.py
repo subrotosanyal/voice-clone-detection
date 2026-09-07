@@ -22,6 +22,7 @@ from app.adapters.registry import Pipeline
 from app.domain.models import AudioWindow, FusedScore
 from app.logging_setup import get_logger
 from app.pipeline.windowing import make_windows
+from app.ports.history_store import HistoryStorePort
 
 logger = get_logger(component="pipeline_engine")
 
@@ -50,9 +51,15 @@ class SessionStore:
 
 
 class Engine:
-    def __init__(self, pipeline: Pipeline, session_store: Optional[SessionStore] = None) -> None:
+    def __init__(
+        self,
+        pipeline: Pipeline,
+        session_store: Optional[SessionStore] = None,
+        history: Optional[HistoryStorePort] = None,
+    ) -> None:
         self.pipeline = pipeline
         self.sessions = session_store or SessionStore()
+        self.history = history
 
     def score_window(self, window: AudioWindow, context: dict[str, Any]) -> FusedScore:
         results = [detector.score(window, context) for detector in self.pipeline.detectors]
@@ -91,6 +98,13 @@ class Engine:
                 for c in fused.components
             ],
         )
+
+        if self.history is not None:
+            try:
+                self.history.save(fused)
+            except Exception:  # noqa: BLE001 — history is best-effort, never blocks live scoring
+                logger.exception("history_save_failed", session_id=fused.session_id, seq=fused.seq)
+
         return fused
 
     def score_windows(

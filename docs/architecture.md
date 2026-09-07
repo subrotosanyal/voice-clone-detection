@@ -48,11 +48,43 @@ Two entrypoints call the exact same `Engine.score_window()`:
 - `WS /v1/stream/{session_id}` — one message in, one score out, for a real
   live client (a browser capturing mic audio, or a telephony bridge).
 
+## Session history
+
+Every window's `FusedScore` — the full explainability breakdown, not just
+the number — is persisted right after fusion, via `HistoryStorePort`
+(`app/ports/history_store.py`). `app/pipeline/engine.py` calls
+`history.save(fused)` after every `score_window()`, wrapped so a storage
+failure is logged (`history_save_failed`) but never breaks the live
+scoring path — a session you can't look up later is a much smaller
+problem than a call that fails to score at all.
+
+The default implementation is `SqliteHistoryStore`
+(`app/adapters/history/sqlite_store.py`) — one file
+(`data/sessions.db`, path configurable via `HISTORY_DB_PATH`), no server
+process, no extra dependency (`sqlite3` is in the standard library).
+Mounted as a docker-compose volume so it survives `docker compose up
+--build` and container restarts — see `docker-compose.yml`. This is
+enough for a single-instance demo; the moment more than one API replica
+needs to share history, swap this for a Postgres-backed implementation of
+the same port — nothing in `Engine` or the API routes changes.
+
+Three endpoints read it (`app/api/history_router.py`):
+
+- `GET /v1/sessions` — most recent sessions first, summarised (window
+  count, time range, final score/band) — cheap enough to call on every
+  page load.
+- `GET /v1/sessions/{id}` — the full trace, same shape as
+  `POST /v1/score/file`'s response, so the UI replays a past session
+  through the identical rendering code as a live one.
+- `DELETE /v1/sessions/{id}` — no automatic retention/TTL yet (a known
+  gap, consistent with the honesty pattern elsewhere in this repo) —
+  deletion today is manual, from the History tab or this endpoint.
+
 ## The browser dashboard (`app/ui/`)
 
 A plain HTML/CSS/JS page — no build step, no framework, no npm — mounted
 at `/` via Starlette's `StaticFiles(html=True)` in `app/main.py`. It's a
-real client of the two entrypoints above, nothing more:
+real client of the entrypoints above, nothing more:
 
 - **Upload a file** tab → `POST /v1/score/file`, then replays the
   returned `trace` array through the same rendering code a live session
@@ -64,6 +96,10 @@ real client of the two entrypoints above, nothing more:
   match `config/risk_formula.yaml`'s `window_ms`/`hop_ms`, and streams
   each window over `WS /v1/stream/{session_id}` exactly like a real
   telephony bridge would.
+- **History** tab → `GET /v1/sessions` for the list, `GET
+  /v1/sessions/{id}` to replay one (through the same rendering code as
+  the other two tabs — one render path, three ways to feed it), `DELETE
+  /v1/sessions/{id}` per row.
 
 Mount order matters: `app.mount("/", StaticFiles(...))` is registered
 **after** the API routers in `app/main.py`, specifically so `/healthz`,
@@ -184,12 +220,16 @@ caveat as before, not yet swapped for a real model.
   AASIST+ECAPA-TDNN fusion is the reference implementation to start from —
   notably, the same AASIST checkpoint now wired in here is literally half
   of that fusion).
-- Persistent session state (currently in-memory only — a restart resets
-  every session's smoothing; fine for one process, not for multiple
-  replicas — swap `SessionStore` for Redis when that matters).
+- **Persistent *history* is built (above); persistent *live smoothing
+  state* is not** — these are two different things. `Engine.sessions`
+  (the EMA state used mid-call, in `SessionStore`) is still in-memory
+  only, so a restart mid-call resets that call's smoothing to a fresh
+  start. Fine for one process; swap `SessionStore` for Redis when more
+  than one API replica needs to share an *in-progress* call's state.
 - The Indian-language dataset/held-out-generator evaluation pipeline —
   including fine-tuning this same AASIST model on that data, per §04.
-- The operator dashboard UI and the mock banking approval flow.
+- The mock banking approval flow (the dashboard UI itself is built —
+  see below).
 - A real model behind the prosodic detector.
 
 None of this changes the shape of `services/live-call-api/app/` — each

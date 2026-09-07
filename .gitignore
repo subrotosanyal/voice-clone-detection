@@ -9,3 +9,7 @@ __pycache__/
 # fetched at build/setup time, not committed — see
 # app/adapters/detectors/vendor/fetch_checkpoint.py
 services/live-call-api/app/adapters/detectors/vendor/checkpoints/
+
+# session history — local runtime data, not committed. See
+# app/adapters/history/sqlite_store.py and docker-compose.yml's volume for it.
+services/live-call-api/data/

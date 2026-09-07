@@ -10,7 +10,7 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
-from app.domain.models import Band, FusedScore
+from app.domain.models import Band, FusedScore, SessionSummary
 
 
 class CallContext(BaseModel):
@@ -74,6 +74,33 @@ class FusedScoreOut(BaseModel):
 
 
 class ScoreFileResponse(BaseModel):
+    session_id: str
+    window_count: int
+    final: FusedScoreOut
+    trace: list[FusedScoreOut]
+
+
+class SessionSummaryOut(BaseModel):
+    session_id: str
+    window_count: int
+    started_at: str
+    ended_at: str
+    final_smoothed_score: float
+    final_band: Band
+
+    @classmethod
+    def from_domain(cls, s: SessionSummary) -> "SessionSummaryOut":
+        return cls(
+            session_id=s.session_id,
+            window_count=s.window_count,
+            started_at=s.started_at,
+            ended_at=s.ended_at,
+            final_smoothed_score=s.final_smoothed_score,
+            final_band=s.final_band,
+        )
+
+
+class SessionDetailResponse(BaseModel):
     session_id: str
     window_count: int
     final: FusedScoreOut

@@ -9,11 +9,19 @@ pip install -r requirements-dev.txt                   # first time only
 pytest tests/ -v
 ```
 
-43 tests, no Docker needed — unit tests for each detector, the windowing
-math, and the fusion formula (including the abstain/renormalisation
-behaviour), plus integration tests that drive the real FastAPI app with
-`TestClient` (`tests/integration/test_api_score_file.py`,
-`test_ui_served.py`).
+53 tests, no Docker needed — unit tests for each detector, the windowing
+math, the fusion formula (including the abstain/renormalisation
+behaviour), and the SQLite history store, plus integration tests that
+drive the real FastAPI app with `TestClient`
+(`tests/integration/test_api_score_file.py`, `test_ui_served.py`,
+`test_history_api.py`).
+
+Test runs share the same local `data/sessions.db` file the app itself
+uses (see `docs/running-locally.md`) — each test uses a fresh
+`uuid`-based session id, so rows never collide across runs, but the file
+does accumulate history from every test run. That's harmless (it's
+gitignored, and nothing asserts on the *total* row count), but if it
+bothers you, delete `services/live-call-api/data/sessions.db` any time.
 
 **One caveat, not fully offline any more:** the app's default config loads
 the real AASIST checkpoint at startup. `tests/conftest.py`'s

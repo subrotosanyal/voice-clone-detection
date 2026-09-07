@@ -24,11 +24,15 @@ services:
       - "8020:8000"
     environment:
       RISK_CONFIG_PATH: config/risk_formula.yaml
+      HISTORY_DB_PATH: data/sessions.db
       LOG_LEVEL: INFO
     volumes:
       # Mount config read-only so editing risk_formula.yaml and restarting
       # (no rebuild) is enough to try a new formula.
       - ./services/live-call-api/config:/app/config:ro
+      # Session history (SQLite) — read-write, and outside the container's
+      # own filesystem, so `docker compose up --build` never wipes it.
+      - ./services/live-call-api/data:/app/data
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
       interval: 10s
