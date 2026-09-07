@@ -3,11 +3,16 @@
 ## Layering
 
 ```
-domain/     framework-free types (AudioWindow, DetectorResult, FusedScore, Band)
-ports/      interfaces — DetectorPort, FusionPort. Nothing outside adapters/
-            ever imports a concrete detector or fusion class directly.
+domain/     framework-free types (AudioWindow, DetectorResult, FusedScore, Band,
+            SpeakerSegment, EnrollmentSummary)
+ports/      interfaces — DetectorPort, FusionPort, HistoryStorePort,
+            EnrollmentStorePort, DiarizerPort. Nothing outside adapters/
+            ever imports a concrete detector/fusion/diarizer class directly.
 adapters/   concrete implementations of the ports, plus the registry that
             builds them from config/risk_formula.yaml by dotted path.
+            embeddings/  shared ECAPA-TDNN speaker-embedding extractor,
+                         used by both the voiceprint consistency detector
+                         and the diarizer (not itself a port — see below).
 pipeline/   windowing (audio -> AudioWindow) and the engine that
             orchestrates detectors -> fusion -> logging for one window.
 api/        FastAPI routes. Thin — every route just calls into pipeline/.
@@ -44,7 +49,8 @@ Two entrypoints call the exact same `Engine.score_window()`:
 
 - `POST /v1/score/file` — windows a whole uploaded file and returns every
   window's score plus the final one. **This is the one to use for
-  debugging** — no WebSocket client needed.
+  debugging** — no WebSocket client needed. Pass `diarize=true` to also
+  split the call by speaker first — see "Diarization" below.
 - `WS /v1/stream/{session_id}` — one message in, one score out, for a real
   live client (a browser capturing mic audio, or a telephony bridge).
 
@@ -96,10 +102,19 @@ real client of the entrypoints above, nothing more:
   match `config/risk_formula.yaml`'s `window_ms`/`hop_ms`, and streams
   each window over `WS /v1/stream/{session_id}` exactly like a real
   telephony bridge would.
+- **Voiceprints** tab → `POST /v1/enroll` (identity + a voice sample),
+  `GET /v1/enrollments` to list, `DELETE /v1/enrollments/{identity}` per
+  row. Enroll once, then set "Claimed caller identity" (in either tab's
+  Call details) to that same name — the third signal's consistency mode
+  compares the live voice against it instead of abstaining.
 - **History** tab → `GET /v1/sessions` for the list, `GET
   /v1/sessions/{id}` to replay one (through the same rendering code as
-  the other two tabs — one render path, three ways to feed it), `DELETE
+  the other tabs — one render path, several ways to feed it), `DELETE
   /v1/sessions/{id}` per row.
+
+Every component name and risk band in the results panel has a small "?"
+icon (hover/focus) with a plain-language explanation — see `COMPONENT_HELP`
+/ `BAND_HELP` in `app/ui/app.js` if you need to update the wording.
 
 Mount order matters: `app.mount("/", StaticFiles(...))` is registered
 **after** the API routers in `app/main.py`, specifically so `/healthz`,
@@ -161,10 +176,72 @@ them per `third_signal.params.mode` in config:
 | Mode | Behaviour |
 |---|---|
 | `contextual` | Always use the rule-based detector (no enrollment needed). |
-| `consistency` | Always use the voiceprint detector (currently a stub — see below). |
+| `consistency` | Always use the voiceprint detector — real ECAPA-TDNN comparison, abstains until an identity is enrolled (see below). |
 | `auto` (default) | Prefer consistency; fall back to contextual if it abstains. |
 
-Full pros/cons of each mode are in the project blueprint's §03.
+Full pros/cons of each mode are in the project blueprint's §03 and
+`docs/risk-model.md`.
+
+## Voiceprint consistency — real, enrollment-based
+
+`app/adapters/detectors/voiceprint_consistency.py` (`VoiceprintConsistencyDetector`)
+replaced `consistency_stub.py` as the active `consistency_class` in
+`config/risk_formula.yaml` (the stub is still there, swappable back in via
+the comment right above that config entry, for a dependency-light run with
+no speechbrain/torch model download).
+
+How it works: a live call window's speaker embedding — SpeechBrain's
+ECAPA-TDNN (`speechbrain/spkrec-ecapa-voxceleb`, see
+`app/adapters/embeddings/ecapa_embedding.py` for why this model, not
+pyannote or Resemblyzer, was chosen) — is cosine-compared against the
+embedding enrolled for `context.claimed_identity`. Low similarity -> higher
+risk. It abstains whenever there's nothing to compare: no
+`claimed_identity` in context, no enrollment on file for that identity, or
+a near-silent window.
+
+Enrollment (`app/adapters/enrollment/sqlite_enrollment_store.py`, backed by
+`data/voiceprints.db`) stores only the derived embedding vector, never raw
+audio — `POST /v1/enroll`, `GET /v1/enrollments`, `DELETE
+/v1/enrollments/{identity}` (`app/api/enrollment_router.py`). These
+endpoints reuse the SAME `VoiceprintConsistencyDetector` instance the
+scoring pipeline already built (found by walking `pipeline.detectors` for
+`ThirdSignalRouter.consistency_detector` in `app/main.py`'s lifespan) —
+one loaded model, shared between scoring and enrollment, not two.
+
+**Honesty note**: the similarity->risk mapping is a placeholder heuristic
+(anchor points, not a calibrated classifier) — see the module's docstring.
+The underlying embedding comparison is real; the exact risk thresholds are
+not yet validated against a labeled dataset.
+
+## Diarization — who spoke when
+
+`app/ports/diarizer.py` (`DiarizerPort`) + `app/adapters/diarization/
+embedding_cluster_diarizer.py` (`EmbeddingClusterDiarizer`) answer "how many
+people spoke, and which stretches were whose" for an uploaded recording.
+Deliberately NOT pyannote.audio (its pretrained pipelines are all gated on
+HuggingFace — would need every user to manage an auth token just to build
+the image). Instead: fixed-length segments, skip near-silent ones, extract
+an ECAPA-TDNN embedding per segment (the same shared extractor voiceprint
+consistency uses), agglomerative clustering (`scipy.cluster.hierarchy`,
+cosine distance) groups same-voice segments, consecutive same-cluster
+segments merge into a `SpeakerSegment`.
+
+Wired into `POST /v1/score/file` only, via an optional `diarize=true` form
+field (`app/api/http_router.py::_diarize_and_score`) — **not** the live
+WebSocket path, where diarization would mean discovering speaker clusters
+incrementally from partial audio, a substantially harder problem left for
+later. When requested, each detected speaker's audio is concatenated and
+run through the exact same `Engine.score_call()` as a normal whole-call
+score, under a derived session id (`{session_id}::{speaker_label}`) — so
+every per-speaker window still flows through the normal fusion + history-
+save machinery, and each speaker's trace is independently browsable later
+from the History tab like any other session.
+
+**Honesty note**: fixed-length segmentation (not a proper voice-activity/
+change-point front end) misses a speaker change mid-segment, and the
+clustering distance threshold is a placeholder pending calibration on
+labeled multi-speaker audio — see the module's docstring. Real signal
+processing, reproducible, not turn-by-turn transcription-grade diarization.
 
 ## Central logging
 
@@ -211,15 +288,35 @@ there and still wired to the same `DetectorPort` — swap `config/
 risk_formula.yaml`'s `acoustic` entry back to it for a torch-free, no-
 download quick run (see the comment right above that entry in the file).
 
-`prosody_pitch_variance.py` is still a heuristic v0 baseline — same
-caveat as before, not yet swapped for a real model.
+`prosody_pitch_variance.py` (the autocorrelation heuristic) is still there,
+swappable back in via config, but is no longer the default — see "The
+prosodic detector: Parselmouth" below.
+
+## The prosodic detector: Parselmouth
+
+`app/adapters/detectors/prosody_parselmouth.py` (`ParselmouthProsodyDetector`)
+replaced `prosody_pitch_variance.py` as the default `prosodic` class in
+`config/risk_formula.yaml` (the old one is still there, swappable back in
+via the comment above that config entry, for a Praat-free run). It computes
+jitter, shimmer, and harmonics-to-noise ratio via Parselmouth (the official
+Praat Python binding, GPLv3) — the same validated acoustic-phonetic
+algorithms used in clinical voice-quality research, a meaningfully more
+validated *front end* than the previous autocorrelation coefficient-of-
+variation estimate.
+
+**Honesty note**: the jitter/shimmer/HNR features themselves are real and
+Praat-validated; the risk-score MAPPING built on top of them
+(`_JITTER_FLOOR`/`_SHIMMER_FLOOR`/`_HNR_CEILING` in the module) is still an
+unvalidated heuristic hypothesis ("unnaturally smooth voice = suspicious"),
+not a trained classifier — same caveat class as everywhere else in this
+repo that says so.
 
 ## What's not built yet
 
-- Voiceprint enrollment + a real consistency detector (SASV-style
-  AASIST+ECAPA-TDNN fusion is the reference implementation to start from —
-  notably, the same AASIST checkpoint now wired in here is literally half
-  of that fusion).
+- **Real-time diarization on the live WebSocket path.** File-upload
+  diarization is built (see "Diarization" above); doing the same
+  incrementally, from partial streamed audio, is a substantially harder
+  problem and hasn't been attempted.
 - **Persistent *history* is built (above); persistent *live smoothing
   state* is not** — these are two different things. `Engine.sessions`
   (the EMA state used mid-call, in `SessionStore`) is still in-memory
@@ -227,10 +324,13 @@ caveat as before, not yet swapped for a real model.
   start. Fine for one process; swap `SessionStore` for Redis when more
   than one API replica needs to share an *in-progress* call's state.
 - The Indian-language dataset/held-out-generator evaluation pipeline —
-  including fine-tuning this same AASIST model on that data, per §04.
+  including fine-tuning the AASIST model on that data, per §04.
 - The mock banking approval flow (the dashboard UI itself is built —
-  see below).
-- A real model behind the prosodic detector.
+  see above).
+- Calibrated risk thresholds for voiceprint consistency, diarization
+  clustering, and the Parselmouth prosodic mapping — all three are real
+  signal-processing/model pipelines with honestly-documented placeholder
+  heuristic score mappings, not yet tuned against a labeled dataset.
 
 None of this changes the shape of `services/live-call-api/app/` — each
 item above is a new adapter (or a new service) behind an existing or new

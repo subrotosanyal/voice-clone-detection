@@ -9,12 +9,25 @@ pip install -r requirements-dev.txt                   # first time only
 pytest tests/ -v
 ```
 
-53 tests, no Docker needed — unit tests for each detector, the windowing
+79 tests, no Docker needed — unit tests for each detector, the windowing
 math, the fusion formula (including the abstain/renormalisation
-behaviour), and the SQLite history store, plus integration tests that
-drive the real FastAPI app with `TestClient`
-(`tests/integration/test_api_score_file.py`, `test_ui_served.py`,
-`test_history_api.py`).
+behaviour), the SQLite history and enrollment stores, the ECAPA-TDNN-based
+diarizer, plus integration tests that drive the real FastAPI app with
+`TestClient` (`tests/integration/test_api_score_file.py`,
+`test_ui_served.py`, `test_history_api.py`, `test_enrollment_api.py`,
+`test_diarization_api.py`).
+
+**Pure sine tones don't exercise voiceprint/diarization tests.** A speaker-
+embedding model needs real vocal-tract-like spectral variation to tell
+voices apart — two pure tones at different frequencies still cosine-
+similarity almost as high as two takes of the *same* tone. Tests for
+`voiceprint_consistency.py` and `embedding_cluster_diarizer.py` instead use
+`tests/audio_fixtures.py::formant_voice()` — a pulsed source filtered
+through a few band-pass "formants", giving genuinely different spectral
+envelopes between presets. Still synthetic, not real speech — same
+standing caveat as `scripts/gen_test_audio.py`'s fixtures, just with enough
+timbre variation to prove the clustering/comparison logic is real rather
+than a constant.
 
 Test runs share the same local `data/sessions.db` file the app itself
 uses (see `docs/running-locally.md`) — each test uses a fresh
@@ -24,13 +37,17 @@ gitignored, and nothing asserts on the *total* row count), but if it
 bothers you, delete `services/live-call-api/data/sessions.db` any time.
 
 **One caveat, not fully offline any more:** the app's default config loads
-the real AASIST checkpoint at startup. `tests/conftest.py`'s
-`aasist_checkpoint` fixture fetches it automatically on first run if it's
-missing (needs internet once; cached afterward, checksum-verified every
-time) — any test that doesn't request that fixture (windowing, fusion
-math, the contextual/prosody/spectral-flatness detectors) stays fully
-offline and unaffected. If fetching fails, only the AASIST- and
-integration-dependent tests skip; nothing else breaks.
+the real AASIST checkpoint AND the ECAPA-TDNN speaker-embedding model at
+startup. `tests/conftest.py`'s `aasist_checkpoint` fixture fetches AASIST
+automatically on first run if it's missing (needs internet once; cached
+afterward, checksum-verified every time); the `ecapa_extractor` fixture
+does the analogous thing for the speechbrain model (also cached after the
+first download — HuggingFace's own cache, not checksum-verified since
+there's no published hash to check against, only the confirmed-ungated
+download itself). Any test that doesn't request either fixture (windowing,
+fusion math, the contextual/spectral-flatness detectors) stays fully
+offline and unaffected. If a fetch fails, only the tests that need that
+model skip; nothing else breaks.
 
 Run just one file while iterating: `pytest tests/unit/test_fusion_weighted_sum.py -v`.
 
@@ -86,6 +103,20 @@ app/adapters/detectors/vendor/fetch_checkpoint.py` once (needs internet;
 idempotent). Under pytest this happens automatically via the
 `aasist_checkpoint` fixture in `conftest.py` — you'd only see this
 running the app directly without having fetched it first.
+
+**`CMake Error: CMake was unable to find a build program ...` while
+building `praat-parselmouth`** — only happens building this Docker image
+on linux/aarch64 (Apple Silicon Docker Desktop, or an arm64 host):
+praat-parselmouth publishes prebuilt wheels for x86_64/i686 Linux and
+macOS/Windows, but not linux/aarch64, so pip falls back to compiling
+Parselmouth's bundled Praat C++ source from an sdist — which needs a real
+build toolchain. The Dockerfile's `parselmouth-builder` stage installs
+`build-essential cmake ninja-build` and builds just that one wheel there,
+so the final image never needs a C/C++ toolchain at all. If you're
+installing outside Docker on a bare linux/aarch64 venv, install the same
+three apt packages first, or install a specific working version if one
+publishes an aarch64 wheel by the time you're reading this
+(`pip index versions praat-parselmouth`).
 
 **Sample fixtures both score as high-risk** — expected now that the
 acoustic detector is a real speech classifier; see the note at the top of

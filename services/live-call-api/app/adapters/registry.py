@@ -16,6 +16,7 @@ import yaml
 
 from app.adapters.detectors.third_signal_router import ThirdSignalRouter
 from app.ports.detector import DetectorPort
+from app.ports.diarizer import DiarizerPort
 from app.ports.fusion import FusionPort
 
 
@@ -58,6 +59,18 @@ def _build_fusion(config: dict[str, Any]) -> FusionPort:
     return cls()
 
 
+def _build_diarizer(config: dict[str, Any]) -> DiarizerPort | None:
+    """Diarization is optional — older configs (or a stripped-down local
+    override) without a `diarization:` section simply don't get one, and
+    POST /v1/score/file's diarize=true option becomes unavailable rather
+    than erroring at startup."""
+    diarization_cfg = config.get("diarization")
+    if diarization_cfg is None:
+        return None
+    cls = _load_class(diarization_cfg["class"])
+    return cls(**diarization_cfg.get("params", {}))
+
+
 @dataclass(frozen=True)
 class Pipeline:
     """Everything the engine needs, built once from config and reused."""
@@ -65,10 +78,12 @@ class Pipeline:
     config: dict[str, Any]
     detectors: list[DetectorPort]
     fusion: FusionPort
+    diarizer: DiarizerPort | None = None
 
 
 def build_pipeline(config_path: str | Path) -> Pipeline:
     config = load_config(config_path)
     detectors = [_build_detector(entry) for entry in config["detectors"]]
     fusion = _build_fusion(config)
-    return Pipeline(config=config, detectors=detectors, fusion=fusion)
+    diarizer = _build_diarizer(config)
+    return Pipeline(config=config, detectors=detectors, fusion=fusion, diarizer=diarizer)

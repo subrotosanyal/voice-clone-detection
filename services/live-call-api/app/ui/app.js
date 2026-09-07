@@ -9,6 +9,27 @@ const BAND_COLOR = { low: "var(--risk-low)", elevated: "var(--risk-med)", high: 
 const COMPONENT_LABEL = { acoustic: "Acoustic (AASIST)", prosodic: "Prosodic", third_signal: "Third signal" };
 const GAUGE_CIRCUMFERENCE = 2 * Math.PI * 62;
 
+// ---------- help tooltips — plain-language explanations for jargon in the UI ----------
+const COMPONENT_HELP = {
+  acoustic: "Runs AASIST, a pretrained neural spoof-detection model, on the raw audio. Higher = more likely to be synthetic/cloned speech, based on acoustic artifacts real human speech doesn't have. Trained on English speech only — see docs/risk-model.md.",
+  prosodic: "Measures voice-quality features (pitch jitter, amplitude shimmer, harmonics-to-noise ratio) using Praat. Higher = the voice sounds unusually 'smooth'/regular compared to typical natural speech — a heuristic signal, not a trained classifier.",
+  third_signal: "A swappable third signal: either rule-based call context (known number, odd hour, urgent language) or a real voiceprint comparison against an enrolled identity — whichever is configured. Click 'view raw JSON' to see which one produced this particular score.",
+};
+const BAND_HELP = {
+  low: "LOW risk (score 0–34): nothing here looks suspicious across the signals that ran. Default recommended action: no special handling.",
+  elevated: "ELEVATED risk (score 35–69): at least one signal flagged something worth a closer look. Recommended action typically means added verification before proceeding with a sensitive request.",
+  high: "HIGH risk (score 70–100): multiple signals agree something is off, or one signal is strongly confident. Recommended action typically means blocking or escalating the sensitive request for manual review.",
+};
+
+function helpIcon(text) {
+  const span = document.createElement("span");
+  span.className = "help-icon";
+  span.tabIndex = 0;
+  span.textContent = "?";
+  span.dataset.help = text;
+  return span;
+}
+
 let traceScores = []; // rolling [0-100] scores for the current session/analysis, drives the chart
 
 // ---------- health chip ----------
@@ -38,6 +59,7 @@ document.querySelectorAll(".tab-btn").forEach((btn) => {
     document.getElementById("tab-" + btn.dataset.tab).classList.add("active");
     if (isRecording) stopMic(); // switching tabs mid-recording ends it cleanly
     if (btn.dataset.tab === "history") loadHistoryList();
+    if (btn.dataset.tab === "enroll") loadEnrollmentList();
   });
 });
 
@@ -53,6 +75,10 @@ function buildContextFields(container) {
     <div class="field">
       <label>Urgency language heard (comma-separated)</label>
       <input type="text" class="f-urgency" placeholder="e.g. immediately, don't tell anyone">
+    </div>
+    <div class="field">
+      <label>Claimed caller identity</label>
+      <input type="text" class="f-identity" placeholder="e.g. alice — matches a Voiceprints tab enrollment">
     </div>
   `;
   const hourSelect = container.querySelector(".f-hour");
@@ -72,7 +98,10 @@ function readContext(scopeEl) {
   const hour = parseInt(scopeEl.querySelector(".f-hour").value, 10);
   const urgencyRaw = scopeEl.querySelector(".f-urgency").value.trim();
   const urgency_keywords = urgencyRaw ? urgencyRaw.split(",").map((s) => s.trim()).filter(Boolean) : [];
-  return { known_number: known, is_financial_request: financial, hour_of_day: hour, urgency_keywords };
+  const identity = scopeEl.querySelector(".f-identity").value.trim();
+  const context = { known_number: known, is_financial_request: financial, hour_of_day: hour, urgency_keywords };
+  if (identity) context.claimed_identity = identity;
+  return context;
 }
 
 // ---------- results rendering (shared by both modes) ----------
@@ -80,6 +109,47 @@ function resetResults() {
   traceScores = [];
   document.getElementById("resultsEmpty").style.display = "flex";
   document.getElementById("results").classList.remove("show");
+  document.getElementById("speakersSection").style.display = "none";
+  document.getElementById("speakerCards").innerHTML = "";
+}
+
+function renderSpeakers(speakers) {
+  const section = document.getElementById("speakersSection");
+  const cardsEl = document.getElementById("speakerCards");
+  cardsEl.innerHTML = "";
+  if (!speakers || speakers.length === 0) {
+    section.style.display = "none";
+    return;
+  }
+  section.style.display = "block";
+  speakers.forEach((sp) => {
+    const band = sp.final.band;
+    const color = BAND_COLOR[band] || "var(--slate-soft)";
+    const card = document.createElement("div");
+    card.className = "speaker-card";
+    card.innerHTML = `
+      <div class="sc-top">
+        <div>
+          <div class="sc-label">${sp.speaker_label}</div>
+          <div class="sc-meta">${(sp.total_duration_ms / 1000).toFixed(1)}s voiced · ${sp.segment_count} segment${sp.segment_count === 1 ? "" : "s"}</div>
+        </div>
+        <span class="sc-score mono" style="color:${color}">${sp.final.smoothed_score_0_100.toFixed(0)} <span style="font-size:11px; font-weight:600;">${band}</span></span>
+      </div>
+      <button class="sc-replay">▸ view this speaker's full breakdown</button>
+    `;
+    card.querySelector(".sc-replay").addEventListener("click", () => {
+      resetResultsKeepSpeakers();
+      sp.trace.forEach(renderFusedScore);
+      renderSpeakers(speakers); // re-show cards since resetResultsKeepSpeakers cleared the section
+      document.getElementById("results").scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    cardsEl.appendChild(card);
+  });
+}
+
+function resetResultsKeepSpeakers() {
+  traceScores = [];
+  document.getElementById("resultsEmpty").style.display = "none";
 }
 
 function renderFusedScore(fs) {
@@ -92,14 +162,16 @@ function renderFusedScore(fs) {
 
   document.getElementById("gaugeScore").textContent = score.toFixed(0);
   document.getElementById("gaugeScore").style.color = color;
-  document.getElementById("gaugeBand").textContent = band;
+  document.getElementById("gaugeBand").textContent = band.toUpperCase();
   document.getElementById("gaugeBand").style.color = color;
   const arc = document.getElementById("gaugeArc");
   arc.style.stroke = color;
   arc.setAttribute("stroke-dashoffset", String(GAUGE_CIRCUMFERENCE * (1 - Math.min(score, 100) / 100)));
 
   const actionBand = document.getElementById("actionBand");
-  actionBand.textContent = band;
+  actionBand.innerHTML = "";
+  actionBand.appendChild(document.createTextNode(band));
+  if (BAND_HELP[band]) actionBand.appendChild(helpIcon(BAND_HELP[band]));
   actionBand.className = "action-band " + band;
   document.getElementById("actionText").textContent = fs.recommended_action;
 
@@ -117,6 +189,7 @@ function renderFusedScore(fs) {
       <div class="bar-track"><div class="bar-fill" style="width:${c.abstained ? 100 : pct}%"></div></div>
       ${c.abstained ? `<div class="abstain-note">${c.detail && c.detail.abstain_reason ? c.detail.abstain_reason : "no signal for this window"}</div>` : ""}
     `;
+    if (COMPONENT_HELP[c.name]) row.querySelector(".name").appendChild(helpIcon(COMPONENT_HELP[c.name]));
     compEl.appendChild(row);
   });
 
@@ -192,12 +265,14 @@ analyzeFileBtn.addEventListener("click", async () => {
     const form = new FormData();
     form.append("file", selectedFile);
     form.append("context", JSON.stringify(readContext(document.getElementById("ctxUpload"))));
+    form.append("diarize", document.getElementById("diarizeCheck").checked ? "true" : "false");
 
     const res = await fetch("/v1/score/file", { method: "POST", body: form });
     const body = await res.json();
     if (!res.ok) throw new Error(body.detail || "analysis failed");
 
     body.trace.forEach(renderFusedScore); // replays the whole trace so the chart shows the full call
+    renderSpeakers(body.speakers);
   } catch (err) {
     showError("uploadError", err.message || String(err));
   } finally {
@@ -400,4 +475,95 @@ async function openHistorySession(sessionId) {
   } catch (err) {
     showError("historyError", err.message || String(err));
   }
+}
+
+// ---------- voiceprints (enroll) tab ----------
+const enrollDropzone = document.getElementById("enrollDropzone");
+const enrollFileInput = document.getElementById("enrollFileInput");
+const enrollBtn = document.getElementById("enrollBtn");
+const enrollIdentityInput = document.getElementById("enrollIdentity");
+let selectedEnrollFile = null;
+
+enrollDropzone.addEventListener("click", () => enrollFileInput.click());
+enrollDropzone.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") enrollFileInput.click(); });
+["dragenter", "dragover"].forEach((evt) => enrollDropzone.addEventListener(evt, (e) => { e.preventDefault(); enrollDropzone.classList.add("drag"); }));
+["dragleave", "drop"].forEach((evt) => enrollDropzone.addEventListener(evt, (e) => { e.preventDefault(); enrollDropzone.classList.remove("drag"); }));
+enrollDropzone.addEventListener("drop", (e) => { if (e.dataTransfer.files[0]) setSelectedEnrollFile(e.dataTransfer.files[0]); });
+enrollFileInput.addEventListener("change", () => { if (enrollFileInput.files[0]) setSelectedEnrollFile(enrollFileInput.files[0]); });
+
+function setSelectedEnrollFile(file) {
+  selectedEnrollFile = file;
+  document.getElementById("enrollFileName").textContent = file.name;
+  updateEnrollBtnState();
+  clearError("enrollError");
+}
+enrollIdentityInput.addEventListener("input", updateEnrollBtnState);
+function updateEnrollBtnState() {
+  enrollBtn.disabled = !(selectedEnrollFile && enrollIdentityInput.value.trim());
+}
+
+enrollBtn.addEventListener("click", async () => {
+  const identity = enrollIdentityInput.value.trim();
+  if (!selectedEnrollFile || !identity) return;
+  clearError("enrollError");
+  enrollBtn.disabled = true;
+  enrollBtn.textContent = "Enrolling…";
+  try {
+    const form = new FormData();
+    form.append("identity", identity);
+    form.append("file", selectedEnrollFile);
+    const res = await fetch("/v1/enroll", { method: "POST", body: form });
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.detail || "enrollment failed");
+    selectedEnrollFile = null;
+    document.getElementById("enrollFileName").textContent = "";
+    enrollIdentityInput.value = "";
+    loadEnrollmentList();
+  } catch (err) {
+    showError("enrollError", err.message || String(err));
+  } finally {
+    enrollBtn.textContent = "Enroll voiceprint";
+    updateEnrollBtnState();
+  }
+});
+
+document.getElementById("refreshEnrollmentsBtn").addEventListener("click", loadEnrollmentList);
+
+async function loadEnrollmentList() {
+  const listEl = document.getElementById("enrollmentList");
+  listEl.innerHTML = '<div class="history-empty">Loading…</div>';
+  try {
+    const res = await fetch("/v1/enrollments");
+    if (!res.ok) throw new Error("could not load enrollments (voiceprint consistency detector may not be configured)");
+    const enrollments = await res.json();
+
+    if (enrollments.length === 0) {
+      listEl.innerHTML = '<div class="history-empty">No voiceprints enrolled yet.</div>';
+      return;
+    }
+
+    listEl.innerHTML = "";
+    enrollments.forEach((e) => listEl.appendChild(buildEnrollmentRow(e)));
+  } catch (err) {
+    listEl.innerHTML = `<div class="history-empty">${err.message || String(err)}</div>`;
+  }
+}
+
+function buildEnrollmentRow(e) {
+  const row = document.createElement("div");
+  row.className = "history-row";
+  const updated = new Date(e.updated_at).toLocaleString();
+  row.innerHTML = `
+    <div class="history-main">
+      <div class="history-id">${e.identity}</div>
+      <div class="history-meta">enrolled ${updated} · ${e.embedding_model}</div>
+    </div>
+    <button class="history-delete" title="Delete this voiceprint">✕</button>
+  `;
+  row.querySelector(".history-delete").addEventListener("click", async () => {
+    if (!confirm(`Delete the voiceprint enrolled for "${e.identity}"? This can't be undone.`)) return;
+    await fetch(`/v1/enrollments/${encodeURIComponent(e.identity)}`, { method: "DELETE" });
+    loadEnrollmentList();
+  });
+  return row;
 }

@@ -10,6 +10,10 @@ __pycache__/
 # app/adapters/detectors/vendor/fetch_checkpoint.py
 services/live-call-api/app/adapters/detectors/vendor/checkpoints/
 
+# ECAPA-TDNN speaker-embedding model cache — fetched at build/setup time,
+# not committed. See app/adapters/embeddings/fetch_ecapa_model.py.
+services/live-call-api/app/adapters/embeddings/.cache/
+
 # session history — local runtime data, not committed. See
 # app/adapters/history/sqlite_store.py and docker-compose.yml's volume for it.
 services/live-call-api/data/

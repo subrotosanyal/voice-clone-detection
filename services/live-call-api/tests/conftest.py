@@ -22,3 +22,18 @@ def aasist_checkpoint() -> str:
     except Exception as exc:  # noqa: BLE001 — any fetch failure just skips
         pytest.skip(f"AASIST checkpoint unavailable (no network?): {exc}")
     return str(path)
+
+
+@pytest.fixture(scope="session")
+def ecapa_extractor():
+    """Session-scoped so the ~80MB speechbrain/spkrec-ecapa-voxceleb model
+    is loaded once for every test that needs it (voiceprint consistency,
+    diarization), not once per test. Same graceful-skip-if-offline pattern
+    as aasist_checkpoint above — tests that don't request this fixture
+    stay fully offline and unaffected."""
+    try:
+        from app.adapters.embeddings.ecapa_embedding import EcapaEmbeddingExtractor
+
+        return EcapaEmbeddingExtractor()
+    except Exception as exc:  # noqa: BLE001 — any load failure just skips
+        pytest.skip(f"ECAPA-TDNN model unavailable (no network?): {exc}")

@@ -99,3 +99,27 @@ class SessionSummary:
     ended_at: str
     final_smoothed_score: float
     final_band: Band
+
+
+@dataclass(frozen=True)
+class EnrollmentSummary:
+    """One enrolled voiceprint's metadata — never the raw embedding vector
+    itself (that stays inside the enrollment store, only ever compared to,
+    never returned over the API)."""
+
+    identity: str
+    embedding_model: str
+    enrolled_at: str  # ISO 8601 UTC
+    updated_at: str
+
+
+@dataclass(frozen=True)
+class SpeakerSegment:
+    """One contiguous stretch of audio attributed to one speaker cluster
+    by the diarizer. `speaker_label` is a stable-within-one-call id
+    ("speaker_1", "speaker_2", ...) ordered by first appearance — it is
+    NOT a claimed or verified identity, just "the same voice as before"."""
+
+    speaker_label: str
+    start_ms: int
+    end_ms: int

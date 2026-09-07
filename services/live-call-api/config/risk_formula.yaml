@@ -12,7 +12,7 @@
 # every log line so a score can always be tied back to the exact config
 # that produced it (see docs/risk-model.md, "Reproducibility").
 
-formula_version: "2026.09.2"
+formula_version: "2026.09.3"
 
 detectors:
   # Real pretrained countermeasure (AASIST, ASVspoof2019 LA, MIT licensed —
@@ -33,12 +33,18 @@ detectors:
       floor_rms: 0.0001
 
   - name: prosodic
-    class: app.adapters.detectors.prosody_pitch_variance:PitchVarianceDetector
+    # Real Praat-derived jitter/shimmer/HNR (see
+    # app/adapters/detectors/prosody_parselmouth.py) — still a heuristic
+    # score mapping, honestly documented in that file's docstring.
+    #
+    # To fall back to the dependency-light autocorrelation heuristic
+    # instead (no Praat), swap the two lines below for:
+    #   class: app.adapters.detectors.prosody_pitch_variance:PitchVarianceDetector
+    #   params: {frame_ms: 40, hop_ms: 20, scale: 2.5}
+    class: app.adapters.detectors.prosody_parselmouth:ParselmouthProsodyDetector
     weight: 0.2
     params:
-      frame_ms: 40
-      hop_ms: 20
-      scale: 2.5
+      floor_rms: 0.0001
 
   - name: third_signal
     class: app.adapters.detectors.third_signal_router:ThirdSignalRouter
@@ -47,7 +53,16 @@ detectors:
       # contextual | consistency | auto — see docs/risk-model.md
       mode: auto
       contextual_class: app.adapters.detectors.contextual_rules:ContextualRulesDetector
-      consistency_class: app.adapters.detectors.consistency_stub:ConsistencyStubDetector
+      # Real ECAPA-TDNN voiceprint comparison (see
+      # app/adapters/detectors/voiceprint_consistency.py) — abstains until
+      # an identity is enrolled via POST /v1/enroll. To fall back to the
+      # always-abstaining stub instead (no speechbrain dependency), swap
+      # the two lines below for:
+      #   consistency_class: app.adapters.detectors.consistency_stub:ConsistencyStubDetector
+      #   consistency_params: {}
+      consistency_class: app.adapters.detectors.voiceprint_consistency:VoiceprintConsistencyDetector
+      consistency_params:
+        enrollment_db_path: data/voiceprints.db
 
 fusion:
   class: app.adapters.fusion.weighted_sum:WeightedSumFusion
@@ -63,3 +78,13 @@ bands:
 windowing:
   window_ms: 2000
   hop_ms: 500
+
+# Optional — powers POST /v1/score/file's `diarize=true` option (file-upload
+# path only, see app/ports/diarizer.py's scope note). Omit this whole
+# section to disable diarization entirely without touching any other code.
+diarization:
+  class: app.adapters.diarization.embedding_cluster_diarizer:EmbeddingClusterDiarizer
+  params:
+    segment_ms: 1500
+    floor_rms: 0.0001
+    distance_threshold: 0.35

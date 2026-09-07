@@ -10,7 +10,7 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
-from app.domain.models import Band, FusedScore, SessionSummary
+from app.domain.models import Band, EnrollmentSummary, FusedScore, SessionSummary
 
 
 class CallContext(BaseModel):
@@ -73,11 +73,24 @@ class FusedScoreOut(BaseModel):
         )
 
 
+class SpeakerScoreOut(BaseModel):
+    """One diarized speaker's own scoring breakdown — same shape as the
+    whole-call result, just scoped to that speaker's audio only."""
+
+    speaker_label: str
+    session_id: str
+    segment_count: int
+    total_duration_ms: int
+    final: FusedScoreOut
+    trace: list[FusedScoreOut]
+
+
 class ScoreFileResponse(BaseModel):
     session_id: str
     window_count: int
     final: FusedScoreOut
     trace: list[FusedScoreOut]
+    speakers: Optional[list[SpeakerScoreOut]] = None
 
 
 class SessionSummaryOut(BaseModel):
@@ -105,6 +118,28 @@ class SessionDetailResponse(BaseModel):
     window_count: int
     final: FusedScoreOut
     trace: list[FusedScoreOut]
+
+
+class EnrollmentSummaryOut(BaseModel):
+    identity: str
+    embedding_model: str
+    enrolled_at: str
+    updated_at: str
+
+    @classmethod
+    def from_domain(cls, e: EnrollmentSummary) -> "EnrollmentSummaryOut":
+        return cls(
+            identity=e.identity,
+            embedding_model=e.embedding_model,
+            enrolled_at=e.enrolled_at,
+            updated_at=e.updated_at,
+        )
+
+
+class EnrollResponse(BaseModel):
+    identity: str
+    embedding_model: str
+    message: str
 
 
 class StreamChunkIn(BaseModel):

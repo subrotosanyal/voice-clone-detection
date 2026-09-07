@@ -77,25 +77,77 @@ languages or about non-speech audio. Attribution and licence:
 - Checkpoint fetched and checksum-verified by
   `vendor/fetch_checkpoint.py`, not committed to git
 
-## What's still a placeholder (read before trusting a score)
+## The prosodic detector: Parselmouth (Praat), with real limits
 
-The prosodic detector (`prosody_pitch_variance.py`) still computes a real
-signal-processing feature (autocorrelation-based pitch variance) that is
-**not** a validated indicator of synthetic speech on its own — its
-docstring says so, and names the honest next step (a Parselmouth/Praat
-front-end or a learned model). The lightweight acoustic fallback
-(`acoustic_spectral_flatness.py`, still available via a one-line config
-swap) has the same caveat. Treat any score that includes either of these
-as partly proof-of-pipeline, not a fully validated fraud signal — the
-acoustic-via-AASIST component is the one part of today's score backed by
-a real, published, trained model.
+`prosody_parselmouth.py` (the default `prosodic` class as of
+`formula_version: "2026.09.3"`) computes jitter, shimmer, and harmonics-to-
+noise ratio via **Parselmouth** — the official Python binding for **Praat**,
+the long-standing reference tool in clinical voice-quality research.
+Attribution and licence:
+
+- Source: https://github.com/YannickJadoul/Parselmouth
+- Licence: GPLv3
+- These are real, validated acoustic-phonetic measurements — a
+  meaningfully more validated *front end* than the previous autocorrelation
+  pitch-variance heuristic (`prosody_pitch_variance.py`, still available
+  via a one-line config swap for a Praat-free run).
+
+**What's still a placeholder**: the risk-score MAPPING built on top of
+those Praat measurements (`_JITTER_FLOOR`/`_SHIMMER_FLOOR`/`_HNR_CEILING`
+in the module) is an unvalidated heuristic — "an unnaturally smooth voice
+is synthetic-suspicious" — not a trained classifier, and not yet tuned
+against a labeled genuine-vs-synthetic corpus. The lightweight acoustic
+fallback (`acoustic_spectral_flatness.py`) has the same class of caveat.
+Treat any score that includes either as partly proof-of-pipeline, not a
+fully validated fraud signal — the acoustic-via-AASIST component remains
+the one part of today's score backed by a real, published, trained
+*classifier* (as opposed to a validated feature extractor with a heuristic
+threshold on top).
+
+## Voiceprint consistency: real ECAPA-TDNN comparison, with real limits
+
+`voiceprint_consistency.py` (the default `consistency_class`) compares a
+live call's speaker embedding against one enrolled earlier for the claimed
+identity — see `docs/architecture.md`, "Voiceprint consistency" for how.
+Attribution and licence:
+
+- Model: `speechbrain/spkrec-ecapa-voxceleb` (SpeechBrain, ECAPA-TDNN
+  architecture, trained on VoxCeleb1+2)
+- Licence: Apache-2.0
+- Confirmed ungated on HuggingFace (`gated: false`) — no auth token needed
+  to build or run this image, unlike pyannote.audio's pretrained pipelines
+  (all gated) which were rejected for exactly that reason — see
+  `app/adapters/embeddings/ecapa_embedding.py`'s docstring for the full
+  dependency-selection reasoning (Resemblyzer was also considered and
+  rejected, for an unmaintained `webrtcvad` dependency).
+
+**What's still a placeholder**: the cosine-similarity->risk mapping
+(`_MATCH_SIMILARITY`/`_NO_MATCH_SIMILARITY` in the module) is a placeholder
+anchor pair, not a threshold picked off an EER curve on labeled same/
+different-speaker pairs run through this exact preprocessing pipeline.
+Speaker embedding comparison is a real, well-established technique (the
+same approach the SASV Challenge 2022 baseline uses); the specific numeric
+thresholds here are not yet calibrated.
+
+## Diarization: real clustering, with real limits
+
+`embedding_cluster_diarizer.py` reuses the same ECAPA-TDNN embedding
+extractor to answer "roughly how many people spoke, and which stretches
+were whose" for an uploaded recording — see `docs/architecture.md`,
+"Diarization" for how. Real agglomerative clustering
+(`scipy.cluster.hierarchy`, cosine distance), not a lookup table. **What's
+still a placeholder**: fixed-length segmentation (not a proper voice-
+activity/change-point front end) can miss a speaker change mid-segment,
+and the clustering distance threshold is a placeholder pending calibration
+on labeled multi-speaker audio. Good enough for "roughly how many voices,
+roughly which stretches" — not turn-by-turn transcription-grade diarization.
 
 ## The pluggable third signal, pros/cons
 
 | Mode | Pros | Cons |
 |---|---|---|
 | `contextual` | No ML/enrollment infra; zero privacy burden; legible to a non-technical reader; works from the first call | Weak alone — an attacker who knows the target's number and calls in business hours evades it entirely |
-| `consistency` | Checks identity directly; harder to defeat even for a sophisticated attacker | Needs an enrollment flow, consent record, embedding store, TTL — real extra build; cold-start for anyone not enrolled |
+| `consistency` | Checks identity directly (real ECAPA-TDNN comparison, see above); harder to defeat even for a sophisticated attacker | Needs an enrollment flow (built — `POST /v1/enroll`), consent record, embedding store, TTL (retention/consent policy still manual); cold-start for anyone not enrolled |
 | `auto` (default) | Consistency when available, contextual fallback otherwise — no silent zero | Slightly more moving parts to reason about than a fixed mode |
 
 Switch modes in `config/risk_formula.yaml` → `detectors[third_signal].params.mode`

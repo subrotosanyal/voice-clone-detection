@@ -5,8 +5,15 @@ pydantic-settings==2.5.2
 structlog==24.4.0
 PyYAML==6.0.2
 numpy==2.1.1
-scipy==1.14.1
+scipy==1.18.1
 soundfile==0.12.1
 python-multipart==0.0.12
 websockets==13.1
-torch==2.14.0
+torch==2.11.0
+torchaudio==2.11.0
+speechbrain==1.1.1
+huggingface_hub==1.30.0
+HyperPyYAML==1.2.3
+joblib==1.6.0
+sentencepiece==0.2.2
+praat-parselmouth==0.4.7

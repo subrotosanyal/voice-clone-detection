@@ -185,6 +185,34 @@ details.context[open] summary::before{content:"▾ ";}
 .component-row.abstained .bar-fill{background:var(--slate-soft); opacity:.3; width:100% !important;}
 .component-row .abstain-note{font-size:11.5px; color:var(--slate-soft); margin-top:4px; font-style:italic;}
 
+/* help tooltip — small "?" icon, hover/focus reveals an explanation */
+.help-icon{
+  display:inline-flex; align-items:center; justify-content:center; width:15px; height:15px; border-radius:50%;
+  background:var(--line-soft); color:var(--slate); font-size:10.5px; font-weight:700; cursor:help; flex-shrink:0;
+  margin-left:5px; position:relative; font-family:'Public Sans',sans-serif; user-select:none;
+}
+.help-icon:hover, .help-icon:focus{background:var(--accent); color:#fff;}
+.help-icon::after{
+  content:attr(data-help); position:absolute; bottom:calc(100% + 7px); left:50%; transform:translateX(-50%);
+  width:230px; max-width:60vw; background:var(--ink); color:var(--paper); font-size:11.5px; font-weight:400;
+  line-height:1.4; padding:9px 11px; border-radius:7px; box-shadow:var(--shadow); z-index:20;
+  opacity:0; pointer-events:none; transition:opacity .12s ease;
+}
+.help-icon:hover::after, .help-icon:focus::after{opacity:1;}
+.component-row .top-line .name{display:inline-flex; align-items:center;}
+
+/* speaker cards */
+.speaker-card{border:1px solid var(--line); border-radius:10px; padding:12px 14px; background:var(--paper);}
+.speaker-card .sc-top{display:flex; align-items:center; justify-content:space-between; gap:10px;}
+.speaker-card .sc-label{font-size:13px; font-weight:600;}
+.speaker-card .sc-meta{font-size:11.5px; color:var(--slate-soft); margin-top:2px;}
+.speaker-card .sc-score{font-family:'IBM Plex Mono',monospace; font-size:17px; font-weight:600;}
+.speaker-card .sc-replay{
+  font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--slate-soft); background:none;
+  border:1px solid var(--line); border-radius:6px; padding:4px 9px; cursor:pointer; margin-top:8px;
+}
+.speaker-card .sc-replay:hover{border-color:var(--accent); color:var(--accent-ink);}
+
 .chart-wrap{margin-bottom:18px;}
 .chart-wrap .chart-label{font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:.05em; text-transform:uppercase; color:var(--slate-soft); margin-bottom:8px;}
 .chart-wrap svg{width:100%; height:110px; display:block;}
@@ -258,6 +286,7 @@ footer.foot a{color:var(--slate-soft);}
         <div class="tabs">
           <button class="tab-btn active" data-tab="upload">Upload a file</button>
           <button class="tab-btn" data-tab="mic">Microphone (live)</button>
+          <button class="tab-btn" data-tab="enroll">Voiceprints</button>
           <button class="tab-btn" data-tab="history">History</button>
         </div>
 
@@ -268,6 +297,11 @@ footer.foot a{color:var(--slate-soft);}
             <div class="filename" id="fileName"></div>
           </div>
           <input type="file" id="fileInput" accept="audio/*" hidden>
+          <div class="field checkbox" style="margin-top:14px;">
+            <input type="checkbox" id="diarizeCheck">
+            <label for="diarizeCheck">Detect multiple speakers (diarize)</label>
+            <span class="help-icon" data-help="Splits the recording into voice clusters and scores each speaker's audio separately, alongside the whole-call score. File-upload only — not available on the live microphone tab yet.">?</span>
+          </div>
           <details class="context" id="ctxUpload">
             <summary>Call details (optional — feeds the contextual signal)</summary>
             <div class="field-grid"></div>
@@ -291,6 +325,28 @@ footer.foot a{color:var(--slate-soft);}
             <div class="field-grid"></div>
           </details>
           <div class="error-box" id="micError"></div>
+        </div>
+
+        <div class="tab-panel" id="tab-enroll">
+          <p class="hint" style="margin-bottom:14px;">Enroll a caller's voiceprint once, then set "Claimed caller identity" (in Call details, above) to that same name when scoring a call — the Third signal will compare the live voice against this enrollment instead of abstaining.</p>
+          <div class="dropzone" id="enrollDropzone" tabindex="0">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 16V4M12 4l-4 4M12 4l4 4M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
+            <div>Drop a clean voice sample (WAV/FLAC), or click to choose one</div>
+            <div class="filename" id="enrollFileName"></div>
+          </div>
+          <input type="file" id="enrollFileInput" accept="audio/*" hidden>
+          <div class="field" style="margin-top:14px;">
+            <label>Identity to enroll as</label>
+            <input type="text" id="enrollIdentity" placeholder="e.g. alice, cust-00042">
+          </div>
+          <button class="primary-btn" id="enrollBtn" disabled>Enroll voiceprint</button>
+          <div class="error-box" id="enrollError"></div>
+
+          <details class="context" open style="margin-top:22px;">
+            <summary>Enrolled voiceprints</summary>
+            <button class="raw-toggle" id="refreshEnrollmentsBtn" style="margin-top:12px; margin-bottom:12px;">↻ refresh</button>
+            <div id="enrollmentList"></div>
+          </details>
         </div>
 
         <div class="tab-panel" id="tab-history">
@@ -333,6 +389,11 @@ footer.foot a{color:var(--slate-soft);}
         <div class="chart-wrap">
           <div class="chart-label">Score over time</div>
           <svg id="traceChart" viewBox="0 0 560 110" preserveAspectRatio="none"></svg>
+        </div>
+
+        <div id="speakersSection" style="display:none; margin-bottom:18px;">
+          <div class="chart-label" style="margin-bottom:10px;">Per-speaker breakdown (diarized)</div>
+          <div id="speakerCards" style="display:flex; flex-direction:column; gap:10px;"></div>
         </div>
 
         <button class="raw-toggle" id="rawToggle">▸ view raw JSON</button>

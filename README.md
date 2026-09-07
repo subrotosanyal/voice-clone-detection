@@ -37,12 +37,14 @@ projects on a shared dev machine. Change it in `docker-compose.yml` if
 ## What this is, in one paragraph
 
 Audio is cut into overlapping 2-second windows. Each window is scored by
-several independent, pluggable **detectors** (acoustic, prosodic, and a
-config-selectable "third signal" — rule-based context, or voiceprint
-consistency once that's built). A **fusion** step combines their scores
-into one 0–100 risk number with a full, human-readable breakdown of
-exactly which signal contributed what. Nothing here is a black box —
-see `docs/risk-model.md`.
+several independent, pluggable **detectors** (acoustic — AASIST; prosodic —
+Parselmouth/Praat; and a config-selectable "third signal" — rule-based
+context, or real ECAPA-TDNN voiceprint consistency). A **fusion** step
+combines their scores into one 0–100 risk number with a full, human-
+readable breakdown of exactly which signal contributed what. On file
+uploads, an optional **diarizer** can also split a multi-speaker recording
+and score each voice separately. Nothing here is a black box — see
+`docs/risk-model.md`.
 
 ## Repo layout
 
@@ -51,13 +53,17 @@ docker-compose.yml              # docker compose up — the whole thing
 services/live-call-api/         # the one service that exists so far
   app/
     domain/models.py            # framework-free core types
-    ports/                      # the interfaces — detector.py, fusion.py, history_store.py
-    adapters/                   # concrete detectors + fusion + history store + the plugin registry
+    ports/                      # the interfaces — detector.py, fusion.py, history_store.py,
+                                 # enrollment_store.py, diarizer.py
+    adapters/                   # concrete detectors + fusion + history/enrollment stores +
+                                 # diarizer + the shared ECAPA-TDNN embedding extractor +
+                                 # the plugin registry
     pipeline/                   # windowing + orchestration (engine.py)
-    api/                        # FastAPI routes (REST + WebSocket + session history)
+    api/                        # FastAPI routes (REST + WebSocket + session history + enrollment)
     ui/                         # the browser dashboard (no build step — plain HTML/JS)
-  config/risk_formula.yaml      # the formula — weights, thresholds, third-signal mode
+  config/risk_formula.yaml      # the formula — weights, thresholds, third-signal mode, diarizer
   data/sessions.db              # session history (SQLite, gitignored — fetched/created at runtime)
+  data/voiceprints.db           # enrolled voiceprint embeddings (SQLite, gitignored)
   tests/                        # unit + integration, see docs/testing.md
 scripts/gen_test_audio.py       # synthetic (non-voice) smoke-test fixtures
 docs/                           # architecture, risk model, running, testing
@@ -76,18 +82,37 @@ Full details: `docs/architecture.md`.
 ## Status
 
 This implements the **Live Call Path** only (the runtime detection
-pipeline). The acoustic detector now wraps a real pretrained
-countermeasure — **AASIST** (clovaai/aasist, MIT licensed, ASVspoof2019
-LA) — fetched and checksum-verified automatically (`docker compose
-up --build` handles it; see `docs/running-locally.md` for running
-without Docker). It's real and reproducible, but trained on English
-speech only — see `docs/risk-model.md` for exactly what it does and
-doesn't prove. The prosodic detector is still a heuristic v0 baseline
-(documented in its own docstring); a lightweight, torch-free acoustic
-fallback is still available via a one-line config swap.
+pipeline). All three scoring detectors now wrap real, published
+implementations, not hand-rolled heuristics alone:
 
-A browser dashboard exists (upload, live microphone, and session
-history — every past score kept and replayable, persisted across
-restarts via a SQLite-backed history store). Not built yet: the
-Indian-language dataset/eval pipeline, the mock banking approval flow,
-voiceprint enrollment. See `docs/architecture.md`, "What's not built yet".
+- **Acoustic** — **AASIST** (clovaai/aasist, MIT licensed, ASVspoof2019
+  LA), fetched and checksum-verified automatically. Real and reproducible,
+  but trained on English speech only.
+- **Prosodic** — **Parselmouth/Praat**-derived jitter, shimmer, and HNR —
+  real validated voice-quality features; the risk mapping on top is still
+  an honestly-documented heuristic.
+- **Third signal (consistency mode)** — real **ECAPA-TDNN**
+  (`speechbrain/spkrec-ecapa-voxceleb`, Apache-2.0) voiceprint comparison
+  against an enrollment (`POST /v1/enroll`); abstains gracefully until
+  someone is enrolled.
+
+Every model/checkpoint is fetched and cached at `docker compose up --build`
+time — see `docs/running-locally.md` for running without Docker. See
+`docs/risk-model.md` for exactly what each does and doesn't prove.
+Dependency-light, torch/Praat-free fallbacks remain available for the
+acoustic and prosodic detectors via a one-line config swap (see the
+comments in `config/risk_formula.yaml`).
+
+**Diarization** (file-upload only): `POST /v1/score/file?diarize=true`
+splits a multi-speaker recording by voice (embedding clustering, reusing
+the same ECAPA-TDNN model) and scores each speaker separately, alongside
+the whole-call score. Not attempted on the live microphone/WebSocket path
+— see `docs/architecture.md`, "What's not built yet".
+
+A browser dashboard exists (upload with optional diarization, live
+microphone, voiceprint enrollment, and session history — every past score
+kept and replayable, persisted across restarts via a SQLite-backed history
+store). Every detector name and risk band has an inline "?" tooltip
+explaining what it means. Not built yet: the Indian-language dataset/eval
+pipeline, the mock banking approval flow, calibrated risk thresholds for
+the newer detectors. See `docs/architecture.md`, "What's not built yet".
