@@ -70,12 +70,15 @@ Full details: `docs/architecture.md`.
 ## Status
 
 This implements the **Live Call Path** only (the runtime detection
-pipeline). The detectors shipped are honest, deterministic **v0
-baselines** — real DSP, not fabricated numbers, but explicitly not
-validated spoof detectors yet (each one says so in its own docstring).
-Swapping in a real pretrained countermeasure (AASIST, RawGAT-ST) is a
-config + one adapter class change, not a rewrite — see
-`docs/risk-model.md`, "What's a placeholder right now".
+pipeline). The acoustic detector now wraps a real pretrained
+countermeasure — **AASIST** (clovaai/aasist, MIT licensed, ASVspoof2019
+LA) — fetched and checksum-verified automatically (`docker compose
+up --build` handles it; see `docs/running-locally.md` for running
+without Docker). It's real and reproducible, but trained on English
+speech only — see `docs/risk-model.md` for exactly what it does and
+doesn't prove. The prosodic detector is still a heuristic v0 baseline
+(documented in its own docstring); a lightweight, torch-free acoustic
+fallback is still available via a one-line config swap.
 
 Not built yet: the Indian-language dataset/eval pipeline, the operator
 dashboard UI, the mock banking approval flow, voiceprint enrollment. See

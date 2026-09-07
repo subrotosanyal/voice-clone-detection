@@ -63,16 +63,32 @@ source code.
   detector that calls an external model must pin and record that model's
   version in `detail` for the same reason.
 
-## What's a placeholder right now (read before trusting a score)
+## The acoustic detector: a real model now, with real limits
 
-The acoustic and prosodic detectors compute real signal-processing
-features (spectral flatness; autocorrelation-based pitch variance) — they
-are **not** validated indicators of synthetic speech on their own. Every
-detector module says this explicitly in its docstring, and the honest
-next step for each is named there (AASIST/RawGAT-ST for acoustic; a
-Parselmouth/Praat front-end or a learned model for prosody). Treat every
-score from this repo today as a proof that the *pipeline* works end to
-end — not as a validated fraud signal.
+`acoustic_aasist.py` wraps a genuine pretrained countermeasure (AASIST,
+ASVspoof2019 LA) rather than a hand-rolled heuristic — see
+`docs/architecture.md` for what it does and doesn't prove. In short: real
+English speech vs. real English TTS/VC attacks, nothing about Indian
+languages or about non-speech audio. Attribution and licence:
+
+- Source: https://github.com/clovaai/aasist, commit `a04c9863`
+- Licence: MIT, Copyright (c) 2021-present NAVER Corp. — full text in
+  `app/adapters/detectors/vendor/AASIST_LICENSE`
+- Checkpoint fetched and checksum-verified by
+  `vendor/fetch_checkpoint.py`, not committed to git
+
+## What's still a placeholder (read before trusting a score)
+
+The prosodic detector (`prosody_pitch_variance.py`) still computes a real
+signal-processing feature (autocorrelation-based pitch variance) that is
+**not** a validated indicator of synthetic speech on its own — its
+docstring says so, and names the honest next step (a Parselmouth/Praat
+front-end or a learned model). The lightweight acoustic fallback
+(`acoustic_spectral_flatness.py`, still available via a one-line config
+swap) has the same caveat. Treat any score that includes either of these
+as partly proof-of-pipeline, not a fully validated fraud signal — the
+acoustic-via-AASIST component is the one part of today's score backed by
+a real, published, trained model.
 
 ## The pluggable third signal, pros/cons
 

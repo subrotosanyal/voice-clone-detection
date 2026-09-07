@@ -8,6 +8,15 @@ They tell you nothing about real detection accuracy. For that, see the
 project blueprint's §07/§08 on evaluation datasets (ASVspoof, In-the-Wild,
 WaveFake) and the held-out-generator discipline in §04.
 
+Now that the acoustic detector wraps a real speech-trained model
+(AASIST — see app/adapters/detectors/acoustic_aasist.py), expect BOTH of
+these fixtures to score as high-risk: neither a sine tone nor white noise
+is real speech, so a classifier trained on real bonafide-vs-spoof speech
+correctly doesn't recognise either one as "bonafide". That's the model
+working as intended, not a bug — it just means these fixtures no longer
+demonstrate a meaningful genuine-vs-suspicious divergence. Use real
+recorded speech for that (see docs/risk-model.md).
+
 Usage:
     python scripts/gen_test_audio.py
 """

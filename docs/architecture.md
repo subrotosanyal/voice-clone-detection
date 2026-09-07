@@ -122,26 +122,52 @@ To move to a real log-shipping stack later (Loki+Grafana, ELK): point a
 log driver or a sidecar at the containers' stdout. Application code
 doesn't change — it only ever calls `logging_setup.get_logger()`.
 
-## What's a placeholder right now
+## The acoustic detector: a real pretrained model, not a heuristic
 
-`app/adapters/detectors/acoustic_spectral_flatness.py` and
-`prosody_pitch_variance.py` are real, deterministic DSP — but heuristic
-v0 baselines, not validated spoof detectors. Each module's docstring says
-so explicitly and points at the real candidate (AASIST/RawGAT-ST for
-acoustic; Parselmouth/a learned model for prosody) to swap in behind the
-same `DetectorPort`. `consistency_stub.py` always abstains — there's no
-voiceprint enrollment store yet.
+`app/adapters/detectors/acoustic_aasist.py` wraps **AASIST**
+(clovaai/aasist, MIT licensed, NAVER Corp.), a real published spoof-
+countermeasure model, trained on ASVspoof2019 LA. The model architecture
+is vendored unmodified in `vendor/aasist_model.py` (only the outer class
+was renamed, to keep `load_state_dict(strict=True)` matching the
+checkpoint); the checkpoint itself is fetched and checksum-verified by
+`vendor/fetch_checkpoint.py` — not committed to git, pulled at Docker
+build time (or once locally before running tests without Docker).
+
+**What it does and doesn't prove:** the model was trained to tell English
+bonafide speech apart from the specific TTS/voice-conversion attacks in
+one 2019 dataset. It has no exposure to Hindi, Marathi, or a held-out
+generator — measuring that gap is exactly the work the project
+blueprint's §04 describes, and hasn't happened. It also has no exposure
+to non-speech audio: our own synthetic test fixtures (a sine tone, white
+noise — see `scripts/gen_test_audio.py`) both score as ~99.99% "not
+bonafide", because neither one is real speech to begin with. That's the
+model working correctly, not a bug — but it does mean those fixtures no
+longer demonstrate a meaningful genuine-vs-suspicious divergence now that
+a real speech-trained classifier is in the loop. A real demo needs real
+recorded speech (and a real cloned counterpart), which is exactly the
+`docs/risk-model.md`, "What would change this" section describes.
+
+The lightweight DSP baseline (`acoustic_spectral_flatness.py`) is still
+there and still wired to the same `DetectorPort` — swap `config/
+risk_formula.yaml`'s `acoustic` entry back to it for a torch-free, no-
+download quick run (see the comment right above that entry in the file).
+
+`prosody_pitch_variance.py` is still a heuristic v0 baseline — same
+caveat as before, not yet swapped for a real model.
 
 ## What's not built yet
 
 - Voiceprint enrollment + a real consistency detector (SASV-style
-  AASIST+ECAPA-TDNN fusion is the reference implementation to start from).
+  AASIST+ECAPA-TDNN fusion is the reference implementation to start from —
+  notably, the same AASIST checkpoint now wired in here is literally half
+  of that fusion).
 - Persistent session state (currently in-memory only — a restart resets
   every session's smoothing; fine for one process, not for multiple
   replicas — swap `SessionStore` for Redis when that matters).
-- The Indian-language dataset/held-out-generator evaluation pipeline.
+- The Indian-language dataset/held-out-generator evaluation pipeline —
+  including fine-tuning this same AASIST model on that data, per §04.
 - The operator dashboard UI and the mock banking approval flow.
-- Real pretrained countermeasure models in place of the v0 DSP baselines.
+- A real model behind the prosodic detector.
 
 None of this changes the shape of `services/live-call-api/app/` — each
 item above is a new adapter (or a new service) behind an existing or new

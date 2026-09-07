@@ -9,10 +9,19 @@ pip install -r requirements-dev.txt                   # first time only
 pytest tests/ -v
 ```
 
-33 tests, all offline, no Docker needed — unit tests for each detector,
-the windowing math, and the fusion formula (including the abstain/
-renormalisation behaviour), plus integration tests that drive the real
-FastAPI app with `TestClient` (`tests/integration/test_api_score_file.py`).
+40 tests, no Docker needed — unit tests for each detector, the windowing
+math, and the fusion formula (including the abstain/renormalisation
+behaviour), plus integration tests that drive the real FastAPI app with
+`TestClient` (`tests/integration/test_api_score_file.py`).
+
+**One caveat, not fully offline any more:** the app's default config loads
+the real AASIST checkpoint at startup. `tests/conftest.py`'s
+`aasist_checkpoint` fixture fetches it automatically on first run if it's
+missing (needs internet once; cached afterward, checksum-verified every
+time) — any test that doesn't request that fixture (windowing, fusion
+math, the contextual/prosody/spectral-flatness detectors) stays fully
+offline and unaffected. If fetching fails, only the AASIST- and
+integration-dependent tests skip; nothing else breaks.
 
 Run just one file while iterating: `pytest tests/unit/test_fusion_weighted_sum.py -v`.
 
@@ -62,6 +71,17 @@ that same order.
 8000, specifically to avoid clashing with other projects on a shared dev
 machine. Check `docker ps` for what's actually using a port before
 assuming it's this project.
+
+**`FileNotFoundError: AASIST checkpoint not found ...`** — run `python
+app/adapters/detectors/vendor/fetch_checkpoint.py` once (needs internet;
+idempotent). Under pytest this happens automatically via the
+`aasist_checkpoint` fixture in `conftest.py` — you'd only see this
+running the app directly without having fetched it first.
+
+**Sample fixtures both score as high-risk** — expected now that the
+acoustic detector is a real speech classifier; see the note at the top of
+`scripts/gen_test_audio.py`. Neither fixture is real speech, so neither
+reads as "bonafide" — that's correct model behaviour, not a broken test.
 
 ## Writing a new test for a new detector
 

@@ -2,17 +2,31 @@
 
 Generates its own in-memory WAV fixture rather than depending on
 scripts/gen_test_audio.py having been run — `pytest` should work from a
-clean checkout with zero setup beyond `pip install -r requirements-dev.txt`.
+clean checkout with zero setup beyond `pip install -r requirements-dev.txt`
+(plus internet access on first run, to fetch the AASIST checkpoint the
+default config now points the acoustic detector at — see conftest.py).
 """
 from __future__ import annotations
 
 import io
 
 import numpy as np
+import pytest
 import soundfile as sf
 from fastapi.testclient import TestClient
 
 from app.main import app
+
+
+@pytest.fixture(autouse=True)
+def _ensure_checkpoint_before_app_startup(aasist_checkpoint):
+    """The app's default config loads the AASIST detector eagerly at
+    startup (inside `TestClient(app)`'s lifespan). If the checkpoint isn't
+    there yet, that raises FileNotFoundError deep inside app startup —
+    not a clean pytest.skip. Depending on `aasist_checkpoint` here forces
+    the fetch (or a graceful skip of this whole module if offline) before
+    any test in this file constructs a TestClient."""
+    return aasist_checkpoint
 
 
 def _wav_bytes(seed: int = 1, duration_s: float = 2.5, sample_rate: int = 16_000) -> bytes:

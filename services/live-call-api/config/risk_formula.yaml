@@ -12,14 +12,24 @@
 # every log line so a score can always be tied back to the exact config
 # that produced it (see docs/risk-model.md, "Reproducibility").
 
-formula_version: "2026.09.1"
+formula_version: "2026.09.2"
 
 detectors:
+  # Real pretrained countermeasure (AASIST, ASVspoof2019 LA, MIT licensed —
+  # see app/adapters/detectors/acoustic_aasist.py for what this does and
+  # doesn't prove). The checkpoint is fetched separately, not committed to
+  # git — see app/adapters/detectors/vendor/fetch_checkpoint.py.
+  #
+  # To fall back to the dependency-light DSP heuristic instead (no torch,
+  # no checkpoint download — useful for a quick local run), swap the two
+  # lines below for:
+  #   class: app.adapters.detectors.acoustic_spectral_flatness:SpectralFlatnessDetector
+  #   params: {scale: 1.0, floor_rms: 0.0001}
   - name: acoustic
-    class: app.adapters.detectors.acoustic_spectral_flatness:SpectralFlatnessDetector
+    class: app.adapters.detectors.acoustic_aasist:AasistAcousticDetector
     weight: 0.6
     params:
-      scale: 1.0
+      checkpoint_path: app/adapters/detectors/vendor/checkpoints/AASIST.pth
       floor_rms: 0.0001
 
   - name: prosodic

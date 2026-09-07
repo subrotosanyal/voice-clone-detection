@@ -9,3 +9,4 @@ scipy==1.14.1
 soundfile==0.12.1
 python-multipart==0.0.12
 websockets==13.1
+torch==2.14.0

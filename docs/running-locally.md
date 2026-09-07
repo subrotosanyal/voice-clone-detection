@@ -50,11 +50,15 @@ Stop everything: `docker compose down`.
 cd services/live-call-api
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt
-python ../../scripts/gen_test_audio.py   # writes samples/*.wav, run once
+python ../../scripts/gen_test_audio.py                          # writes samples/*.wav, run once
+python app/adapters/detectors/vendor/fetch_checkpoint.py         # fetches AASIST.pth, run once
 uvicorn app.main:app --reload --port 8010
 ```
 
-Same curl commands as above, just against port 8010.
+Same curl commands as above, just against port 8010. The checkpoint fetch
+needs internet access once; it's idempotent (safe to re-run, does nothing
+if already present and valid) and `docker compose up --build` does the
+same thing automatically at image-build time.
 
 ## Regenerating the synthetic test fixtures
 

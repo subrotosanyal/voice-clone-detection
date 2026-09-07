@@ -5,3 +5,7 @@ __pycache__/
 *.egg-info/
 .env
 .DS_Store
+
+# fetched at build/setup time, not committed — see
+# app/adapters/detectors/vendor/fetch_checkpoint.py
+services/live-call-api/app/adapters/detectors/vendor/checkpoints/
