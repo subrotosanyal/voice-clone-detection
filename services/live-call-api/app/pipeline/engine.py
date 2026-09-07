@@ -23,6 +23,7 @@ from app.domain.models import AudioWindow, FusedScore
 from app.logging_setup import get_logger
 from app.pipeline.windowing import make_windows
 from app.ports.history_store import HistoryStorePort
+from app.ports.transcriber import TranscriberPort
 
 logger = get_logger(component="pipeline_engine")
 
@@ -56,10 +57,12 @@ class Engine:
         pipeline: Pipeline,
         session_store: Optional[SessionStore] = None,
         history: Optional[HistoryStorePort] = None,
+        transcriber: Optional[TranscriberPort] = None,
     ) -> None:
         self.pipeline = pipeline
         self.sessions = session_store or SessionStore()
         self.history = history
+        self.transcriber = transcriber
 
     def score_window(self, window: AudioWindow, context: dict[str, Any]) -> FusedScore:
         results = [detector.score(window, context) for detector in self.pipeline.detectors]
@@ -124,8 +127,34 @@ class Engine:
         Used by the one-shot REST endpoint (POST /v1/score/file) and by
         tests — the natural entrypoint when you have a complete recording
         rather than a live stream.
+
+        If a transcriber is configured, the WHOLE buffer is transcribed
+        once here (not per-window — a 2s window is too short for reliable
+        ASR, and transcribing it 4x/second of overlap would be wasteful)
+        and merged into `context` as `transcript`/`transcript_language`
+        before windowing, so every window's third-signal detector sees the
+        same transcript. A caller-supplied `transcript` in context is never
+        overwritten. Live streaming (score_window/score_windows) has no
+        transcription — see app/ports/transcriber.py's scope note.
         """
         self.sessions.reset(session_id)
+
+        if self.transcriber is not None and not context.get("transcript"):
+            transcript_result = self.transcriber.transcribe(samples, sample_rate)
+            logger.info(
+                "transcript_computed",
+                session_id=session_id,
+                detector_name=transcript_result.detector_name,
+                language=transcript_result.language,
+                transcript_length=len(transcript_result.text),
+            )
+            if transcript_result.text:
+                context = {
+                    **context,
+                    "transcript": transcript_result.text,
+                    "transcript_language": transcript_result.language,
+                }
+
         windowing_cfg = self.pipeline.config["windowing"]
         windows = make_windows(
             session_id=session_id,

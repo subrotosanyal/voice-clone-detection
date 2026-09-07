@@ -21,6 +21,26 @@ const BAND_HELP = {
   high: "HIGH risk (score 70–100): multiple signals agree something is off, or one signal is very confident. Recommended action: block or escalate the sensitive request for manual review.",
 };
 
+function escapeHtml(s) {
+  const div = document.createElement("div");
+  div.textContent = s;
+  return div.innerHTML;
+}
+
+function renderTranscriptNote(detail) {
+  if (!detail || !detail.transcript) return "";
+  const keywords = detail.urgency_keywords_from_transcript || [];
+  const financial = detail.is_financial_request_from_transcript;
+  return `
+    <div class="transcript-note">
+      <div class="transcript-label">Transcript (auto-detected, feeds this signal)</div>
+      <div class="transcript-text">"${escapeHtml(detail.transcript)}"</div>
+      ${keywords.length ? `<div class="transcript-tags">urgency: ${keywords.map((k) => `<span class="tag">${escapeHtml(k)}</span>`).join(" ")}</div>` : ""}
+      ${financial ? `<div class="transcript-tags"><span class="tag owner">financial request detected</span></div>` : ""}
+    </div>
+  `;
+}
+
 function helpIcon(text) {
   const span = document.createElement("span");
   span.className = "help-icon";
@@ -216,6 +236,7 @@ function renderFusedScore(fs) {
       </div>
       <div class="bar-track"><div class="bar-fill" style="width:${c.abstained ? 100 : pct}%"></div></div>
       ${c.abstained ? `<div class="abstain-note">${c.detail && c.detail.abstain_reason ? c.detail.abstain_reason : "no signal for this window"}</div>` : ""}
+      ${renderTranscriptNote(c.detail)}
     `;
     if (COMPONENT_HELP[c.name]) row.querySelector(".name").appendChild(helpIcon(COMPONENT_HELP[c.name]));
     compEl.appendChild(row);

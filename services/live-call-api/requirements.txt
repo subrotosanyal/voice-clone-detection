@@ -17,3 +17,7 @@ HyperPyYAML==1.2.3
 joblib==1.6.0
 sentencepiece==0.2.2
 praat-parselmouth==0.4.7
+
+# Whisper transcription (feeds the contextual detector's urgency/financial
+# keyword detection — see app/adapters/transcription/whisper_transcriber.py)
+openai-whisper==20250625

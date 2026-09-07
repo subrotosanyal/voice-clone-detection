@@ -142,6 +142,38 @@ and the clustering distance threshold is a placeholder pending calibration
 on labeled multi-speaker audio. Good enough for "roughly how many voices,
 roughly which stretches" — not turn-by-turn transcription-grade diarization.
 
+## Transcription and urgency-language detection
+
+`whisper_transcriber.py` transcribes an uploaded call once via OpenAI's
+Whisper. Attribution and licence:
+
+- Model: `openai/whisper-small` (also available: tiny/base/medium/large)
+- Licence: MIT
+- Confirmed ungated on HuggingFace — no auth token needed
+
+**Why "small", specifically**: verified by hand, not assumed. The
+smaller "base" model mis-transcribed real Hindi speech into Urdu script —
+a genuine failure mode, not a hypothetical one (the two languages sound
+alike but are written differently, and "base" isn't reliable enough to
+keep them straight). "small", tested on the same audio, got both the
+language and the script right.
+
+**Why keyword matching, not a sentiment-analysis model**: the signal this
+project actually needs isn't generic positive/negative sentiment — it's
+specific, fraud-relevant language ("transfer the money now", "don't tell
+anyone"). `urgency_language.py`'s keyword lists keep every match traceable
+to an actual word in the actual transcript, shown in
+`ContextualRulesDetector`'s `detail` — consistent with the contextual
+mode's whole design goal (§03: "legible to a non-technical reader",
+"no ML or enrollment infra"). A black-box sentiment score would trade that
+transparency away for a kind of signal this project doesn't actually need.
+
+**What's still a placeholder**: the keyword lists (English/Hindi/Marathi)
+were drafted for thematic coverage, not validated against real fraud-call
+transcripts — same class of caveat as the prosodic/voiceprint detectors'
+placeholder thresholds elsewhere in this document. Real ASR, real keyword
+matches; the specific word lists are a starting point.
+
 ## The pluggable third signal, pros/cons
 
 | Mode | Pros | Cons |

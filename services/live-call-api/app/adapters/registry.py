@@ -18,6 +18,7 @@ from app.adapters.detectors.third_signal_router import ThirdSignalRouter
 from app.ports.detector import DetectorPort
 from app.ports.diarizer import DiarizerPort
 from app.ports.fusion import FusionPort
+from app.ports.transcriber import TranscriberPort
 
 
 def _load_class(dotted_path: str) -> type:
@@ -71,6 +72,19 @@ def _build_diarizer(config: dict[str, Any]) -> DiarizerPort | None:
     return cls(**diarization_cfg.get("params", {}))
 
 
+def _build_transcriber(config: dict[str, Any]) -> TranscriberPort | None:
+    """Transcription is optional, same reasoning as diarization above — no
+    `transcription:` section means Engine.score_call() just never sets
+    context["transcript"], and ContextualRulesDetector falls back to
+    whatever urgency_keywords/is_financial_request a caller supplies by
+    hand (its original, pre-transcription behaviour)."""
+    transcription_cfg = config.get("transcription")
+    if transcription_cfg is None:
+        return None
+    cls = _load_class(transcription_cfg["class"])
+    return cls(**transcription_cfg.get("params", {}))
+
+
 @dataclass(frozen=True)
 class Pipeline:
     """Everything the engine needs, built once from config and reused."""
@@ -79,6 +93,7 @@ class Pipeline:
     detectors: list[DetectorPort]
     fusion: FusionPort
     diarizer: DiarizerPort | None = None
+    transcriber: TranscriberPort | None = None
 
 
 def build_pipeline(config_path: str | Path) -> Pipeline:
@@ -86,4 +101,7 @@ def build_pipeline(config_path: str | Path) -> Pipeline:
     detectors = [_build_detector(entry) for entry in config["detectors"]]
     fusion = _build_fusion(config)
     diarizer = _build_diarizer(config)
-    return Pipeline(config=config, detectors=detectors, fusion=fusion, diarizer=diarizer)
+    transcriber = _build_transcriber(config)
+    return Pipeline(
+        config=config, detectors=detectors, fusion=fusion, diarizer=diarizer, transcriber=transcriber
+    )

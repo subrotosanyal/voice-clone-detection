@@ -99,6 +99,10 @@ implementations, not hand-rolled heuristics alone:
   (`speechbrain/spkrec-ecapa-voxceleb`, Apache-2.0) voiceprint comparison
   against an enrollment (`POST /v1/enroll`); abstains gracefully until
   someone is enrolled.
+- **Third signal (contextual mode)** — now fed by real transcription:
+  **Whisper** (MIT) transcribes each uploaded call once, and a transparent
+  keyword list flags urgency/financial-request language in English, Hindi,
+  and Marathi — no manual keyword entry required, though you still can.
 
 Every model/checkpoint is fetched and cached at `docker compose up --build`
 time — see `docs/running-locally.md` for running without Docker. See

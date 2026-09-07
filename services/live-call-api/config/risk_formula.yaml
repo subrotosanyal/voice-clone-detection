@@ -12,7 +12,7 @@
 # every log line so a score can always be tied back to the exact config
 # that produced it (see docs/risk-model.md, "Reproducibility").
 
-formula_version: "2026.09.3"
+formula_version: "2026.09.4"
 
 detectors:
   # Real pretrained countermeasure (AASIST, ASVspoof2019 LA, MIT licensed —
@@ -88,3 +88,15 @@ diarization:
     segment_ms: 1500
     floor_rms: 0.0001
     distance_threshold: 0.35
+
+# Optional — transcribes each POST /v1/score/file call once (file-upload
+# path only, see app/ports/transcriber.py's scope note) and feeds
+# urgency/financial-request keyword detection into the contextual third
+# signal (app/adapters/detectors/contextual_rules.py). Omit this whole
+# section to disable transcription entirely; the contextual detector still
+# works from manually-supplied urgency_keywords/is_financial_request.
+transcription:
+  class: app.adapters.transcription.whisper_transcriber:WhisperTranscriber
+  params:
+    model_size: small  # "base" was tested and found unreliable for Hindi — see whisper_transcriber.py
+    floor_rms: 0.0001

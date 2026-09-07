@@ -9,13 +9,24 @@ pip install -r requirements-dev.txt                   # first time only
 pytest tests/ -v
 ```
 
-79 tests, no Docker needed — unit tests for each detector, the windowing
+95 tests, no Docker needed — unit tests for each detector, the windowing
 math, the fusion formula (including the abstain/renormalisation
 behaviour), the SQLite history and enrollment stores, the ECAPA-TDNN-based
-diarizer, plus integration tests that drive the real FastAPI app with
-`TestClient` (`tests/integration/test_api_score_file.py`,
-`test_ui_served.py`, `test_history_api.py`, `test_enrollment_api.py`,
-`test_diarization_api.py`).
+diarizer, the Whisper transcriber and its urgency-keyword detection, plus
+integration tests that drive the real FastAPI app with `TestClient`
+(`tests/integration/test_api_score_file.py`, `test_ui_served.py`,
+`test_history_api.py`, `test_enrollment_api.py`, `test_diarization_api.py`,
+`test_transcription_api.py`).
+
+**Real-speech tests use macOS's `say` command.** `test_whisper_transcriber.py`
+and `test_transcription_api.py` need genuinely intelligible speech, not a
+synthetic tone — Whisper transcribes real words, not spectral shape. Rather
+than adding a TTS dependency, they generate a spoken fixture at test time
+via `say` (already on macOS, zero new dependencies) and skip gracefully
+wherever it isn't available (any non-macOS CI/Docker environment). Verified
+by hand: "Please transfer the money immediately, it's urgent." synthesized
+this way and fed through the real pipeline correctly detected the language,
+transcribed it, and matched the urgency/financial keywords.
 
 **Pure sine tones don't exercise voiceprint/diarization tests.** A speaker-
 embedding model needs real vocal-tract-like spectral variation to tell
@@ -37,15 +48,18 @@ gitignored, and nothing asserts on the *total* row count), but if it
 bothers you, delete `services/live-call-api/data/sessions.db` any time.
 
 **One caveat, not fully offline any more:** the app's default config loads
-the real AASIST checkpoint AND the ECAPA-TDNN speaker-embedding model at
-startup. `tests/conftest.py`'s `aasist_checkpoint` fixture fetches AASIST
-automatically on first run if it's missing (needs internet once; cached
-afterward, checksum-verified every time); the `ecapa_extractor` fixture
-does the analogous thing for the speechbrain model (also cached after the
-first download — HuggingFace's own cache, not checksum-verified since
-there's no published hash to check against, only the confirmed-ungated
-download itself). Any test that doesn't request either fixture (windowing,
-fusion math, the contextual/spectral-flatness detectors) stays fully
+the real AASIST checkpoint, the ECAPA-TDNN speaker-embedding model, AND
+the Whisper transcription model at startup. `tests/conftest.py`'s
+`aasist_checkpoint` fixture fetches AASIST automatically on first run if
+it's missing (needs internet once; cached afterward, checksum-verified
+every time); the `ecapa_extractor` fixture does the analogous thing for
+the speechbrain model; `test_whisper_transcriber.py`'s own `transcriber`
+fixture does the same for Whisper (all cached after the first download —
+not checksum-verified for the latter two, only the confirmed-ungated
+download itself). Any test that doesn't request one of these fixtures
+(windowing, fusion math, the contextual/spectral-flatness detectors, the
+transcript-merging tests in `test_contextual_rules.py`, which pass a
+literal `transcript` string and never touch Whisper itself) stays fully
 offline and unaffected. If a fetch fails, only the tests that need that
 model skip; nothing else breaks.
 

@@ -13,14 +13,27 @@ contribute):
                                  claimed identity?
   hour_of_day: int             — 0-23, local time of the call
   is_financial_request: bool   — is a transfer/payment being requested?
-  urgency_keywords: list[str]  — words from a transcript indicating
-                                 pressure/urgency (e.g. "immediately",
-                                 "right now", "don't tell anyone")
+                                 (manually supplied; auto-detection below
+                                 can also set this)
+  urgency_keywords: list[str]  — words a caller manually supplies as
+                                 indicating pressure/urgency
+  transcript: str              — a real transcript (see
+                                 app/adapters/transcription/
+                                 whisper_transcriber.py), set automatically
+                                 by Engine.score_call() when a transcriber
+                                 is configured — not something a caller
+                                 needs to supply by hand. Scanned for the
+                                 same class of urgency/financial-request
+                                 language via app/adapters/transcription/
+                                 urgency_language.py, and merged with (not
+                                 replacing) any manually-supplied
+                                 urgency_keywords/is_financial_request.
 """
 from __future__ import annotations
 
 from typing import Any
 
+from app.adapters.transcription.urgency_language import detect_urgency_signals
 from app.domain.models import AudioWindow, DetectorResult
 
 _UNUSUAL_HOUR_START = 22  # 10pm
@@ -72,13 +85,26 @@ class ContextualRulesDetector:
             if unusual:
                 total += self.weight_unusual_hour
 
-        is_financial = context.get("is_financial_request")
-        if isinstance(is_financial, bool):
+        # Auto-detected from a real transcript (if Engine.score_call() set
+        # one — see this module's docstring), merged with anything manually
+        # supplied, never replacing it. Every field below distinguishes the
+        # two sources so a result stays traceable to either "the caller
+        # said so" or "the transcript actually contains this word".
+        transcript = context.get("transcript") or ""
+        transcript_urgency_keywords, transcript_is_financial = detect_urgency_signals(transcript)
+
+        manual_is_financial = context.get("is_financial_request")
+        is_financial = bool(manual_is_financial) or transcript_is_financial
+        if manual_is_financial is not None or transcript_is_financial:
             fired["financial_request"] = is_financial
             if is_financial:
                 total += self.weight_financial_request
 
-        urgency_keywords = context.get("urgency_keywords") or []
+        manual_urgency_keywords = context.get("urgency_keywords") or []
+        urgency_keywords = list(manual_urgency_keywords)
+        for phrase in transcript_urgency_keywords:
+            if phrase not in urgency_keywords:
+                urgency_keywords.append(phrase)
         has_urgency = len(urgency_keywords) > 0
         fired["urgency_language"] = has_urgency
         if has_urgency:
@@ -94,9 +120,15 @@ class ContextualRulesDetector:
             )
 
         raw_score = min(total, 1.0)
+        detail: dict[str, Any] = {"rules_fired": fired, "urgency_keywords": urgency_keywords}
+        if transcript:
+            detail["transcript"] = transcript
+            detail["urgency_keywords_manual"] = manual_urgency_keywords
+            detail["urgency_keywords_from_transcript"] = transcript_urgency_keywords
+            detail["is_financial_request_from_transcript"] = transcript_is_financial
         return DetectorResult(
             detector_name=self.name,
             detector_version=self.version,
             score=raw_score,
-            detail={"rules_fired": fired, "urgency_keywords": urgency_keywords},
+            detail=detail,
         )

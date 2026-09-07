@@ -123,3 +123,18 @@ class SpeakerSegment:
     speaker_label: str
     start_ms: int
     end_ms: int
+
+
+@dataclass(frozen=True)
+class TranscriptResult:
+    """What a transcriber returns for one call's audio — feeds the
+    contextual third signal's urgency/financial-request keyword detection
+    (see app/adapters/detectors/contextual_rules.py). `language` is the
+    transcriber's own detected language code (e.g. "en", "hi", "mr"), not a
+    claim from the caller. Empty `text` means no speech was found — not an
+    error, just nothing to analyse (silence, non-speech audio)."""
+
+    text: str
+    language: Optional[str]
+    detector_name: str
+    detector_version: str

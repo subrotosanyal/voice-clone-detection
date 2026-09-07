@@ -71,6 +71,12 @@ RUN python app/adapters/detectors/vendor/fetch_checkpoint.py
 # "ModuleNotFoundError: No module named 'app'".
 RUN python -m app.adapters.embeddings.fetch_ecapa_model
 
+# Same reasoning for the Whisper "small" transcription model — see
+# app/adapters/transcription/fetch_whisper_model.py. No `app.*` imports in
+# that script itself, so (unlike the ECAPA fetch above) a plain script
+# path works fine here.
+RUN python app/adapters/transcription/fetch_whisper_model.py
+
 ENV PYTHONUNBUFFERED=1
 EXPOSE 8000
 

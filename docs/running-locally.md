@@ -75,6 +75,18 @@ History tab (`session_id` suffixed `::speaker_1`, `::speaker_2`, ...). Also
 available from the dashboard's Upload tab via the "Detect multiple
 speakers" checkbox.
 
+Transcription runs automatically on every `/v1/score/file` call when
+configured (the default — see `config/risk_formula.yaml`'s
+`transcription:` section) — no flag needed. The transcript and any
+detected urgency/financial-request language show up in the `third_signal`
+component's `detail` (`detail.transcript`,
+`detail.urgency_keywords_from_transcript`,
+`detail.is_financial_request_from_transcript`), visible in the dashboard
+under that component and via "view raw JSON". You can still supply
+`urgency_keywords`/`is_financial_request` by hand in `context` — the
+transcript-derived signals are merged with them, never replacing what you
+supply.
+
 ## Voiceprint enrollment
 
 The third signal's `consistency` mode (see `docs/risk-model.md`) compares a

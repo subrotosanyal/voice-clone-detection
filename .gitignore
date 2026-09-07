@@ -14,6 +14,10 @@ services/live-call-api/app/adapters/detectors/vendor/checkpoints/
 # not committed. See app/adapters/embeddings/fetch_ecapa_model.py.
 services/live-call-api/app/adapters/embeddings/.cache/
 
+# Whisper transcription model cache — fetched at build/setup time, not
+# committed. See app/adapters/transcription/fetch_whisper_model.py.
+services/live-call-api/app/adapters/transcription/.cache/
+
 # session history — local runtime data, not committed. See
 # app/adapters/history/sqlite_store.py and docker-compose.yml's volume for it.
 services/live-call-api/data/

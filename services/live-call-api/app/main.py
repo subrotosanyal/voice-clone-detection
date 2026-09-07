@@ -49,7 +49,7 @@ async def lifespan(app: FastAPI):
     history = SqliteHistoryStore(settings.history_db_path)
     app.state.pipeline = pipeline
     app.state.history = history
-    app.state.engine = Engine(pipeline, history=history)
+    app.state.engine = Engine(pipeline, history=history, transcriber=pipeline.transcriber)
 
     # If the configured third_signal.consistency_class is the real
     # VoiceprintConsistencyDetector, expose that SAME instance to
@@ -68,6 +68,7 @@ async def lifespan(app: FastAPI):
         ),
         voiceprint_enrollment_available=app.state.voiceprint_detector is not None,
         diarization_available=pipeline.diarizer is not None,
+        transcription_available=pipeline.transcriber is not None,
     )
     yield
 

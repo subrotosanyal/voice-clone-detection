@@ -668,7 +668,7 @@ figure.diagram figcaption b{color:var(--slate); font-weight:600;}
             <li>Pluggable ports-and-adapters core — swap any detector via one YAML edit</li>
             <li>Acoustic detector — real AASIST (clovaai/aasist, MIT), checksum-verified, deterministic</li>
             <li>Prosodic detector — real Praat-derived jitter/shimmer/HNR via Parselmouth</li>
-            <li>Third signal, contextual mode — rule-based call metadata</li>
+            <li>Third signal, contextual mode — rule-based call metadata, now including real transcription (Whisper) feeding automatic urgency/financial-language keyword detection in English, Hindi, and Marathi</li>
             <li>Third signal, consistency mode — real ECAPA-TDNN speaker-embedding comparison</li>
             <li>Voiceprint enrollment — enroll / list / delete, embedding-only storage</li>
             <li>Speaker diarization — splits a multi-speaker file, scores each voice separately</li>
@@ -677,7 +677,7 @@ figure.diagram figcaption b{color:var(--slate); font-weight:600;}
             <li>Persistent, replayable session history, survives restarts</li>
             <li>Browser dashboard — upload, live mic, diarization, enrollment, history, help tooltips</li>
             <li>Docker Compose runtime + central JSON log viewer (Dozzle)</li>
-            <li>79 automated tests passing (unit + integration)</li>
+            <li>95 automated tests passing (unit + integration)</li>
             <li>Indian-language eval pipeline (§04) — real CC BY 4.0 Hindi/Marathi genuine speech + real XTTS-v2 Hindi clones, scored and fine-tuned: <strong>10% EER for Hindi</strong> (unchanged before/after fine-tuning — an honest finding, not yet an improvement)</li>
           </ul>
         </div>
@@ -1027,7 +1027,7 @@ figure.diagram figcaption b{color:var(--slate); font-weight:600;}
             <span class="status-pill done">built</span>
             <span class="cfg-pill">THIRD_SIGNAL_MODE = "contextual"</span>
           </div>
-          <p class="model-desc">Rule-based: is the number known? First contact? Unusual hour? Is the request financial? Does urgency language appear in the transcript?</p>
+          <p class="model-desc">Rule-based: is the number known? First contact? Unusual hour? Is the request financial? Does urgency language appear in the transcript? <strong>The transcript itself is now real</strong> — Whisper (MIT) transcribes the call automatically, and a transparent English/Hindi/Marathi keyword list detects urgency/financial-request language, merged with anything supplied by hand rather than replacing it.</p>
           <div class="pros-cons">
             <div class="pc pros"><h5>Pros</h5><ul>
               <li>No ML or enrollment infra — a rules engine, buildable in hours</li>

@@ -57,3 +57,54 @@ def test_unusual_hour_boundaries():
     assert late.detail["rules_fired"]["unusual_hour"] is True
     assert early.detail["rules_fired"]["unusual_hour"] is True
     assert business.detail["rules_fired"]["unusual_hour"] is False
+
+
+def test_transcript_auto_detects_urgency_and_financial_request():
+    """A transcript (set by Engine.score_call() when a transcriber is
+    configured — see app/adapters/transcription/) is scanned the same way
+    a manually-supplied urgency_keywords list is, without the caller
+    needing to type anything by hand."""
+    detector = ContextualRulesDetector()
+    result = detector.score(
+        WINDOW,
+        context={"transcript": "Please transfer the money immediately, it's urgent."},
+    )
+    assert result.score is not None
+    assert result.detail["rules_fired"]["financial_request"] is True
+    assert result.detail["rules_fired"]["urgency_language"] is True
+    assert "immediately" in result.detail["urgency_keywords"]
+    assert "urgent" in result.detail["urgency_keywords"]
+    assert result.detail["is_financial_request_from_transcript"] is True
+
+
+def test_transcript_merges_with_manually_supplied_fields_not_replacing_them():
+    detector = ContextualRulesDetector()
+    result = detector.score(
+        WINDOW,
+        context={
+            "urgency_keywords": ["don't tell anyone"],
+            "transcript": "please respond immediately",
+        },
+    )
+    # both the manual keyword and the transcript-derived one are present
+    assert "don't tell anyone" in result.detail["urgency_keywords"]
+    assert "immediately" in result.detail["urgency_keywords"]
+    assert result.detail["urgency_keywords_manual"] == ["don't tell anyone"]
+    assert result.detail["urgency_keywords_from_transcript"] == ["immediately"]
+
+
+def test_empty_transcript_does_not_add_a_transcript_detail():
+    detector = ContextualRulesDetector()
+    result = detector.score(WINDOW, context={"known_number": True, "transcript": ""})
+    assert "transcript" not in result.detail
+
+
+def test_transcript_with_no_urgency_language_does_not_fire_the_rule():
+    detector = ContextualRulesDetector()
+    result = detector.score(WINDOW, context={"transcript": "Good morning, how are you today?"})
+    assert result.detail["rules_fired"]["urgency_language"] is False
+    # financial_request isn't reported at all here — no manual value was
+    # supplied and the transcript didn't trigger it either, matching the
+    # pre-existing convention (see test_abstains_with_no_context): a rule
+    # only appears in rules_fired when there's something to report.
+    assert "financial_request" not in result.detail["rules_fired"]

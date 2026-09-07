@@ -243,6 +243,39 @@ clustering distance threshold is a placeholder pending calibration on
 labeled multi-speaker audio — see the module's docstring. Real signal
 processing, reproducible, not turn-by-turn transcription-grade diarization.
 
+## Transcription — feeding real call language into the contextual signal
+
+`app/ports/transcriber.py` (`TranscriberPort`) + `app/adapters/transcription/
+whisper_transcriber.py` (`WhisperTranscriber`) answer "what did the caller
+actually say" for an uploaded recording, using OpenAI's Whisper (MIT,
+confirmed ungated). Wired into `POST /v1/score/file` only (see the port's
+scope note — same file-upload-only reasoning as diarization), the whole
+buffer is transcribed once by `Engine.score_call()` and merged into
+`context["transcript"]` before windowing, so every window's third signal
+sees the same transcript.
+
+**Model size — verified by hand, not assumed**: the smaller "base" model
+mis-transcribed real Hindi speech into Urdu script (a real, reproducible
+finding, not a guess — the two languages are spoken near-identically but
+written differently, and "base" isn't reliable enough to keep them
+straight). "small" was tested on the same audio and got it right, so
+that's the default — still fast on CPU (~1-2s once loaded).
+
+`app/adapters/transcription/urgency_language.py` then scans the transcript
+for fraud-relevant language — urgency phrases and financial-request
+words, in English/Hindi/Marathi — and `ContextualRulesDetector`
+(`app/adapters/detectors/contextual_rules.py`) merges whatever it finds
+with any manually-supplied `urgency_keywords`/`is_financial_request`,
+never replacing them. Every match is traceable to an actual word in the
+actual transcript, shown in the component's `detail` — see
+`docs/risk-model.md` for why a transparent keyword list was chosen here
+over a black-box sentiment model.
+
+**Not built**: transcription on the live WebSocket path (same "substantially
+harder, deferred" reasoning as live diarization), and the keyword lists
+themselves aren't validated against real fraud-call transcripts — see the
+module's own honesty note.
+
 ## Concurrency: keeping the event loop free during a long score
 
 `Engine.score_call()`/`score_window()` are plain synchronous, CPU-bound
