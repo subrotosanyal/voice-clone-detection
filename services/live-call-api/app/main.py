@@ -22,6 +22,24 @@ from app.pipeline.engine import Engine
 logger = get_logger(component="startup")
 
 
+class NoCacheStaticFiles(StaticFiles):
+    """Adds `Cache-Control: no-cache` to every static response.
+
+    Without this, browsers can silently keep serving an old cached
+    index.html/app.js after a rebuild — the exact confusion that made the
+    History tab look broken right after it was added to an already-open
+    tab. `no-cache` (not `no-store`) still lets the browser use its cached
+    copy, but only after revalidating via If-None-Match — cheap, and
+    always correct. This is a UI served straight off disk, not a CDN
+    asset — correctness matters far more than shaving one round trip.
+    """
+
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     configure_logging(settings.log_level)
@@ -55,4 +73,4 @@ app.include_router(history_router)
 # paths the routers above didn't already claim (/, /app.js). The routes
 # above (/healthz, /v1/*, and FastAPI's own /docs, /redoc, /openapi.json)
 # always win first. See app/ui/README or docs/architecture.md.
-app.mount("/", StaticFiles(directory="app/ui", html=True), name="ui")
+app.mount("/", NoCacheStaticFiles(directory="app/ui", html=True), name="ui")

@@ -30,6 +30,17 @@ def test_app_js_served():
     assert "score/file" in resp.text  # sanity: it references the real API path
 
 
+def test_static_files_are_not_cached_without_revalidation():
+    """A browser silently serving a stale app.js after a rebuild is a real
+    failure mode we hit once already (a page open from before a UI change
+    kept running the old script). no-cache still lets the browser cache
+    the file, but forces revalidation every time — see NoCacheStaticFiles
+    in app/main.py."""
+    with TestClient(app) as client:
+        assert client.get("/").headers["cache-control"] == "no-cache"
+        assert client.get("/app.js").headers["cache-control"] == "no-cache"
+
+
 def test_api_routes_are_not_shadowed_by_the_static_mount():
     """The dashboard is mounted at "/" — this guards against a future
     change accidentally reordering things so it swallows API routes."""
