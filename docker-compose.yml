@@ -1,0 +1,51 @@
+# Satya-Vani — Live Call Path
+#
+#   docker compose up --build
+#
+# Then:
+#   curl -F "file=@services/live-call-api/samples/genuine_tone.wav" \
+#        http://localhost:8020/v1/score/file | jq
+#
+#   open http://localhost:8020/docs      (interactive API docs)
+#   open http://localhost:8888           (Dozzle — central log viewer)
+#
+# Host port is 8020, not the more obvious 8000 — chosen to avoid clashing
+# with other projects' containers on a shared dev machine. Change the left
+# side of "8020:8000" below if 8020 is taken on your machine too; the
+# container's own port (right side, 8000) never needs to change.
+#
+# See docs/running-locally.md for the full walkthrough.
+
+services:
+  live-call-api:
+    build:
+      context: ./services/live-call-api
+    ports:
+      - "8020:8000"
+    environment:
+      RISK_CONFIG_PATH: config/risk_formula.yaml
+      LOG_LEVEL: INFO
+    volumes:
+      # Mount config read-only so editing risk_formula.yaml and restarting
+      # (no rebuild) is enough to try a new formula.
+      - ./services/live-call-api/config:/app/config:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+  # Central logging: every container's stdout is already JSON (see
+  # app/logging_setup.py) — Dozzle gives a zero-config web UI over
+  # `docker logs`, filterable, with no log-shipping infrastructure to run.
+  # Swap for Loki+Grafana or ELK later without touching application code;
+  # see docs/architecture.md, "Central logging".
+  dozzle:
+    image: amir20/dozzle:latest
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - "8888:8080"  # dozzle listens on 8080 inside the container
+    restart: unless-stopped

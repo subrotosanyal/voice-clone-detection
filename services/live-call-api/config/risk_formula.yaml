@@ -1,0 +1,55 @@
+# Satya-Vani risk formula — the single file that controls scoring.
+#
+# Add a new risk factor by adding an entry under `detectors:` that points
+# at a class implementing app.ports.detector.DetectorPort. Change the
+# formula's balance by editing `weight`. Change the fusion MATH itself
+# (not just weights) by pointing `fusion.class` at a different
+# app.ports.fusion.FusionPort implementation. No code changes required for
+# any of the above — see docs/risk-model.md.
+#
+# Bump `formula_version` any time this file changes in a way that would
+# change past scores if replayed — it's stamped onto every FusedScore and
+# every log line so a score can always be tied back to the exact config
+# that produced it (see docs/risk-model.md, "Reproducibility").
+
+formula_version: "2026.09.1"
+
+detectors:
+  - name: acoustic
+    class: app.adapters.detectors.acoustic_spectral_flatness:SpectralFlatnessDetector
+    weight: 0.6
+    params:
+      scale: 1.0
+      floor_rms: 0.0001
+
+  - name: prosodic
+    class: app.adapters.detectors.prosody_pitch_variance:PitchVarianceDetector
+    weight: 0.2
+    params:
+      frame_ms: 40
+      hop_ms: 20
+      scale: 2.5
+
+  - name: third_signal
+    class: app.adapters.detectors.third_signal_router:ThirdSignalRouter
+    weight: 0.2
+    params:
+      # contextual | consistency | auto — see docs/risk-model.md
+      mode: auto
+      contextual_class: app.adapters.detectors.contextual_rules:ContextualRulesDetector
+      consistency_class: app.adapters.detectors.consistency_stub:ConsistencyStubDetector
+
+fusion:
+  class: app.adapters.fusion.weighted_sum:WeightedSumFusion
+  # EMA smoothing across a session's windows: higher = more reactive to the
+  # latest window, lower = smoother but slower to react.
+  smoothing_alpha: 0.35
+
+bands:
+  low_max: 34
+  elevated_max: 69
+  # anything above elevated_max is "high"
+
+windowing:
+  window_ms: 2000
+  hop_ms: 500
