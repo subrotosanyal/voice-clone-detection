@@ -17,24 +17,33 @@ licensed public speech corpora instead of recruiting classmates:
 - A held-out-generator evaluation harness that runs the same
   `AasistAcousticDetector` the live service uses.
 
-**First real measurement** (genuine speech only, no synthetic side yet —
-see `results/summary.json`, run via `scripts/run_held_out_eval.py` against
-20 real Hindi + 20 real Marathi utterances from the datasets below):
+**First real bonafide-vs-spoof measurement for Hindi** (see
+`results/summary.json`, run via `scripts/run_held_out_eval.py` against 20
+genuine Hindi utterances and 10 XTTS-v2-cloned Hindi utterances):
 
-| Language | Genuine utterances scored | Correctly recognised as bonafide (not flagged as spoof) |
-|---|---|---|
-| Hindi | 20 | **85%** (mean spoof-probability 0.15) |
-| Marathi | 20 | **95%** (mean spoof-probability 0.07) |
+| | Bonafide accuracy | Spoof accuracy | EER |
+|---|---|---|---|
+| **Before fine-tuning** | 85% | 100% | **10%** |
+| **After fine-tuning** (final layer only, 50 examples) | 100% | 80% | **10%** |
 
-Read carefully: this is AASIST's *false-positive rate* on real Indian-
-language speech it was never trained on — not yet the full bonafide-vs-
-spoof accuracy the blueprint's §04/§08 wants, which needs the synthetic
-(spoof) side too (see "Not started" below). It's still a real, useful
-signal on its own: a 15% false-positive rate on genuine Hindi callers is
-the kind of number that would actually matter to a bank deciding whether
-to trust this system for Hindi-speaking customers, and it's honestly worse
-than Marathi's 5% — small sample (n=20 each), not yet statistically
-rigorous, but real and reproducible on demand, not claimed.
+**Marathi has genuine-only numbers so far** (no synthetic side yet — no
+viable ungated Marathi TTS system found): 95% bonafide accuracy before
+fine-tuning, 100% after.
+
+**Read this honestly, not optimistically:** fine-tuning did NOT reduce the
+EER — it moved AASIST's decision threshold, catching every genuine Hindi
+speaker correctly (85%→100%) at the direct cost of missing more of the
+cloned speech (100%→80% spoof accuracy). The Equal Error Rate — the
+number that actually measures how separable bonafide and spoof are for
+this model — stayed exactly at 10% before and after. That's the honest
+finding: **with only 50 total examples, fine-tuning the final layer
+re-balances where errors land, it doesn't make the model more capable of
+telling real from fake Hindi speech.** Real improvement needs real
+volume — more speakers, more sentences, and critically, a second held-out
+synthesis system so "after fine-tuning" can be measured on data the model
+never touched, instead of the same data it trained on (see
+`fine_tune_aasist.py`'s docstring on why only the last layer was
+fine-tuned at all, given this data volume).
 
 **What still needs a human, and hasn't happened yet:**
 
@@ -95,9 +104,18 @@ pip install -r requirements.txt
 
 python scripts/fetch_genuine_corpus.py       # downloads a subset of the two datasets above, verifies language content
 python scripts/generate_synthetic_corpus.py  # runs XTTS-v2 on the Hindi sentences against the genuine speakers' voices
-python scripts/run_held_out_eval.py          # runs AASIST over everything, writes results/summary.json
+                                              # (~2GB one-time model download, then ~10-15s/sentence on CPU)
+
+# The next two steps import AasistAcousticDetector directly from
+# services/live-call-api — run them with THAT service's own venv active,
+# not this pipeline's venv (avoids a second multi-GB torch install):
+source ../../services/live-call-api/.venv/bin/activate
+python scripts/run_held_out_eval.py          # runs AASIST over genuine+synthetic, writes results/summary.json
+python scripts/fine_tune_aasist.py           # fine-tunes AASIST's final layer, writes results/aasist_out_layer_finetuned.pth
+python scripts/run_held_out_eval.py          # re-run: now reports before_finetune AND after_finetune
 ```
 
-`data/` and `results/*.wav` are gitignored — only `results/summary.json`
-(numbers, no audio) is committed, so this reproduces on any machine without
-re-downloading multi-gigabyte corpora into git.
+`data/`, `results/*.wav`, and `results/*.pth` are gitignored — only
+`results/summary.json` (numbers, no audio, no model weights) is committed,
+so this reproduces on any machine without re-downloading multi-gigabyte
+corpora/models into git.

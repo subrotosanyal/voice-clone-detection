@@ -24,3 +24,4 @@ services/live-call-api/data/
 eval/indian_language/.venv/
 eval/indian_language/data/
 eval/indian_language/results/*.wav
+eval/indian_language/results/*.pth

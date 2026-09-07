@@ -1,11 +1,14 @@
 {
-  "languages": {
+  "notes": [
+    "after_finetune is evaluated on the SAME data the fine-tune ran on (no genuinely held-out second synthesis system exists yet) — read this as 'did the mechanism improve fit', not a generalisation claim. See fine_tune_aasist.py's docstring."
+  ],
+  "before_finetune": {
     "hi": {
       "n_genuine": 20,
-      "n_synthetic": 0,
+      "n_synthetic": 10,
       "bonafide_accuracy": 0.85,
-      "spoof_accuracy": null,
-      "eer": null,
+      "spoof_accuracy": 1.0,
+      "eer": 0.1,
       "mean_spoof_probability_genuine": 0.1542560460868117
     },
     "mr": {
@@ -17,7 +20,40 @@
       "mean_spoof_probability_genuine": 0.06554454403158161
     }
   },
-  "notes": [
-    "No synthetic corpus found — this run only measures AASIST's false-positive rate on genuine speech, not full bonafide-vs-spoof EER. Run scripts/generate_synthetic_corpus.py to add the spoof side."
-  ]
+  "languages": {
+    "hi": {
+      "n_genuine": 20,
+      "n_synthetic": 10,
+      "bonafide_accuracy": 0.85,
+      "spoof_accuracy": 1.0,
+      "eer": 0.1,
+      "mean_spoof_probability_genuine": 0.1542560460868117
+    },
+    "mr": {
+      "n_genuine": 20,
+      "n_synthetic": 0,
+      "bonafide_accuracy": 0.95,
+      "spoof_accuracy": null,
+      "eer": null,
+      "mean_spoof_probability_genuine": 0.06554454403158161
+    }
+  },
+  "after_finetune": {
+    "hi": {
+      "n_genuine": 20,
+      "n_synthetic": 10,
+      "bonafide_accuracy": 1.0,
+      "spoof_accuracy": 0.8,
+      "eer": 0.1,
+      "mean_spoof_probability_genuine": 0.05822154602064984
+    },
+    "mr": {
+      "n_genuine": 20,
+      "n_synthetic": 0,
+      "bonafide_accuracy": 1.0,
+      "spoof_accuracy": null,
+      "eer": null,
+      "mean_spoof_probability_genuine": 0.019369296057266183
+    }
+  }
 }

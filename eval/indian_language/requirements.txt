@@ -3,3 +3,18 @@ huggingface_hub==1.30.0
 soundfile==0.12.1
 librosa==0.10.2.post1
 numpy==2.1.1
+
+# Coqui XTTS-v2 (synthetic/spoof Hindi generation) — see
+# scripts/generate_synthetic_corpus.py's module docstring for the license
+# note (library is MPL-2.0, model weights are CPML). torch/torchaudio
+# pinned to the same CPU-only pattern as services/live-call-api.
+torch==2.11.0
+torchaudio==2.11.0
+coqui-tts==0.27.5
+# transformers>=5 breaks coqui-tts's bundled XTTS code (a real
+# incompatibility hit while building this — see git history); pin the
+# latest 4.x release instead.
+transformers==4.57.6
+# Required by coqui-tts for audio IO since torch>=2.9 (another real
+# incompatibility hit while building this).
+torchcodec==0.16.0

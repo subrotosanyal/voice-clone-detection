@@ -678,14 +678,14 @@ figure.diagram figcaption b{color:var(--slate); font-weight:600;}
             <li>Browser dashboard — upload, live mic, diarization, enrollment, history, help tooltips</li>
             <li>Docker Compose runtime + central JSON log viewer (Dozzle)</li>
             <li>79 automated tests passing (unit + integration)</li>
-            <li>Indian-language eval pipeline (§04) — real CC BY 4.0 Hindi/Marathi genuine speech fetched and scored: <strong>85%/95%</strong> correctly recognised as bonafide</li>
+            <li>Indian-language eval pipeline (§04) — real CC BY 4.0 Hindi/Marathi genuine speech + real XTTS-v2 Hindi clones, scored and fine-tuned: <strong>10% EER for Hindi</strong> (unchanged before/after fine-tuning — an honest finding, not yet an improvement)</li>
           </ul>
         </div>
         <div class="scope-col notbuilt">
           <h4>Not built yet</h4>
           <ul>
-            <li><strong>Indian-language dataset &amp; held-out-generator evaluation (§04)</strong> — genuine-speech side started (see left); synthetic/spoof side, a second held-out system, and any Malvi data (needs a real volunteer — no digital resources exist) are not</li>
-            <li>Independent EER measurement of the acoustic model against a public benchmark — it runs on its pretrained checkpoint, unvalidated by this team</li>
+            <li><strong>A genuinely held-out second synthesis system (§04)</strong> — without one, "after fine-tuning" is only measured on data the model already trained on, not a real generalisation test; also still missing: any Malvi data (needs a real volunteer — no digital resources exist) and a synthetic/spoof Marathi corpus (no ungated open TTS system covering Marathi was found)</li>
+            <li>Independent EER measurement of the acoustic model against a public English benchmark — it runs on its pretrained checkpoint, unvalidated by this team on English</li>
             <li>Mock banking approval screen that actually blocks a pending transfer on High</li>
             <li>Adversarial/codec robustness testing (noise, resampling, re-encoding)</li>
             <li>Real-time diarization on the live microphone path (file-upload only today)</li>
@@ -1120,7 +1120,7 @@ fusion:
       <div class="section-head"><span class="section-num">04</span><h2 class="section-title">The differentiator: Indian languages</h2> <span class="status-pill partial">started</span></div>
       <div class="callout status-todo">
         <div class="callout-title">Status — in progress, real first number in hand</div>
-        <p>Started, using existing licensed public corpora instead of recruiting classmates first — see <code>eval/indian_language/README.md</code> for the full pipeline. Real, license-verified (CC BY 4.0) genuine Hindi and Marathi speech has been fetched and scored through the exact same AASIST model §02 wired in: <strong>85% of genuine Hindi speech and 95% of genuine Marathi speech is correctly recognised as bonafide</strong> (not flagged as synthetic), on a small n=20-per-language sample. That's a real, reproducible measurement of the English-trained model's false-positive rate on languages it never saw — not yet the full bonafide-vs-spoof gap, which still needs a synthetic (cloned) side. Still not started: any Malvi data at all (no digital resources exist for it — needs an actual volunteer), a synthetic/spoof Marathi corpus (no ungated open TTS system covering Marathi was found), a second held-out synthesis system, and fine-tuning.</p>
+        <p>Started, using existing licensed public corpora instead of recruiting classmates first — see <code>eval/indian_language/README.md</code> for the full pipeline. Real, license-verified (CC BY 4.0) genuine Hindi/Marathi speech plus real XTTS-v2-cloned Hindi speech has been scored through the exact same AASIST model §02 wired in, then AASIST's final layer was actually fine-tuned on it: <strong>10% Equal Error Rate for Hindi, both before and after fine-tuning</strong> — fine-tuning shifted the decision threshold (catching every genuine Hindi speaker but missing more clones, 100%→80% spoof accuracy) without improving actual separability, an honest finding given only 50 total examples. Still not started: any Malvi data at all (no digital resources exist for it — needs an actual volunteer), a synthetic/spoof Marathi corpus (no ungated open TTS system covering Marathi was found), and — the one that would make "after fine-tuning" mean something — a second, genuinely held-out synthesis system.</p>
       </div>
       <div class="callout source">
         <div class="callout-title">From the brief — the single line that decides the project</div>

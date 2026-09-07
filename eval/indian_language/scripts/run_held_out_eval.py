@@ -28,6 +28,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import torch
 import soundfile as sf
 
 _EVAL_DIR = Path(__file__).resolve().parent.parent
@@ -84,28 +85,9 @@ def _compute_eer(bonafide_scores: list[float], spoof_scores: list[float]) -> flo
     return eer
 
 
-def main() -> None:
-    print(f"Loading AASIST from {CHECKPOINT_PATH} ...")
-    detector = AasistAcousticDetector(checkpoint_path=str(CHECKPOINT_PATH))
-
-    genuine = _load_manifest(_EVAL_DIR / "data" / "genuine" / "manifest.json")
-    synthetic = _load_manifest(_EVAL_DIR / "data" / "synthetic" / "manifest.json")
-
-    if not genuine:
-        print("No genuine corpus found — run scripts/fetch_genuine_corpus.py first.")
-        return
-
+def _score_all_languages(detector: AasistAcousticDetector, genuine: list[dict], synthetic: list[dict]) -> dict:
     languages = sorted({e["language"] for e in genuine})
-    summary: dict = {"languages": {}, "notes": []}
-
-    if not synthetic:
-        summary["notes"].append(
-            "No synthetic corpus found — this run only measures AASIST's "
-            "false-positive rate on genuine speech, not full bonafide-vs-"
-            "spoof EER. Run scripts/generate_synthetic_corpus.py to add the "
-            "spoof side."
-        )
-
+    result: dict = {}
     for lang in languages:
         print(f"\n=== {lang} ===")
         genuine_entries = [e for e in genuine if e["language"] == lang]
@@ -119,13 +101,11 @@ def main() -> None:
             print(f"  scoring {len(spoof_entries)} synthetic utterances...")
             spoof_scores = [s for e in spoof_entries if (s := _score_utterance(detector, e)) is not None]
 
-        bonafide_accuracy = (
-            float(np.mean([s < 0.5 for s in bonafide_scores])) if bonafide_scores else None
-        )
+        bonafide_accuracy = float(np.mean([s < 0.5 for s in bonafide_scores])) if bonafide_scores else None
         spoof_accuracy = float(np.mean([s >= 0.5 for s in spoof_scores])) if spoof_scores else None
         eer = _compute_eer(bonafide_scores, spoof_scores)
 
-        lang_summary = {
+        result[lang] = {
             "n_genuine": len(bonafide_scores),
             "n_synthetic": len(spoof_scores),
             "bonafide_accuracy": bonafide_accuracy,  # fraction of genuine speech correctly NOT flagged as spoof
@@ -133,8 +113,58 @@ def main() -> None:
             "eer": eer,
             "mean_spoof_probability_genuine": float(np.mean(bonafide_scores)) if bonafide_scores else None,
         }
-        summary["languages"][lang] = lang_summary
         print(f"  bonafide_accuracy={bonafide_accuracy}  spoof_accuracy={spoof_accuracy}  eer={eer}")
+    return result
+
+
+def main() -> None:
+    genuine = _load_manifest(_EVAL_DIR / "data" / "genuine" / "manifest.json")
+    synthetic = _load_manifest(_EVAL_DIR / "data" / "synthetic" / "manifest.json")
+
+    if not genuine:
+        print("No genuine corpus found — run scripts/fetch_genuine_corpus.py first.")
+        return
+
+    summary: dict = {"notes": []}
+    if not synthetic:
+        summary["notes"].append(
+            "No synthetic corpus found — this run only measures AASIST's "
+            "false-positive rate on genuine speech, not full bonafide-vs-"
+            "spoof EER. Run scripts/generate_synthetic_corpus.py to add the "
+            "spoof side."
+        )
+
+    print(f"Loading AASIST (pretrained checkpoint) from {CHECKPOINT_PATH} ...")
+    detector = AasistAcousticDetector(checkpoint_path=str(CHECKPOINT_PATH))
+    print("\n--- BEFORE fine-tuning ---")
+    summary["before_finetune"] = _score_all_languages(detector, genuine, synthetic)
+    # kept for backward compatibility with anything reading the old shape
+    summary["languages"] = summary["before_finetune"]
+
+    finetuned_path = _EVAL_DIR / "results" / "aasist_out_layer_finetuned.pth"
+    if finetuned_path.exists():
+        print(f"\nLoading fine-tuned output layer from {finetuned_path} ...")
+        # Reaches into AasistAcousticDetector's private _model to swap just
+        # the out_layer weights — a pragmatic shortcut acceptable in this
+        # standalone eval script (not production code, see fine_tune_aasist.py
+        # for why only this one layer is fine-tuned at all).
+        finetuned_detector = AasistAcousticDetector(checkpoint_path=str(CHECKPOINT_PATH))
+        finetuned_state = torch.load(finetuned_path, map_location="cpu")
+        finetuned_detector._model.out_layer.load_state_dict(finetuned_state)
+        finetuned_detector._model.eval()
+        print("\n--- AFTER fine-tuning ---")
+        summary["after_finetune"] = _score_all_languages(finetuned_detector, genuine, synthetic)
+        summary["notes"].append(
+            "after_finetune is evaluated on the SAME data the fine-tune ran "
+            "on (no genuinely held-out second synthesis system exists yet) "
+            "— read this as 'did the mechanism improve fit', not a "
+            "generalisation claim. See fine_tune_aasist.py's docstring."
+        )
+    else:
+        summary["notes"].append(
+            "No fine-tuned checkpoint found — run scripts/fine_tune_aasist.py "
+            "to add a before/after comparison."
+        )
 
     results_dir = _EVAL_DIR / "results"
     results_dir.mkdir(exist_ok=True)
