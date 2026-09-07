@@ -6,13 +6,18 @@
 domain/     framework-free types (AudioWindow, DetectorResult, FusedScore, Band,
             SpeakerSegment, EnrollmentSummary)
 ports/      interfaces — DetectorPort, FusionPort, HistoryStorePort,
-            EnrollmentStorePort, DiarizerPort. Nothing outside adapters/
-            ever imports a concrete detector/fusion/diarizer class directly.
+            EnrollmentStorePort, DiarizerPort, TranscriberPort. Nothing
+            outside adapters/ ever imports a concrete detector/fusion/
+            diarizer/transcriber class directly.
 adapters/   concrete implementations of the ports, plus the registry that
             builds them from config/risk_formula.yaml by dotted path.
-            embeddings/  shared ECAPA-TDNN speaker-embedding extractor,
-                         used by both the voiceprint consistency detector
-                         and the diarizer (not itself a port — see below).
+            embeddings/     shared ECAPA-TDNN speaker-embedding extractor,
+                            used by both the voiceprint consistency detector
+                            and the diarizer (not itself a port — see below).
+            transcription/  Whisper-based TranscriberPort implementation +
+                            the transparent urgency/financial-language
+                            keyword detector it feeds (see "Transcription"
+                            below).
 pipeline/   windowing (audio -> AudioWindow) and the engine that
             orchestrates detectors -> fusion -> logging for one window.
 api/        FastAPI routes. Thin — every route just calls into pipeline/.
@@ -387,8 +392,17 @@ repo that says so.
   only, so a restart mid-call resets that call's smoothing to a fresh
   start. Fine for one process; swap `SessionStore` for Redis when more
   than one API replica needs to share an *in-progress* call's state.
-- The Indian-language dataset/held-out-generator evaluation pipeline —
-  including fine-tuning the AASIST model on that data, per §04.
+- **A genuinely held-out second synthesis system for the Indian-language
+  eval (§04).** The pipeline itself is built and has run end to end
+  (`eval/indian_language/`): real, license-verified CC BY 4.0 Hindi/Marathi
+  genuine speech, real XTTS-v2-cloned Hindi spoof audio, and an actual
+  fine-tune of AASIST's final layer, giving a first real number — 10% EER
+  for Hindi, unchanged before/after fine-tuning (an honest finding, not an
+  improvement). What's still missing: a second synthesis system never used
+  in training (without it, "after fine-tuning" is only measured on data the
+  model already saw), a synthetic/spoof Marathi corpus (no ungated open TTS
+  system covering Marathi was found), and any Malvi data at all (no digital
+  resources exist for it). See `eval/indian_language/README.md`.
 - The mock banking approval flow (the dashboard UI itself is built —
   see above).
 - Calibrated risk thresholds for voiceprint consistency, diarization

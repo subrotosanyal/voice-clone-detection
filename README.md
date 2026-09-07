@@ -39,12 +39,13 @@ projects on a shared dev machine. Change it in `docker-compose.yml` if
 Audio is cut into overlapping 2-second windows. Each window is scored by
 several independent, pluggable **detectors** (acoustic — AASIST; prosodic —
 Parselmouth/Praat; and a config-selectable "third signal" — rule-based
-context, or real ECAPA-TDNN voiceprint consistency). A **fusion** step
-combines their scores into one 0–100 risk number with a full, human-
-readable breakdown of exactly which signal contributed what. On file
-uploads, an optional **diarizer** can also split a multi-speaker recording
-and score each voice separately. Nothing here is a black box — see
-`docs/risk-model.md`.
+context, fed by real **Whisper** transcription and transparent urgency/
+financial-language keyword detection, or real ECAPA-TDNN voiceprint
+consistency). A **fusion** step combines their scores into one 0–100 risk
+number with a full, human-readable breakdown of exactly which signal
+contributed what. On file uploads, an optional **diarizer** can also split
+a multi-speaker recording and score each voice separately. Nothing here is
+a black box — see `docs/risk-model.md`.
 
 ## Repo layout
 
@@ -54,9 +55,10 @@ services/live-call-api/         # the one service that exists so far
   app/
     domain/models.py            # framework-free core types
     ports/                      # the interfaces — detector.py, fusion.py, history_store.py,
-                                 # enrollment_store.py, diarizer.py
+                                 # enrollment_store.py, diarizer.py, transcriber.py
     adapters/                   # concrete detectors + fusion + history/enrollment stores +
-                                 # diarizer + the shared ECAPA-TDNN embedding extractor +
+                                 # diarizer + transcription/ (Whisper + urgency-keyword
+                                 # detection) + the shared ECAPA-TDNN embedding extractor +
                                  # the plugin registry
     pipeline/                   # windowing + orchestration (engine.py)
     api/                        # FastAPI routes (REST + WebSocket + session history + enrollment)
@@ -121,6 +123,20 @@ A browser dashboard exists (upload with optional diarization, live
 microphone, voiceprint enrollment, and session history — every past score
 kept and replayable, persisted across restarts via a SQLite-backed history
 store). Every detector name and risk band has an inline "?" tooltip
-explaining what it means. Not built yet: the Indian-language dataset/eval
-pipeline, the mock banking approval flow, calibrated risk thresholds for
-the newer detectors. See `docs/architecture.md`, "What's not built yet".
+explaining what it means.
+
+The **Indian-language dataset/eval pipeline** (`eval/indian_language/`) has
+genuinely started, not just been planned: real, license-verified (CC BY
+4.0) Hindi and Marathi genuine speech, real XTTS-v2-cloned Hindi spoof
+audio, and an actual fine-tune of AASIST's final layer on that data — first
+real number: 10% Equal Error Rate for Hindi, unchanged before and after
+fine-tuning (an honest "re-balanced, not improved" finding given only ~50
+examples, not a fabricated improvement). Still missing: a second, genuinely
+held-out synthesis system (needed to prove generalisation rather than
+recalibration), a synthetic/spoof Marathi corpus, and any Malvi data at
+all. See `eval/indian_language/README.md` for the full pipeline and
+results.
+
+Not built yet: the mock banking approval flow, and calibrated risk
+thresholds for the newer detectors. See `docs/architecture.md`, "What's
+not built yet".

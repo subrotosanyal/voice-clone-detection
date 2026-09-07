@@ -80,7 +80,7 @@ languages or about non-speech audio. Attribution and licence:
 ## The prosodic detector: Parselmouth (Praat), with real limits
 
 `prosody_parselmouth.py` (the default `prosodic` class as of
-`formula_version: "2026.09.3"`) computes jitter, shimmer, and harmonics-to-
+`formula_version: "2026.09.4"`) computes jitter, shimmer, and harmonics-to-
 noise ratio via **Parselmouth** — the official Python binding for **Praat**,
 the long-standing reference tool in clinical voice-quality research.
 Attribution and licence:
