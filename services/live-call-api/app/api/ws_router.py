@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import numpy as np
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi.concurrency import run_in_threadpool
 from pydantic import ValidationError
 
 from app.api.schemas import FusedScoreOut, StreamChunkIn
@@ -48,7 +49,12 @@ async def stream(websocket: WebSocket, session_id: str) -> None:
                 window_start_ms=chunk.window_start_ms,
             )
             context = chunk.context.model_dump(exclude_none=True) if chunk.context else {}
-            fused = engine.score_window(window, context)
+            # CPU-bound (AASIST + Parselmouth, maybe ECAPA-TDNN) — offload
+            # so this one session's per-window inference doesn't stall
+            # every other concurrent WS session or HTTP request on the
+            # single event loop. See http_router.py's score_file() for the
+            # same reasoning.
+            fused = await run_in_threadpool(engine.score_window, window, context)
             await websocket.send_json(FusedScoreOut.from_domain(fused).model_dump(mode="json"))
 
     except WebSocketDisconnect:

@@ -17,6 +17,7 @@ import uuid
 import numpy as np
 import soundfile as sf
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
+from fastapi.concurrency import run_in_threadpool
 
 from app.api.schemas import CallContext, FusedScoreOut, ScoreFileResponse, SpeakerScoreOut
 
@@ -57,7 +58,16 @@ async def score_file(
         samples = np.mean(samples, axis=1)  # downmix to mono
     sample_rate = int(sample_rate)
 
-    fused_scores = request.app.state.engine.score_call(
+    # Scoring a whole file runs every 2s window through AASIST + Parselmouth
+    # + (maybe) ECAPA-TDNN, in a plain synchronous call — genuinely CPU-
+    # bound, and can take a while for a long recording. Running it directly
+    # in this async handler would block uvicorn's single event loop for
+    # that whole time, starving every other concurrent request (even a
+    # trivial GET /healthz) until it finishes. run_in_threadpool moves it
+    # to a worker thread so the event loop stays free to serve other
+    # requests/WebSocket sessions while this one is still crunching.
+    fused_scores = await run_in_threadpool(
+        request.app.state.engine.score_call,
         session_id=session_id,
         samples=samples,
         sample_rate=sample_rate,
@@ -71,7 +81,7 @@ async def score_file(
 
     speakers: list[SpeakerScoreOut] | None = None
     if diarize:
-        speakers = _diarize_and_score(
+        speakers = await _diarize_and_score(
             request=request,
             base_session_id=session_id,
             samples=samples,
@@ -88,7 +98,7 @@ async def score_file(
     )
 
 
-def _diarize_and_score(
+async def _diarize_and_score(
     request: Request,
     base_session_id: str,
     samples: np.ndarray,
@@ -100,6 +110,10 @@ def _diarize_and_score(
     the whole-call result above — a derived session_id
     ("{base}::{speaker_label}") means every window still flows through the
     normal fusion + history-save machinery with no special-casing there.
+
+    Both the diarizer itself (embedding extraction + clustering) and each
+    speaker's score_call() are CPU-bound — run_in_threadpool for the same
+    event-loop-blocking reason as score_file() above.
     """
     diarizer = getattr(request.app.state.pipeline, "diarizer", None)
     if diarizer is None:
@@ -108,7 +122,7 @@ def _diarize_and_score(
             detail="diarization is not configured on this instance (no `diarization:` section in risk_formula.yaml)",
         )
 
-    segments = diarizer.diarize(samples, sample_rate)
+    segments = await run_in_threadpool(diarizer.diarize, samples, sample_rate)
     if not segments:
         return []
 
@@ -131,7 +145,8 @@ def _diarize_and_score(
     for speaker_label in speaker_order:
         speaker_samples = np.concatenate(speaker_chunks[speaker_label])
         speaker_session_id = f"{base_session_id}::{speaker_label}"
-        speaker_fused = request.app.state.engine.score_call(
+        speaker_fused = await run_in_threadpool(
+            request.app.state.engine.score_call,
             session_id=speaker_session_id,
             samples=speaker_samples,
             sample_rate=sample_rate,

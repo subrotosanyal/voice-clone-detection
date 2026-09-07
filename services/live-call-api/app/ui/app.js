@@ -11,14 +11,14 @@ const GAUGE_CIRCUMFERENCE = 2 * Math.PI * 62;
 
 // ---------- help tooltips — plain-language explanations for jargon in the UI ----------
 const COMPONENT_HELP = {
-  acoustic: "Runs AASIST, a pretrained neural spoof-detection model, on the raw audio. Higher = more likely to be synthetic/cloned speech, based on acoustic artifacts real human speech doesn't have. Trained on English speech only — see docs/risk-model.md.",
-  prosodic: "Measures voice-quality features (pitch jitter, amplitude shimmer, harmonics-to-noise ratio) using Praat. Higher = the voice sounds unusually 'smooth'/regular compared to typical natural speech — a heuristic signal, not a trained classifier.",
-  third_signal: "A swappable third signal: either rule-based call context (known number, odd hour, urgent language) or a real voiceprint comparison against an enrolled identity — whichever is configured. Click 'view raw JSON' to see which one produced this particular score.",
+  acoustic: "Detects whether the VOICE ITSELF was AI-generated or cloned, as opposed to a real person speaking — using AASIST, a neural network trained specifically to spot the audio artifacts text-to-speech and voice-cloning tools leave behind that a real human voice doesn't have. Higher % = more likely synthetic/cloned. Only validated on English speech so far.",
+  prosodic: "Detects whether the voice's pitch and loudness are suspiciously steady — a real human voice naturally wavers a little from breath to breath (jitter, shimmer); a voice that's unusually 'too smooth' can be a sign of synthesis. Higher % = less natural variation than typical speech. This is a heuristic rule of thumb, not a trained classifier like Acoustic.",
+  third_signal: "A third, swappable check — NOT about the audio itself. Either (a) red flags about the CALL: an unknown number, an odd hour, urgent/pressuring language, or (b) a direct voice match check against a caller's enrolled voiceprint (Voiceprints tab), when one exists. Whichever ran is named in 'view raw JSON'.",
 };
 const BAND_HELP = {
-  low: "LOW risk (score 0–34): nothing here looks suspicious across the signals that ran. Default recommended action: no special handling.",
-  elevated: "ELEVATED risk (score 35–69): at least one signal flagged something worth a closer look. Recommended action typically means added verification before proceeding with a sensitive request.",
-  high: "HIGH risk (score 70–100): multiple signals agree something is off, or one signal is strongly confident. Recommended action typically means blocking or escalating the sensitive request for manual review.",
+  low: "LOW risk (score 0–34): nothing here looks suspicious across the signals that ran. Recommended action: no special handling needed.",
+  elevated: "ELEVATED risk (score 35–69): at least one signal flagged something worth a closer look. Recommended action: verify the caller further before acting on a sensitive request.",
+  high: "HIGH risk (score 70–100): multiple signals agree something is off, or one signal is very confident. Recommended action: block or escalate the sensitive request for manual review.",
 };
 
 function helpIcon(text) {
@@ -111,6 +111,34 @@ function resetResults() {
   document.getElementById("results").classList.remove("show");
   document.getElementById("speakersSection").style.display = "none";
   document.getElementById("speakerCards").innerHTML = "";
+  hideAnalysing();
+}
+
+// ---------- "analysing" progress state (file-upload only — the mic tab
+// already gives live per-window feedback as WS messages arrive) ----------
+let analysingIntervalId = null;
+let analysingStartMs = 0;
+
+function showAnalysing(detailText) {
+  document.getElementById("resultsEmpty").style.display = "none";
+  document.getElementById("results").classList.remove("show");
+  document.getElementById("analysingDetail").textContent = detailText;
+  document.getElementById("analysingElapsed").textContent = "0.0s elapsed";
+  document.getElementById("analysingState").classList.add("show");
+  analysingStartMs = performance.now();
+  if (analysingIntervalId) clearInterval(analysingIntervalId);
+  analysingIntervalId = setInterval(() => {
+    const elapsedS = (performance.now() - analysingStartMs) / 1000;
+    document.getElementById("analysingElapsed").textContent = elapsedS.toFixed(1) + "s elapsed";
+  }, 100);
+}
+
+function hideAnalysing() {
+  document.getElementById("analysingState").classList.remove("show");
+  if (analysingIntervalId) {
+    clearInterval(analysingIntervalId);
+    analysingIntervalId = null;
+  }
 }
 
 function renderSpeakers(speakers) {
@@ -254,6 +282,22 @@ function setSelectedFile(file) {
   clearError("uploadError");
 }
 
+function getAudioDurationSeconds(file) {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const audioEl = new Audio();
+    const cleanup = () => URL.revokeObjectURL(url);
+    audioEl.addEventListener("loadedmetadata", () => {
+      const d = Number.isFinite(audioEl.duration) ? audioEl.duration : null;
+      cleanup();
+      resolve(d);
+    });
+    audioEl.addEventListener("error", () => { cleanup(); resolve(null); });
+    setTimeout(() => { cleanup(); resolve(null); }, 2000); // don't block on an odd format
+    audioEl.src = url;
+  });
+}
+
 analyzeFileBtn.addEventListener("click", async () => {
   if (!selectedFile) return;
   clearError("uploadError");
@@ -261,19 +305,35 @@ analyzeFileBtn.addEventListener("click", async () => {
   analyzeFileBtn.textContent = "Analysing…";
   resetResults();
 
+  const diarizeOn = document.getElementById("diarizeCheck").checked;
+  showAnalysing(
+    "Running AASIST, Praat, and the third signal over every window" +
+      (diarizeOn ? ", then diarizing and re-scoring per speaker." : ".") +
+      " Longer recordings take longer — this runs entirely on CPU."
+  );
+  getAudioDurationSeconds(selectedFile).then((durationS) => {
+    if (durationS && document.getElementById("analysingState").classList.contains("show")) {
+      document.getElementById("analysingDetail").textContent =
+        `~${durationS.toFixed(1)}s of audio. ` + document.getElementById("analysingDetail").textContent;
+    }
+  });
+
   try {
     const form = new FormData();
     form.append("file", selectedFile);
     form.append("context", JSON.stringify(readContext(document.getElementById("ctxUpload"))));
-    form.append("diarize", document.getElementById("diarizeCheck").checked ? "true" : "false");
+    form.append("diarize", diarizeOn ? "true" : "false");
 
     const res = await fetch("/v1/score/file", { method: "POST", body: form });
     const body = await res.json();
     if (!res.ok) throw new Error(body.detail || "analysis failed");
 
+    hideAnalysing();
     body.trace.forEach(renderFusedScore); // replays the whole trace so the chart shows the full call
     renderSpeakers(body.speakers);
   } catch (err) {
+    hideAnalysing();
+    document.getElementById("resultsEmpty").style.display = "flex";
     showError("uploadError", err.message || String(err));
   } finally {
     analyzeFileBtn.disabled = false;

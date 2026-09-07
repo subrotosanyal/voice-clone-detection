@@ -243,6 +243,37 @@ clustering distance threshold is a placeholder pending calibration on
 labeled multi-speaker audio — see the module's docstring. Real signal
 processing, reproducible, not turn-by-turn transcription-grade diarization.
 
+## Concurrency: keeping the event loop free during a long score
+
+`Engine.score_call()`/`score_window()` are plain synchronous, CPU-bound
+calls (AASIST + Parselmouth + maybe ECAPA-TDNN inference, run per window).
+Calling them directly inside an `async def` FastAPI route would block
+uvicorn's single event loop for however long that takes — for a long
+uploaded recording, potentially minutes — during which even a trivial
+concurrent `GET /healthz` or another user's request would hang.
+
+`app/api/http_router.py` (`POST /v1/score/file`, including the diarize
+fan-out) and `app/api/ws_router.py` (`WS /v1/stream/{id}`) both offload
+these calls via FastAPI's `run_in_threadpool`, so the event loop stays free
+to serve other requests/WS sessions while one is still crunching. Verified
+by hand: a 20s clip took ~11s to score, and `/healthz` stayed sub-100ms
+throughout (see `docs/testing.md`).
+
+This introduces real concurrent calls into libraries not all originally
+written with that in mind:
+- PyTorch (AASIST) — safe: CPU inference under `torch.no_grad()` from
+  multiple threads on one model instance is a standard, documented
+  serving pattern.
+- SpeechBrain's `EncoderClassifier` (ECAPA-TDNN) — not documented as
+  thread-safe, so `EcapaEmbeddingExtractor` (`app/adapters/embeddings/
+  ecapa_embedding.py`) serialises calls with its own lock.
+- Parselmouth/Praat — Praat's C++ core predates any notion of being called
+  from multiple threads; `prosody_parselmouth.py` serialises its calls
+  with a module-level lock for the same reason.
+
+`SessionStore`'s per-session EMA dict and both SQLite stores' single-lock
+connections were already safe for this (see their own docstrings).
+
 ## Central logging
 
 Every log line is one JSON object on stdout (`app/logging_setup.py`,

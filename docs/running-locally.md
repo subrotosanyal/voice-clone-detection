@@ -44,7 +44,10 @@ To reset history entirely: stop the stack and delete
 `services/live-call-api/data/sessions.db` — it's recreated empty on next
 startup.
 
-Score a file:
+Score a file — any format `libsndfile` reads (WAV, FLAC, OGG, AIFF, and
+**MP3**, supported since libsndfile 1.1.0 and confirmed working here on
+1.2.2, the version this project's Docker image installs) works, not just
+WAV:
 
 ```bash
 curl -F "file=@services/live-call-api/samples/genuine_tone.wav" \
