@@ -82,7 +82,12 @@ jobs:
             services/live-call-api/app/adapters/detectors/vendor/checkpoints
             services/live-call-api/app/adapters/embeddings/.cache
             services/live-call-api/app/adapters/transcription/.cache
-          key: satya-vani-models-v1
+            services/live-call-api/app/adapters/intent/.cache
+          # v2: added the intent/ cache path (mDeBERTa-v3, ~280MB, used by
+          # test_zero_shot_intent_classifier.py) — bumped so a fresh cache
+          # entry gets created that actually includes it; the old v1 key's
+          # saved archive predates that path and would never populate it.
+          key: satya-vani-models-v2
 
       - name: Run tests
         run: pytest tests/ -v
