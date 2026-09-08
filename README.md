@@ -1,5 +1,7 @@
 # Satya-Vani — Live Call Path
 
+[![CI](https://github.com/subrotosanyal/voice-clone-detection/actions/workflows/ci.yml/badge.svg)](https://github.com/subrotosanyal/voice-clone-detection/actions/workflows/ci.yml)
+
 Real-time voice-spoof risk scoring: listens to a call, computes a
 continuously-updating risk score from independent, pluggable signals, and
 tells you exactly why the score is what it is. This repo is the working

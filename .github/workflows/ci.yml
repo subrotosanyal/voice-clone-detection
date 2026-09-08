@@ -1,0 +1,125 @@
+# CI for Satya-Vani's live-call-api — see docs/testing.md and
+# docs/running-locally.md for what these two jobs mirror locally.
+#
+# `test`: the same `pytest tests/ -v` from docs/testing.md, on a plain
+# Python venv (not Docker) — fetches the same real, ungated, no-auth
+# pretrained models (AASIST, ECAPA-TDNN, Whisper) the app itself needs,
+# cached across runs so repeat CI stays fast.
+#
+# `docker-compose-build`: builds the actual image `docker compose up
+# --build` would, then starts the real stack and scores a real sample file
+# through it — proving the committed Dockerfile/docker-compose.yml combo
+# still works end to end, not just that `pytest` passes outside Docker.
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Run tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: services/live-call-api
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: services/live-call-api/requirements-dev.txt
+
+      # Matches docs/testing.md's "Common errors" note: the soundfile wheel
+      # doesn't reliably bundle libsndfile on every platform.
+      - name: Install libsndfile
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libsndfile1
+
+      # Same reasoning as the Dockerfile's own torch/torchaudio install
+      # step: a plain `pip install torch` on Linux resolves the CUDA
+      # build, which drags in ~2GB of nvidia_*/cublas/cusolver this
+      # CPU-only CI runner never uses. Installed first so the plain
+      # torch==.../torchaudio==... lines in requirements.txt are already
+      # satisfied and pip skips them below — keep this pinned to the same
+      # version as services/live-call-api/Dockerfile and requirements.txt.
+      - name: Install CPU-only torch/torchaudio
+        run: pip install torch==2.11.0+cpu torchaudio==2.11.0+cpu --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Install Python dependencies
+        run: pip install -r requirements-dev.txt
+
+      # AASIST checkpoint, ECAPA-TDNN, and Whisper "small" — the same
+      # three real, checksum-or-source-verified, confirmed-ungated models
+      # docs/testing.md describes tests/conftest.py's fixtures fetching on
+      # first run. Cached here so only the first CI run after this
+      # workflow is added (or a model version bump) pays the download
+      # cost; bump the cache key below if a model URL/version ever changes.
+      - name: Cache pretrained models
+        uses: actions/cache@v4
+        with:
+          path: |
+            services/live-call-api/app/adapters/detectors/vendor/checkpoints
+            services/live-call-api/app/adapters/embeddings/.cache
+            services/live-call-api/app/adapters/transcription/.cache
+          key: satya-vani-models-v1
+
+      - name: Run tests
+        run: pytest tests/ -v
+
+  docker-compose-build:
+    name: Verify docker compose build
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: docker compose build
+        run: docker compose build
+
+      - name: docker compose up
+        run: docker compose up -d
+
+      # Same healthcheck docker-compose.yml already defines for the
+      # container itself (see its `healthcheck:` block) — polled from the
+      # host side here since `docker compose up -d` returns as soon as the
+      # container starts, not once it's actually ready to serve.
+      - name: Wait for the service to become healthy
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8020/healthz; then
+              echo "service is healthy"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "service never became healthy within the timeout" >&2
+          exit 1
+
+      # The same curl command README.md's Quickstart documents — proves
+      # the built image can actually score real audio end to end, not
+      # just that the container started.
+      - name: Score a sample file end to end
+        run: |
+          curl -sf -F "file=@services/live-call-api/samples/genuine_tone.wav" \
+               http://localhost:8020/v1/score/file | python3 -m json.tool
+
+      - name: Show container logs on failure
+        if: failure()
+        run: docker compose logs
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v

@@ -65,6 +65,26 @@ model skip; nothing else breaks.
 
 Run just one file while iterating: `pytest tests/unit/test_fusion_weighted_sum.py -v`.
 
+## Continuous integration
+
+`.github/workflows/ci.yml` runs on every push/PR to `master` (and
+manually, via workflow_dispatch), two jobs:
+
+- **`test`** — the exact `pytest tests/ -v` command above, on a plain
+  Python 3.12 venv (not Docker). Installs CPU-only torch/torchaudio first
+  (same reasoning as the Dockerfile's own install step — a plain `pip
+  install torch` on Linux resolves the ~2GB CUDA build this CPU-only
+  runner never uses), then fetches the same AASIST/ECAPA-TDNN/Whisper
+  models described above via the same `conftest.py` fixtures — cached
+  across runs (`actions/cache`) so only the first run after a model
+  version bump pays the download cost.
+- **`docker-compose-build`** — runs the real `docker compose build` /
+  `up`, waits for the container's own healthcheck to pass, then scores
+  `samples/genuine_tone.wav` through the running container exactly like
+  README.md's Quickstart curl command — proving the committed Dockerfile/
+  docker-compose.yml combination still works end to end, not just that
+  the test suite passes outside Docker.
+
 ## The fastest way to debug a score
 
 ```bash
