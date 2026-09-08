@@ -343,6 +343,42 @@ To disable it again, comment out the `intent_classification:` section
 and the `intent` entry under `detectors:` in `config/risk_formula.yaml` —
 the detector then simply abstains on every window, on either path.
 
+## Watermark check (Perth) — built, verified, active, narrow by design
+
+`app/adapters/detectors/perth_watermark.py` checks for Resemble AI's
+Perth neural watermark — MIT licensed, confirmed via the GitHub API's own
+license detection (the PyPI package's own metadata leaves the license
+field blank, so this was verified independently rather than trusted at
+face value). Chatterbox and other Perth-integrated voice-cloning tools
+embed this specific fingerprint in every clip they generate; unlike
+AASIST's general "does this sound synthetic" judgment, this is closer to
+checking for a known signature.
+
+**Verified by hand, not assumed**:
+- 10 real genuine speech samples (2 macOS `say`-synthesized English
+  clips, 8 real Hindi speakers) read near-zero: 9/10 below 0.04, one
+  outlier at 0.36 — still well below any reasonable 0.5 threshold.
+- A DIFFERENT, non-Perth TTS system (Coqui XTTS-v2, already used in
+  `eval/indian_language/`) also reads near-zero on 5 synthetic samples —
+  confirms this is specific to Perth's watermark, not a generic "sounds
+  synthetic" trigger that would duplicate AASIST.
+- A clip actually run through Perth's own `apply_watermark()` reads 1.0.
+- Inference is fast (~7ms per 2s window on CPU) — no real-time concern.
+
+**Known false-positive, found and documented, not hidden**: a pure sine
+tone (this project's own non-speech test fixture) reads 0.92. This
+detector's real-world scope is genuine/cloned speech, same as every
+other detector here — a synthetic tone was never a realistic phone-call
+input to begin with.
+
+**Narrow scope, honestly stated**: this only catches watermark-compliant
+generators. It says nothing about tools that don't watermark their
+output, or about audio where the watermark was deliberately stripped —
+a low score here means "this specific fingerprint wasn't found", never
+"this audio is genuine". Weighted low (0.15, same as `intent`, auto-
+renormalised) for exactly that reason; it complements AASIST's
+general-purpose judgment rather than replacing it.
+
 ## The pluggable third signal, pros/cons
 
 | Mode | Pros | Cons |

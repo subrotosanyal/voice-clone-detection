@@ -28,3 +28,24 @@ openai-whisper==20250625
 # despite a real calibration problem enabled with full knowledge of. See
 # that module's own HONESTY NOTE.
 transformers==5.16.1
+
+# Perth neural audio watermark detection (app/adapters/detectors/
+# perth_watermark.py) — real, MIT-licensed (resemble-ai/Perth, confirmed
+# via the GitHub API's own license detection — the PyPI package's own
+# metadata leaves the license field blank). Checks for the specific
+# fingerprint Chatterbox and other Perth-integrated voice-cloning tools
+# embed in every clip they generate — a narrow, high-precision signal
+# that complements, not replaces, AASIST. See that module's own docstring
+# for the real (not assumed) verification behind this, including a real
+# false-positive edge case on non-speech audio.
+resemble-perth==1.0.1
+# REAL BUG found and fixed 2026-09-08: resemble-perth's own PyPI metadata
+# declares zero dependencies, but its implicit watermarker imports
+# librosa internally (perth/perth_net/perth_net_implicit/
+# perth_watermarker.py) — a real gap in that package, not documented
+# anywhere. Without this pinned explicitly, PerthImplicitWatermarker
+# silently becomes None (perth/__init__.py swallows the ImportError) —
+# it happened to work in local dev only because librosa was already
+# installed as a side effect of earlier, unrelated work, masking the gap
+# until a clean Docker build surfaced it.
+librosa==1.0.0

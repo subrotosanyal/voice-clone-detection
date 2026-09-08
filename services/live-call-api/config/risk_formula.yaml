@@ -12,7 +12,7 @@
 # every log line so a score can always be tied back to the exact config
 # that produced it (see docs/risk-model.md, "Reproducibility").
 
-formula_version: "2026.09.9"
+formula_version: "2026.09.10"
 
 detectors:
   # Real pretrained countermeasure (AASIST, ASVspoof2019 LA, MIT licensed —
@@ -89,6 +89,23 @@ detectors:
     class: app.adapters.detectors.intent_risk:IntentRiskDetector
     weight: 0.15
     params: {}
+
+  - name: perth_watermark
+    # Checks for Resemble AI's Perth neural watermark (MIT licensed, see
+    # app/adapters/detectors/perth_watermark.py) — a narrow, high-
+    # precision signal: Chatterbox and other Perth-integrated voice-
+    # cloning tools embed this in every clip they generate. Verified by
+    # hand: genuine speech and a DIFFERENT non-Perth TTS system (XTTS-v2)
+    # both read near-zero; a clip actually run through Perth's own
+    # watermarker reads 1.0. Weighted low (0.15, same as intent, auto-
+    # renormalised) because its real-world scope is narrow — it only
+    # catches watermark-compliant tools, silence from it never means
+    # "this audio is safe". Known false-positive edge case on non-speech
+    # audio (a pure tone) — see that module's own HONESTY NOTE.
+    class: app.adapters.detectors.perth_watermark:PerthWatermarkDetector
+    weight: 0.15
+    params:
+      floor_rms: 0.0001
 
 fusion:
   class: app.adapters.fusion.weighted_sum:WeightedSumFusion

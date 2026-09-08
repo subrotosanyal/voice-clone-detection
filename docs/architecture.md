@@ -393,6 +393,23 @@ single-handedly push a genuine call into High, and full UI transparency
 positive here is visible and inspectable, not hidden inside one number).
 See `docs/risk-model.md`, "Intent detection" for the full writeup.
 
+## Watermark check — a narrow, high-precision complement to AASIST
+
+`app/adapters/detectors/perth_watermark.py` (`PerthWatermarkDetector`)
+checks for Resemble AI's Perth neural watermark (MIT, resemble-ai/Perth)
+— the fingerprint Chatterbox and other Perth-integrated voice-cloning
+tools embed in every clip they generate. Real, standalone `get_watermark()`
+API (`resemble-perth` on PyPI); verified by hand that genuine speech and
+a different, non-Perth TTS system (XTTS-v2) both read near-zero, while a
+clip actually watermarked by Perth reads 1.0 — confirms this is specific
+to Perth's own signature, not a generic "sounds synthetic" trigger that
+would just duplicate AASIST. Weighted low (0.15, auto-renormalised) for
+the same reason `intent` is: a real but narrow signal that should never
+single-handedly dominate the score. See `docs/risk-model.md`, "Watermark
+check" for the full writeup, including a real false-positive edge case
+on non-speech audio (a pure tone reads 0.92) found and documented while
+verifying this.
+
 ## Concurrency: keeping the event loop free during a long score
 
 `Engine.score_call()`/`score_window()` are plain synchronous, CPU-bound

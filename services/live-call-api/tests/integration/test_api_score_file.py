@@ -52,7 +52,13 @@ def test_config_endpoint_reflects_loaded_formula():
     assert resp.status_code == 200
     body = resp.json()
     assert "formula_version" in body
-    assert {d["name"] for d in body["detectors"]} == {"acoustic", "prosodic", "third_signal", "intent"}
+    assert {d["name"] for d in body["detectors"]} == {
+        "acoustic",
+        "prosodic",
+        "third_signal",
+        "intent",
+        "perth_watermark",
+    }
 
 
 def test_score_file_end_to_end():
@@ -80,9 +86,9 @@ def test_score_file_end_to_end():
     with TestClient(app) as client:
         loaded_config = client.get("/v1/config").json()
     assert final["formula_version"] == loaded_config["formula_version"]
-    assert len(final["components"]) == 4
+    assert len(final["components"]) == 5
     names = {c["name"] for c in final["components"]}
-    assert names == {"acoustic", "prosodic", "third_signal", "intent"}
+    assert names == {"acoustic", "prosodic", "third_signal", "intent", "perth_watermark"}
     third_signal = next(c for c in final["components"] if c["name"] == "third_signal")
     assert third_signal["detail"]["detector_name"]  # the actual implementation, for tracing
 

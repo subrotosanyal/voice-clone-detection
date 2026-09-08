@@ -11,6 +11,7 @@ const COMPONENT_LABEL = {
   prosodic: "Prosodic",
   third_signal: "Third signal",
   intent: "Intent (zero-shot)",
+  perth_watermark: "Watermark check",
 };
 const GAUGE_CIRCUMFERENCE = 2 * Math.PI * 62;
 
@@ -20,6 +21,7 @@ const COMPONENT_HELP = {
   prosodic: "Detects whether the voice's pitch and loudness are suspiciously steady — a real human voice naturally wavers a little from breath to breath (jitter, shimmer); a voice that's unusually 'too smooth' can be a sign of synthesis. Higher % = less natural variation than typical speech. This is a heuristic rule of thumb, not a trained classifier like Acoustic.",
   third_signal: "A third, swappable check — NOT about the audio itself. Either (a) red flags about the CALL: an unknown number, an odd hour, urgent/pressuring language, an authority claim (bank/police/government) — especially combined with a financial request, the classic fraud script — or (b) a direct voice match check against a caller's enrolled voiceprint (Voiceprints tab), when one exists. Whichever ran is named in 'view raw JSON'.",
   intent: "Scores the TRANSCRIPT (not the audio) against fraud-relevant candidate labels — 'requesting a money transfer', 'requesting an OTP/PIN', 'impersonating a bank or government official', 'creating urgency', or 'ordinary conversation' — using a zero-shot language model, not exact keyword matching like Third signal. KNOWN LIMITATION: testing found it sometimes misjudges completely ordinary conversation as suspicious — the breakdown below shows every candidate's own score, not just the winner, specifically so you can sanity-check it rather than trust one number blindly. Weighted low in the overall score for that reason. Abstains with no transcript.",
+  perth_watermark: "Checks for a specific neural fingerprint (the 'Perth' watermark) that Chatterbox and other Resemble AI-based voice-cloning tools embed in every clip they generate — a narrow but high-confidence check, not a general spoof detector. Higher % = this specific fingerprint was found. NARROW SCOPE: it only catches tools that use this watermark — a low score here does NOT mean the audio is genuine, it just means this one fingerprint wasn't found; see Acoustic for general-purpose spoof detection. Known false-positive on non-speech audio like a pure tone.",
 };
 const BAND_HELP = {
   low: "LOW risk (score 0–34): nothing here looks suspicious across the signals that ran. Recommended action: no special handling needed.",

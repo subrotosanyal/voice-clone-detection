@@ -131,6 +131,12 @@ implementations, not hand-rolled heuristics alone:
   (0.15) — a real calibration check found it can misclassify ordinary
   conversation as fraud-relevant, and the dashboard shows every candidate
   label's own score for exactly that reason (see `docs/risk-model.md`).
+- **Watermark check** — checks for Resemble AI's **Perth** neural
+  watermark (MIT, `resemble-perth`), the fingerprint Chatterbox and other
+  Perth-integrated cloning tools embed in every clip. A narrow,
+  high-precision complement to Acoustic — verified by hand that genuine
+  speech and a different, non-Perth TTS system both read near-zero, while
+  Perth-watermarked audio reads 1.0 (see `docs/risk-model.md`).
 
 Every model/checkpoint is fetched and cached at `docker compose up --build`
 time — see `docs/running-locally.md` for running without Docker. See
