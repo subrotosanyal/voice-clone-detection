@@ -87,10 +87,18 @@ def test_live_transcript_eventually_feeds_intent_and_contextual_detectors(spoken
 
     with TestClient(app) as client, client.websocket_connect(f"/v1/stream/{session_id}") as ws:
         found_transcript = False
+        found_intent = False
         # Cycle through the (finite) window list rather than stopping once
         # exhausted — a real live call keeps sending windows indefinitely,
         # and this test's job is to keep feeding the connection until the
         # background transcription completes or MAX_WAIT_S genuinely runs out.
+        #
+        # Transcript and intent are checked independently, not "intent must
+        # already be done the moment transcript first appears" — a real fix
+        # (2026-09-08) decoupled intent classification into its own
+        # independently-scheduled task specifically so a slow intent call
+        # no longer blocks the next transcription cycle; that means intent
+        # now genuinely lags transcript by design, not a bug to paper over.
         for seq, window in enumerate(itertools.cycle(windows)):
             ws.send_json(
                 {
@@ -102,26 +110,35 @@ def test_live_transcript_eventually_feeds_intent_and_contextual_detectors(spoken
             )
             body = ws.receive_json()
             third_signal = next(c for c in body["components"] if c["name"] == "third_signal")
-            if "transcript" in third_signal["detail"]:
+            if not found_transcript and "transcript" in third_signal["detail"]:
                 found_transcript = True
                 assert "transfer" in third_signal["detail"]["transcript"].lower()
-                intent = next(c for c in body["components"] if c["name"] == "intent")
-                assert intent["abstained"] is False
+
+            intent = next(c for c in body["components"] if c["name"] == "intent")
+            if not found_intent and intent["abstained"] is False:
+                found_intent = True
+
+            if found_transcript and found_intent:
                 break
 
             if time.monotonic() >= deadline:
                 break
 
             if seq >= hops_to_trigger:
-                # The background transcription task was just scheduled (or
-                # already running) on a real OS thread via run_in_threadpool
-                # — give Whisper real wall-clock time to actually finish
-                # (observed: roughly 1-2s on CPU, more on a slower machine)
-                # between sends, rather than racing through every remaining
-                # window before it can.
+                # The background transcription/intent tasks were just
+                # scheduled (or already running) on a real OS thread via
+                # run_in_threadpool — give them real wall-clock time to
+                # actually finish (observed inside the real deployed
+                # container: ~3-5s for transcription, ~5s for intent,
+                # more on a slower machine) between sends, rather than
+                # racing through every remaining window before they can.
                 time.sleep(0.5)
 
         assert found_transcript, (
             f"expected a live transcript to appear in third_signal's detail within {MAX_WAIT_S}s "
             "of looped spoken audio — none did"
+        )
+        assert found_intent, (
+            f"expected the intent detector to stop abstaining within {MAX_WAIT_S}s "
+            "of looped spoken audio — it never did"
         )

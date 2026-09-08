@@ -1,7 +1,7 @@
 """Tests for LiveTranscriptionBuffer — fake transcriber/intent-classifier
 objects (no real Whisper/mDeBERTa load), same fast/offline/deterministic
-style as test_intent_risk.py. Async internals (ingest() schedules a
-background asyncio.Task) are driven with plain asyncio.run() rather than
+style as test_intent_risk.py. Async internals (ingest() schedules
+background asyncio.Tasks) are driven with plain asyncio.run() rather than
 a pytest-asyncio dependency — this project avoids new dependencies where
 a standard-library approach works just as well.
 """
@@ -63,6 +63,18 @@ class _FakeIntentClassifier:
         )
 
 
+class _SlowFakeIntentClassifier(_FakeIntentClassifier):
+    """Real bug regression fixture: intent classification measured ~5s
+    inside the actual deployed container. This stands in for that real
+    slowness to prove it no longer blocks the NEXT transcription cycle."""
+
+    def classify(self, text: str) -> IntentClassificationResult:
+        import time
+
+        time.sleep(0.3)
+        return super().classify(text)
+
+
 def _hop_samples(n_hops: int) -> np.ndarray:
     return np.random.default_rng(0).uniform(-1, 1, size=round(SR * HOP_MS / 1000) * n_hops).astype(np.float32)
 
@@ -71,7 +83,7 @@ def test_ingest_is_a_noop_without_a_transcriber():
     buf = LiveTranscriptionBuffer(transcriber=None, intent_classifier=None, hop_ms=HOP_MS)
     buf.ingest(_hop_samples(20), SR)
     assert buf.latest_context == {}
-    assert buf._task is None
+    assert buf._transcribe_task is None
 
 
 def test_transcription_fires_after_enough_new_audio_and_updates_latest_context():
@@ -81,8 +93,8 @@ def test_transcription_fires_after_enough_new_audio_and_updates_latest_context()
         hops_needed = _TRANSCRIBE_EVERY_MS // HOP_MS
         for _ in range(hops_needed):
             buf.ingest(_hop_samples(1), SR)
-        assert buf._task is not None
-        await buf._task
+        assert buf._transcribe_task is not None
+        await buf._transcribe_task
         assert buf.latest_context["transcript"] == transcriber.text
         assert buf.latest_context["transcript_language"] == "en"
         assert transcriber.calls == 1
@@ -98,10 +110,14 @@ def test_intent_classifier_is_also_invoked_when_configured():
         hops_needed = _TRANSCRIBE_EVERY_MS // HOP_MS
         for _ in range(hops_needed):
             buf.ingest(_hop_samples(1), SR)
-        await buf._task
+        await buf._transcribe_task
+        assert buf._intent_task is not None
+        await buf._intent_task
         assert buf.latest_context["intent_label"] == "requesting a money transfer or payment"
         assert buf.latest_context["intent_top_score"] == pytest.approx(0.9)
         assert intent_classifier.calls == 1
+        # transcript fields must survive the intent update (merge, not replace)
+        assert buf.latest_context["transcript"] == transcriber.text
 
     asyncio.run(_run())
 
@@ -113,7 +129,7 @@ def test_empty_transcript_does_not_update_latest_context():
         hops_needed = _TRANSCRIBE_EVERY_MS // HOP_MS
         for _ in range(hops_needed):
             buf.ingest(_hop_samples(1), SR)
-        await buf._task
+        await buf._transcribe_task
         assert buf.latest_context == {}
 
     asyncio.run(_run())
@@ -126,14 +142,49 @@ def test_a_second_transcription_does_not_start_while_one_is_in_flight():
         hops_needed = _TRANSCRIBE_EVERY_MS // HOP_MS
         for _ in range(hops_needed):
             buf.ingest(_hop_samples(1), SR)
-        first_task = buf._task
+        first_task = buf._transcribe_task
         # feed enough more audio to cross the threshold again immediately —
         # must NOT start a second task while the first is still running
         for _ in range(hops_needed):
             buf.ingest(_hop_samples(1), SR)
-        assert buf._task is first_task
+        assert buf._transcribe_task is first_task
         await first_task
         assert transcriber.calls == 1
+
+    asyncio.run(_run())
+
+
+def test_slow_intent_classification_does_not_block_the_next_transcription_cycle():
+    """Regression test for a real bug found 2026-09-08 (user report: "I
+    see it for the first sentence, then nothing"): intent classification
+    used to run inside the SAME task as transcription, so a slow intent
+    call (measured ~5s inside the real deployed container) blocked the
+    next transcription cycle from starting for its whole duration. Proves
+    the fix: a second transcription cycle starts and completes while the
+    first cycle's intent classification is STILL in flight."""
+
+    async def _run():
+        transcriber = _FakeTranscriber()
+        intent_classifier = _SlowFakeIntentClassifier()
+        buf = LiveTranscriptionBuffer(transcriber=transcriber, intent_classifier=intent_classifier, hop_ms=HOP_MS)
+        hops_needed = _TRANSCRIBE_EVERY_MS // HOP_MS
+
+        for _ in range(hops_needed):
+            buf.ingest(_hop_samples(1), SR)
+        await buf._transcribe_task  # first transcription completes, kicks off (slow) intent classification
+        assert buf._intent_task is not None and not buf._intent_task.done()
+
+        # Feed enough new audio to cross the threshold again WHILE the
+        # first cycle's intent classification is still running.
+        for _ in range(hops_needed):
+            buf.ingest(_hop_samples(1), SR)
+        second_transcribe_task = buf._transcribe_task
+        assert second_transcribe_task is not None
+        assert not buf._intent_task.done()  # intent still in flight — did NOT block this
+        await second_transcribe_task
+        assert transcriber.calls == 2  # the second cycle really did run, not skipped
+
+        await buf._intent_task  # let the first cycle's intent classification finish too
 
     asyncio.run(_run())
 
@@ -145,8 +196,8 @@ def test_aclose_cancels_an_in_flight_transcription():
         hops_needed = _TRANSCRIBE_EVERY_MS // HOP_MS
         for _ in range(hops_needed):
             buf.ingest(_hop_samples(1), SR)
-        assert buf._task is not None and not buf._task.done()
+        assert buf._transcribe_task is not None and not buf._transcribe_task.done()
         await buf.aclose()  # must not raise
-        assert buf._task.cancelled() or buf._task.done()
+        assert buf._transcribe_task.cancelled() or buf._transcribe_task.done()
 
     asyncio.run(_run())

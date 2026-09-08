@@ -339,22 +339,40 @@ overlaps the previous one by construction, so only the newest hop is
 actually new — this assumes the client's hop matches
 `config/risk_formula.yaml`'s `windowing.hop_ms`, the same assumption
 `app/ui/app.js`'s own comment already makes). Every 4s of new audio, a
-transcription of the trailing 12s fires in a background `asyncio.Task`
-via `run_in_threadpool`, so it never blocks the per-window score
-response; the latest COMPLETED result (and, if configured, an intent
-classification of it) is merged into every subsequent window's context
-via `setdefault` — never overwriting a caller-supplied value, same rule
+transcription of the trailing 8s fires in a background `asyncio.Task` via
+`run_in_threadpool`, so it never blocks the per-window score response;
+the latest COMPLETED result (and, if configured, an intent classification
+of it) is merged into every subsequent window's context via `setdefault`
+— never overwriting a caller-supplied value, same rule
 `Engine.score_call()` already applies on the file-upload path. This is
 also what lets the already-active `intent` detector (weight 0.15) start
 contributing on the live path too, not just file uploads.
 
+**Real bug found and fixed 2026-09-08** (user report: "I see it for the
+first sentence, then nothing"): intent classification used to run INSIDE
+the same task as transcription, sequentially after it, before the next
+transcription cycle was allowed to start. Measured inside the actual
+deployed container (not the faster local dev machine that motivated the
+original "1-2s" estimate below): Whisper takes ~3-5s and the intent
+classifier a further ~5s on top — combined, ~8-10s per cycle. A short
+live-mic session would complete exactly one cycle and never start a
+second before the user stopped, reading as broken. Fixed by giving intent
+classification its OWN independently-scheduled task
+(`_intent_task`, separate from `_transcribe_task`): a slow intent
+classification no longer blocks the next transcription cycle. Verified
+against the real running container: transcript updates now arrive every
+~3.5-8s instead of ~10-11s.
+
 **Honesty note**: deliberately never real-time-exact. A transcript lags
-real speech by up to 4s plus however long Whisper actually takes (observed:
-roughly 1-2s on CPU) — the very first several seconds of any live call have
-no transcript at all. If a WS client's hop doesn't match
-`windowing.hop_ms`, the reconstructed buffer stretches or compresses
-relative to real time — a documented limitation, not a silent one. See
-the module's own docstring for the full account.
+real speech by up to 4s plus however long Whisper actually takes — measured
+inside the real deployed container: roughly 3-5s for an 8s window (notably
+slower than a faster local dev machine) — the very first several seconds
+of any live call have no transcript at all. Intent classification is a
+further, independently-timed ~5s delay on top (no longer blocking
+transcription, but still real latency for that specific signal). If a WS
+client's hop doesn't match `windowing.hop_ms`, the reconstructed buffer
+stretches or compresses relative to real time — a documented limitation,
+not a silent one. See the module's own docstring for the full account.
 
 ## Intent detection — built, verified, active with a known caveat
 
