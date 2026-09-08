@@ -1,0 +1,305 @@
+<title>Satya-Vani Mark</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+Devanagari:wght@400;500;600&display=swap">
+<style>
+:root{
+  --paper:#f3f4ef;
+  --paper-raised:#fbfbf8;
+  --ink:#12161c;
+  --slate:#535a63;
+  --slate-soft:#7a818a;
+  --line:#dcded6;
+  --line-soft:#e8e9e2;
+  --accent:#0f6e6a;
+  --accent-ink:#0a4f4c;
+  --accent-tint:#dcefec;
+  --alert:#a83a3a;
+  --alert-tint:#f6e3e1;
+  --shadow: 0 1px 2px rgba(18,22,28,.04), 0 8px 24px -12px rgba(18,22,28,.12);
+  --radius: 10px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#12161a; --paper-raised:#181d22; --ink:#eceee9; --slate:#aab0b6; --slate-soft:#7d848b;
+    --line:#2b3138; --line-soft:#232830; --accent:#4fc8bf; --accent-ink:#bdeee8; --accent-tint:#193230;
+    --alert:#e88a8a; --alert-tint:#38201f;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px -12px rgba(0,0,0,.5);
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#12161a; --paper-raised:#181d22; --ink:#eceee9; --slate:#aab0b6; --slate-soft:#7d848b;
+  --line:#2b3138; --line-soft:#232830; --accent:#4fc8bf; --accent-ink:#bdeee8; --accent-tint:#193230;
+  --alert:#e88a8a; --alert-tint:#38201f;
+  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px -12px rgba(0,0,0,.5);
+}
+*{box-sizing:border-box;}
+body{background:var(--paper); color:var(--ink); font-family:'Public Sans', -apple-system, 'Segoe UI', sans-serif; line-height:1.6;}
+h1,h2,h3{font-family:'Public Sans', sans-serif; text-wrap:balance; margin:0; color:var(--ink);}
+code, .mono{font-family:'IBM Plex Mono', ui-monospace, monospace;}
+.wrap{max-width:900px; margin:0 auto; padding:52px 32px 90px 32px;}
+
+.eyebrow{
+  font-family:'IBM Plex Mono', monospace; font-size:11.5px; letter-spacing:.09em; text-transform:uppercase;
+  color:var(--accent-ink); background:var(--accent-tint); display:inline-block; padding:3px 9px; border-radius:5px; margin-bottom:18px;
+}
+h1.title{font-size:clamp(26px,4vw,36px); font-weight:700; letter-spacing:-0.01em;}
+.deck{font-size:16px; color:var(--slate); max-width:64ch; margin-top:12px;}
+
+section{margin-top:64px;}
+.section-label{
+  font-family:'IBM Plex Mono', monospace; font-size:11px; letter-spacing:.07em; text-transform:uppercase;
+  color:var(--slate-soft); margin-bottom:14px;
+}
+h2.section-title{font-size:19px; font-weight:700; margin-bottom:6px;}
+.section-note{font-size:14px; color:var(--slate); max-width:62ch; margin-top:4px; margin-bottom:20px;}
+
+/* hero */
+.hero-mark{
+  display:flex; align-items:center; gap:28px; flex-wrap:wrap;
+  border:1px solid var(--line); background:var(--paper-raised); border-radius:14px; padding:40px 44px;
+  box-shadow:var(--shadow);
+}
+.hero-mark svg{width:100px; height:100px; flex-shrink:0;}
+.hero-word{font-family:'Public Sans',sans-serif; font-size:44px; font-weight:700; letter-spacing:-0.01em;}
+.hero-word .hy{color:var(--slate-soft);}
+.hero-word .vani{color:var(--accent-ink);}
+.hero-deva{font-family:'Noto Sans Devanagari', sans-serif; font-size:20px; font-weight:500; color:var(--slate); margin-top:6px;}
+
+/* fixed light/dark demo cards — these show the actual color output, not the page theme */
+.demo-card{
+  border-radius:14px; padding:36px 40px; display:flex; align-items:center; gap:24px; flex-wrap:wrap;
+}
+.demo-card.on-light{ background:#f3f4ef; border:1px solid #dcded6; }
+.demo-card.on-dark{ background:#12161a; }
+.demo-card svg{width:64px; height:64px; flex-shrink:0;}
+.demo-word{font-family:'Public Sans',sans-serif; font-size:30px; font-weight:700; letter-spacing:-0.01em;}
+.demo-card.on-light .demo-word .s{color:#12161c;} .demo-card.on-light .demo-word .h{color:#8a8f96;} .demo-card.on-light .demo-word .v{color:#0f6e6a;}
+.demo-card.on-dark .demo-word .s{color:#f3f4ef;} .demo-card.on-dark .demo-word .h{color:#7d848b;} .demo-card.on-dark .demo-word .v{color:#4fc8bf;}
+.demo-card.on-light .demo-deva{color:#5a6069;} .demo-card.on-dark .demo-deva{color:#aab0b6;}
+.demo-deva{font-family:'Noto Sans Devanagari', sans-serif; font-size:16px; font-weight:500; margin-top:4px;}
+.card-grid{display:grid; grid-template-columns:1fr 1fr; gap:16px;}
+
+/* size proof */
+.size-row{display:flex; align-items:flex-end; gap:32px; flex-wrap:wrap; padding:28px 32px; border:1px solid var(--line); background:var(--paper-raised); border-radius:14px;}
+.size-item{display:flex; flex-direction:column; align-items:center; gap:10px;}
+.size-item .swatch{
+  background:#f3f4ef; border:1px solid #dcded6; border-radius:8px; display:flex; align-items:center; justify-content:center;
+}
+.size-item .label{font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--slate-soft);}
+.tab-sim{
+  display:flex; align-items:center; gap:6px; background:#e2e4de; border-radius:6px 6px 0 0; padding:6px 12px; font-size:11px; color:#3d434b; font-family:'Public Sans',sans-serif;
+  border:1px solid #cfd2c9; border-bottom:none;
+}
+
+/* monochrome */
+.mono-row{display:grid; grid-template-columns:1fr 1fr; gap:16px;}
+.mono-card{border-radius:14px; padding:32px; display:flex; align-items:center; justify-content:center;}
+.mono-card.ink{background:#f3f4ef; border:1px solid #dcded6; color:#12161c;}
+.mono-card.rev{background:#12161a; color:#f3f4ef;}
+.mono-card svg{width:72px; height:72px;}
+
+.rationale{display:grid; grid-template-columns:repeat(3,1fr); gap:18px;}
+.rationale .card{border:1px solid var(--line); background:var(--paper-raised); border-radius:12px; padding:20px 22px;}
+.rationale .card h3{font-size:14px; margin-bottom:8px;}
+.rationale .card p{font-size:13.5px; color:var(--slate); margin:0;}
+.rationale .card .swatch{width:20px; height:20px; border-radius:5px; margin-bottom:10px;}
+
+.token-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:12px;}
+.token{border:1px solid var(--line); border-radius:10px; overflow:hidden; background:var(--paper-raised);}
+.token .swatch{height:44px;}
+.token .meta{padding:8px 10px; font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--slate);}
+.token .meta b{color:var(--ink); display:block; font-size:11.5px; margin-bottom:2px;}
+
+.type-sample{border:1px solid var(--line); background:var(--paper-raised); border-radius:12px; padding:18px 22px; margin-bottom:10px;}
+.type-sample .role{font-family:'IBM Plex Mono',monospace; font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--slate-soft); margin-bottom:6px;}
+
+.foot{margin-top:70px; padding-top:20px; border-top:1px solid var(--line); font-size:12.5px; color:var(--slate-soft);}
+
+@media (max-width:640px){
+  .card-grid, .mono-row, .rationale{grid-template-columns:1fr;}
+  .hero-mark{padding:28px;}
+  .hero-word{font-size:32px;}
+}
+</style>
+
+<div class="wrap">
+  <header>
+    <span class="eyebrow">Brand mark · SIH26104</span>
+    <h1 class="title">The Satya-Vani mark</h1>
+    <p class="deck">One idea, drawn once: a calm voice, and the exact moment it stops being one. The waveform reads as an ordinary amplitude meter until it doesn't — two bars break rhythm and turn from teal to red, and the ring around them stays open at precisely that point, rather than closing into a reassuring circle.</p>
+  </header>
+
+  <section>
+    <div class="section-label">Primary lockup</div>
+    <div class="hero-mark">
+      <svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Satya-Vani mark">
+        <path d="M83,99.8 A46,46 0 1 1 103.2,75.7" fill="none" stroke="#0f6e6a" stroke-width="5" stroke-linecap="round"/>
+        <rect x="20.5" y="51" width="7" height="18" rx="3.5" fill="#0f6e6a"/>
+        <rect x="32.5" y="44" width="7" height="32" rx="3.5" fill="#0f6e6a"/>
+        <rect x="44.5" y="36" width="7" height="48" rx="3.5" fill="#0f6e6a"/>
+        <rect x="56.5" y="30" width="7" height="60" rx="3.5" fill="#0f6e6a"/>
+        <rect x="68.5" y="38" width="7" height="44" rx="3.5" fill="#0f6e6a"/>
+        <rect x="80.5" y="52" width="7" height="7" rx="3.5" fill="#a83a3a"/>
+        <rect x="80.5" y="65" width="7" height="9" rx="3.5" fill="#a83a3a"/>
+        <rect x="92.5" y="56" width="7" height="18" rx="3.5" fill="#a83a3a"/>
+      </svg>
+      <div>
+        <div class="hero-word">Satya<span class="hy">-</span><span class="vani">Vani</span></div>
+        <div class="hero-deva">सत्य वाणी</div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-label">On light &amp; on dark</div>
+    <h2 class="section-title">Two fixed variants, not one adaptive file</h2>
+    <p class="section-note">A logo that recolors itself to match a slide deck's theme is a logo nobody can rely on. These two files are deliberately fixed — pick the one that matches the surface, not the viewer's settings.</p>
+    <div class="card-grid">
+      <div class="demo-card on-light">
+        <svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+          <path d="M83,99.8 A46,46 0 1 1 103.2,75.7" fill="none" stroke="#0f6e6a" stroke-width="5" stroke-linecap="round"/>
+          <rect x="20.5" y="51" width="7" height="18" rx="3.5" fill="#0f6e6a"/>
+          <rect x="32.5" y="44" width="7" height="32" rx="3.5" fill="#0f6e6a"/>
+          <rect x="44.5" y="36" width="7" height="48" rx="3.5" fill="#0f6e6a"/>
+          <rect x="56.5" y="30" width="7" height="60" rx="3.5" fill="#0f6e6a"/>
+          <rect x="68.5" y="38" width="7" height="44" rx="3.5" fill="#0f6e6a"/>
+          <rect x="80.5" y="52" width="7" height="7" rx="3.5" fill="#a83a3a"/>
+          <rect x="80.5" y="65" width="7" height="9" rx="3.5" fill="#a83a3a"/>
+          <rect x="92.5" y="56" width="7" height="18" rx="3.5" fill="#a83a3a"/>
+        </svg>
+        <div>
+          <div class="demo-word"><span class="s">Satya</span><span class="h">-</span><span class="v">Vani</span></div>
+          <div class="demo-deva">सत्य वाणी</div>
+        </div>
+      </div>
+      <div class="demo-card on-dark">
+        <svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+          <path d="M83,99.8 A46,46 0 1 1 103.2,75.7" fill="none" stroke="#4fc8bf" stroke-width="5" stroke-linecap="round"/>
+          <rect x="20.5" y="51" width="7" height="18" rx="3.5" fill="#4fc8bf"/>
+          <rect x="32.5" y="44" width="7" height="32" rx="3.5" fill="#4fc8bf"/>
+          <rect x="44.5" y="36" width="7" height="48" rx="3.5" fill="#4fc8bf"/>
+          <rect x="56.5" y="30" width="7" height="60" rx="3.5" fill="#4fc8bf"/>
+          <rect x="68.5" y="38" width="7" height="44" rx="3.5" fill="#4fc8bf"/>
+          <rect x="80.5" y="52" width="7" height="7" rx="3.5" fill="#e88a8a"/>
+          <rect x="80.5" y="65" width="7" height="9" rx="3.5" fill="#e88a8a"/>
+          <rect x="92.5" y="56" width="7" height="18" rx="3.5" fill="#e88a8a"/>
+        </svg>
+        <div>
+          <div class="demo-word"><span class="s">Satya</span><span class="h">-</span><span class="v">Vani</span></div>
+          <div class="demo-deva">सत्य वाणी</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-label">Legibility at size</div>
+    <h2 class="section-title">Icon alone, down to favicon scale</h2>
+    <p class="section-note">The mark has to survive being small — a browser tab, an app icon, a watermark corner. Five teal bars and two red ones still read as "a waveform that breaks" at 16px.</p>
+    <div class="size-row">
+      <div class="size-item">
+        <div class="swatch" style="width:96px; height:96px;">
+          <svg viewBox="0 0 120 120" width="80" height="80" xmlns="http://www.w3.org/2000/svg">
+            <path d="M83,99.8 A46,46 0 1 1 103.2,75.7" fill="none" stroke="#0f6e6a" stroke-width="5" stroke-linecap="round"/>
+            <rect x="20.5" y="51" width="7" height="18" rx="3.5" fill="#0f6e6a"/><rect x="32.5" y="44" width="7" height="32" rx="3.5" fill="#0f6e6a"/>
+            <rect x="44.5" y="36" width="7" height="48" rx="3.5" fill="#0f6e6a"/><rect x="56.5" y="30" width="7" height="60" rx="3.5" fill="#0f6e6a"/>
+            <rect x="68.5" y="38" width="7" height="44" rx="3.5" fill="#0f6e6a"/><rect x="80.5" y="52" width="7" height="7" rx="3.5" fill="#a83a3a"/>
+            <rect x="80.5" y="65" width="7" height="9" rx="3.5" fill="#a83a3a"/><rect x="92.5" y="56" width="7" height="18" rx="3.5" fill="#a83a3a"/>
+          </svg>
+        </div>
+        <span class="label">96px</span>
+      </div>
+      <div class="size-item">
+        <div class="swatch" style="width:48px; height:48px;">
+          <svg viewBox="0 0 120 120" width="40" height="40" xmlns="http://www.w3.org/2000/svg">
+            <path d="M83,99.8 A46,46 0 1 1 103.2,75.7" fill="none" stroke="#0f6e6a" stroke-width="6" stroke-linecap="round"/>
+            <rect x="20.5" y="51" width="7" height="18" rx="3.5" fill="#0f6e6a"/><rect x="32.5" y="44" width="7" height="32" rx="3.5" fill="#0f6e6a"/>
+            <rect x="44.5" y="36" width="7" height="48" rx="3.5" fill="#0f6e6a"/><rect x="56.5" y="30" width="7" height="60" rx="3.5" fill="#0f6e6a"/>
+            <rect x="68.5" y="38" width="7" height="44" rx="3.5" fill="#0f6e6a"/><rect x="80.5" y="52" width="7" height="7" rx="3.5" fill="#a83a3a"/>
+            <rect x="80.5" y="65" width="7" height="9" rx="3.5" fill="#a83a3a"/><rect x="92.5" y="56" width="7" height="18" rx="3.5" fill="#a83a3a"/>
+          </svg>
+        </div>
+        <span class="label">48px</span>
+      </div>
+      <div class="size-item">
+        <div class="tab-sim">
+          <svg viewBox="0 0 120 120" width="14" height="14" xmlns="http://www.w3.org/2000/svg">
+            <path d="M83,99.8 A46,46 0 1 1 103.2,75.7" fill="none" stroke="#0f6e6a" stroke-width="9" stroke-linecap="round"/>
+            <rect x="20.5" y="51" width="7" height="18" rx="3.5" fill="#0f6e6a"/><rect x="32.5" y="44" width="7" height="32" rx="3.5" fill="#0f6e6a"/>
+            <rect x="44.5" y="36" width="7" height="48" rx="3.5" fill="#0f6e6a"/><rect x="56.5" y="30" width="7" height="60" rx="3.5" fill="#0f6e6a"/>
+            <rect x="68.5" y="38" width="7" height="44" rx="3.5" fill="#0f6e6a"/><rect x="80.5" y="52" width="7" height="7" rx="3.5" fill="#a83a3a"/>
+            <rect x="80.5" y="65" width="7" height="9" rx="3.5" fill="#a83a3a"/><rect x="92.5" y="56" width="7" height="18" rx="3.5" fill="#a83a3a"/>
+          </svg>
+          Satya-Vani
+        </div>
+        <span class="label">16px, simulated tab</span>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-label">Monochrome</div>
+    <h2 class="section-title">Single-colour, for print or a watermark</h2>
+    <p class="section-note">Built with <code>currentColor</code> — the file itself carries no colour, so it takes whatever ink or reversed-white it's dropped into.</p>
+    <div class="mono-row">
+      <div class="mono-card ink">
+        <svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg" fill="currentColor">
+          <path d="M83,99.8 A46,46 0 1 1 103.2,75.7" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"/>
+          <rect x="20.5" y="51" width="7" height="18" rx="3.5"/><rect x="32.5" y="44" width="7" height="32" rx="3.5"/>
+          <rect x="44.5" y="36" width="7" height="48" rx="3.5"/><rect x="56.5" y="30" width="7" height="60" rx="3.5"/>
+          <rect x="68.5" y="38" width="7" height="44" rx="3.5"/><rect x="80.5" y="52" width="7" height="7" rx="3.5"/>
+          <rect x="80.5" y="65" width="7" height="9" rx="3.5"/><rect x="92.5" y="56" width="7" height="18" rx="3.5"/>
+        </svg>
+      </div>
+      <div class="mono-card rev">
+        <svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg" fill="currentColor">
+          <path d="M83,99.8 A46,46 0 1 1 103.2,75.7" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"/>
+          <rect x="20.5" y="51" width="7" height="18" rx="3.5"/><rect x="32.5" y="44" width="7" height="32" rx="3.5"/>
+          <rect x="44.5" y="36" width="7" height="48" rx="3.5"/><rect x="56.5" y="30" width="7" height="60" rx="3.5"/>
+          <rect x="68.5" y="38" width="7" height="44" rx="3.5"/><rect x="80.5" y="52" width="7" height="7" rx="3.5"/>
+          <rect x="80.5" y="65" width="7" height="9" rx="3.5"/><rect x="92.5" y="56" width="7" height="18" rx="3.5"/>
+        </svg>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-label">Why this mark</div>
+    <h2 class="section-title">Every part of it means something</h2>
+    <p class="section-note">Nothing here is decorative — each choice maps to a real part of how Satya-Vani actually works.</p>
+    <div class="rationale">
+      <div class="card">
+        <div class="swatch" style="background:#0f6e6a;"></div>
+        <h3>The calm waveform</h3>
+        <p>Five bars, rising and falling like a natural voice's amplitude — the shape of ordinary, unremarkable human speech. This is what the system stays silent about.</p>
+      </div>
+      <div class="card">
+        <div class="swatch" style="background:#a83a3a;"></div>
+        <h3>The break</h3>
+        <p>Two bars stop following the pattern and turn red — the exact moment a waveform stops behaving like a human throat and starts behaving like a machine.</p>
+      </div>
+      <div class="card">
+        <div class="swatch" style="background:transparent; border:2px solid #0f6e6a; box-sizing:border-box;"></div>
+        <h3>The open ring</h3>
+        <p>Most trust marks close into a reassuring circle. This one doesn't — the gap sits exactly where the waveform breaks, because finding that gap is the entire product.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-label">Reference</div>
+    <h2 class="section-title">Colour &amp; type, matched to the project blueprint</h2>
+    <p class="section-note" style="margin-bottom:16px;">Same tokens as the Satya-Vani solution document, so every piece of collateral reads as one system.</p>
+    <div class="token-grid" style="margin-bottom:26px;">
+      <div class="token"><div class="swatch" style="background:#0f6e6a;"></div><div class="meta"><b>Genuine</b>#0f6e6a</div></div>
+      <div class="token"><div class="swatch" style="background:#a83a3a;"></div><div class="meta"><b>Detected</b>#a83a3a</div></div>
+      <div class="token"><div class="swatch" style="background:#12161c;"></div><div class="meta"><b>Ink</b>#12161c</div></div>
+      <div class="token"><div class="swatch" style="background:#f3f4ef; border-bottom:1px solid #dcded6;"></div><div class="meta"><b>Paper</b>#f3f4ef</div></div>
+    </div>
+    <div class="type-sample"><div class="role">Wordmark — Public Sans 700</div><div style="font-family:'Public Sans'; font-weight:700; font-size:24px;">Satya-Vani</div></div>
+    <div class="type-sample"><div class="role">Devanagari line — Noto Sans Devanagari 500</div><div style="font-family:'Noto Sans Devanagari'; font-weight:500; font-size:22px;">सत्य वाणी</div></div>
+    <div class="type-sample"><div class="role">Captions / labels — IBM Plex Mono</div><div class="mono" style="font-size:13px; letter-spacing:.04em; text-transform:uppercase;">SIH26104 · Cybersecurity</div></div>
+  </section>
+
+  <div class="foot">Satya-Vani brand mark · four files delivered alongside this page: the icon, light-background and dark-background lockups, and a single-colour version.</div>
+</div>

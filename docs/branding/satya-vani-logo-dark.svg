@@ -1,0 +1,17 @@
+<svg viewBox="0 0 480 140" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Satya-Vani logo, for placement on dark backgrounds">
+  <g transform="translate(20,34) scale(0.6)">
+    <path d="M83,99.8 A46,46 0 1 1 103.2,75.7" fill="none" stroke="#4fc8bf" stroke-width="5" stroke-linecap="round"/>
+    <rect x="20.5" y="51" width="7" height="18" rx="3.5" fill="#4fc8bf"/>
+    <rect x="32.5" y="44" width="7" height="32" rx="3.5" fill="#4fc8bf"/>
+    <rect x="44.5" y="36" width="7" height="48" rx="3.5" fill="#4fc8bf"/>
+    <rect x="56.5" y="30" width="7" height="60" rx="3.5" fill="#4fc8bf"/>
+    <rect x="68.5" y="38" width="7" height="44" rx="3.5" fill="#4fc8bf"/>
+    <rect x="80.5" y="52" width="7" height="7" rx="3.5" fill="#e88a8a"/>
+    <rect x="80.5" y="65" width="7" height="9" rx="3.5" fill="#e88a8a"/>
+    <rect x="92.5" y="56" width="7" height="18" rx="3.5" fill="#e88a8a"/>
+  </g>
+  <text x="132" y="78" font-family="'Public Sans', -apple-system, 'Segoe UI', sans-serif" font-size="44" font-weight="700" letter-spacing="-0.01">
+    <tspan fill="#f3f4ef">Satya</tspan><tspan fill="#7d848b">-</tspan><tspan fill="#4fc8bf">Vani</tspan>
+  </text>
+  <text x="133" y="104" font-family="'Noto Sans Devanagari', sans-serif" font-size="20" font-weight="500" fill="#aab0b6">सत्य वाणी</text>
+</svg>
