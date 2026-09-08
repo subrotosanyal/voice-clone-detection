@@ -12,7 +12,7 @@
 # every log line so a score can always be tied back to the exact config
 # that produced it (see docs/risk-model.md, "Reproducibility").
 
-formula_version: "2026.09.5"
+formula_version: "2026.09.6"
 
 detectors:
   # Real pretrained countermeasure (AASIST, ASVspoof2019 LA, MIT licensed —
@@ -85,13 +85,16 @@ windowing:
 diarization:
   class: app.adapters.diarization.embedding_cluster_diarizer:EmbeddingClusterDiarizer
   params:
-    # segment_ms/distance_threshold were recalibrated 2026-09-08 to stop
-    # over-counting speakers (one person's natural voice variation was
-    # splitting into several "speakers") — see the CALIBRATION note in
-    # embedding_cluster_diarizer.py's own docstring for the measurements.
+    # segment_ms/distance_threshold/max_speakers were recalibrated
+    # 2026-09-08, twice — an earlier same-day fix moved distance_threshold
+    # the WRONG direction (made over-counting worse, confirmed by a real
+    # 100+-speaker report) and has been corrected here. See the full
+    # CALIBRATION HISTORY note in embedding_cluster_diarizer.py's own
+    # docstring before changing these again.
     segment_ms: 2500
     floor_rms: 0.0001
-    distance_threshold: 0.28
+    distance_threshold: 0.4
+    max_speakers: 8
 
 # Optional — transcribes each POST /v1/score/file call once (file-upload
 # path only, see app/ports/transcriber.py's scope note) and feeds

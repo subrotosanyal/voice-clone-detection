@@ -70,14 +70,14 @@ def test_skips_silent_gap_between_speakers():
 
 def test_one_speakers_natural_variation_is_not_over_counted_as_several():
     """Regression test for the real over-counting bug fixed 2026-09-08 (see
-    embedding_cluster_diarizer.py's CALIBRATION note): one person's voice
-    naturally drifts a little segment to segment (breath, background noise,
-    prosody) — formant_voice's seed/pitch_hz jitter stands in for that here,
-    since no real labeled multi-speaker corpus exists in this repo. With the
-    class's DEFAULT segment_ms/distance_threshold (not overridden, unlike
-    the other tests above), six such takes of the SAME voice must still
-    cluster as one speaker, not several."""
-    diarizer = _diarizer()  # class defaults: segment_ms=2500, distance_threshold=0.28
+    embedding_cluster_diarizer.py's CALIBRATION HISTORY note): one person's
+    voice naturally drifts a little segment to segment (breath, background
+    noise, prosody) — formant_voice's seed/pitch_hz jitter stands in for
+    that here, since no real labeled multi-speaker corpus exists in this
+    repo. With the class's DEFAULT segment_ms/distance_threshold (not
+    overridden, unlike the other tests above), six such takes of the SAME
+    voice must still cluster as one speaker, not several."""
+    diarizer = _diarizer()  # class defaults: segment_ms=2500, distance_threshold=0.4
     takes = [
         formant_voice(VOICE_A_FORMANTS, seed=seed, pitch_hz=pitch, duration_s=2.5)
         for seed, pitch in [(1, 120), (2, 122), (3, 118), (4, 126), (5, 115), (6, 130)]
@@ -88,3 +88,25 @@ def test_one_speakers_natural_variation_is_not_over_counted_as_several():
 
     labels = {s.speaker_label for s in segments}
     assert labels == {"speaker_1"}, f"expected one speaker across all natural variation, got {labels}"
+
+
+def test_max_speakers_caps_pathological_over_counting():
+    """Regression test for the SAME over-counting bug class, but as a
+    safety net independent of whatever distance_threshold turns out to be
+    wrong about on some future real recording: force every segment into
+    its own cluster (distance_threshold=0.0 — nothing is ever close enough
+    to merge) and confirm max_speakers still bounds the result, rather than
+    reporting one "speaker" per segment (the exact "speaker_124"-style
+    failure a real user hit before this cap existed)."""
+    diarizer = _diarizer(segment_ms=1000, distance_threshold=0.0, max_speakers=3)
+    # 10 one-second segments, all the same voice — with distance_threshold=0.0
+    # every one of them would become its own singleton cluster if the cap
+    # didn't exist, i.e. 10 "speakers" for one person talking continuously.
+    full_call = np.concatenate(
+        [formant_voice(VOICE_A_FORMANTS, seed=i, duration_s=1.0) for i in range(10)]
+    )
+
+    segments = diarizer.diarize(full_call, SR)
+
+    labels = {s.speaker_label for s in segments}
+    assert len(labels) <= 3, f"expected at most max_speakers=3 distinct speakers, got {len(labels)}: {labels}"

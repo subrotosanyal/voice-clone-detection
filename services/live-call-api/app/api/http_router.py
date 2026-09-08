@@ -58,6 +58,28 @@ async def score_file(
         samples = np.mean(samples, axis=1)  # downmix to mono
     sample_rate = int(sample_rate)
 
+    context_dict = request_context.model_dump(exclude_none=True)
+
+    # Transcribe once, HERE, rather than letting Engine.score_call() do it
+    # implicitly — because when diarize=true this endpoint calls score_call
+    # again once per detected speaker (see _diarize_and_score below), and
+    # score_call's own transcription guard only skips re-transcribing when
+    # the context it's given already has a `transcript`. Without this, a
+    # call with N detected speakers ran Whisper N+1 times (once for the
+    # whole file, then once more per speaker from a context that didn't
+    # carry the transcript forward) — a real bug that made diarized calls
+    # with several speakers take dramatically longer than a plain score,
+    # compounded further whenever the diarizer over-counted speakers (see
+    # embedding_cluster_diarizer.py's CALIBRATION HISTORY note). Populating
+    # it once here means every score_call below — whole-call and every
+    # per-speaker one — shares the same transcript instead of each
+    # re-running ASR from scratch.
+    transcriber = request.app.state.engine.transcriber
+    if transcriber is not None and not context_dict.get("transcript"):
+        transcript_result = await run_in_threadpool(transcriber.transcribe, samples, sample_rate)
+        if transcript_result.text:
+            context_dict["transcript"] = transcript_result.text
+
     # Scoring a whole file runs every 2s window through AASIST + Parselmouth
     # + (maybe) ECAPA-TDNN, in a plain synchronous call — genuinely CPU-
     # bound, and can take a while for a long recording. Running it directly
@@ -71,7 +93,7 @@ async def score_file(
         session_id=session_id,
         samples=samples,
         sample_rate=sample_rate,
-        context=request_context.model_dump(exclude_none=True),
+        context=context_dict,
     )
 
     if not fused_scores:
@@ -86,7 +108,7 @@ async def score_file(
             base_session_id=session_id,
             samples=samples,
             sample_rate=sample_rate,
-            context=request_context.model_dump(exclude_none=True),
+            context=context_dict,
         )
 
     return ScoreFileResponse(

@@ -554,7 +554,7 @@ figure.diagram figcaption b{color:var(--slate); font-weight:600;}
 
       <div class="callout status-done">
         <div class="callout-title">The short version</div>
-        <p>The pluggable core — acoustic, prosodic, and third-signal detection (now including real Whisper transcription feeding automatic urgency/financial-language detection), fused and explained transparently, with a working dashboard, persistent history, voiceprint enrollment, and speaker diarization — is <strong>built, running in Docker, and covered by 96 passing automated tests</strong>. <strong>§04, the Indian-language differentiator</strong>, has started, and its scope has been deliberately narrowed to <strong>English and Hindi only, for now</strong> — Marathi and Malvi are no longer required (see the scope note in §04). Real, license-verified genuine Hindi speech and real XTTS-v2 Hindi spoof clones have been scored and used to fine-tune AASIST, giving a first real number — 10% EER for Hindi, unchanged before/after fine-tuning, an honest finding rather than an improvement. Still missing: an independently-measured English baseline EER against a public benchmark, and a second held-out Hindi synthesis system (needed to prove generalisation, not just recalibration). That gap is still the one most likely to decide the round.</p>
+        <p>The pluggable core — acoustic, prosodic, and third-signal detection (now including real Whisper transcription feeding automatic urgency/financial-language detection), fused and explained transparently, with a working dashboard, persistent history, voiceprint enrollment, and speaker diarization — is <strong>built, running in Docker, and covered by 98 passing automated tests</strong>. <strong>§04, the Indian-language differentiator</strong>, has started, and its scope has been deliberately narrowed to <strong>English and Hindi only, for now</strong> — Marathi and Malvi are no longer required (see the scope note in §04). Real, license-verified genuine Hindi speech and real XTTS-v2 Hindi spoof clones have been scored and used to fine-tune AASIST, giving a first real number — 10% EER for Hindi, unchanged before/after fine-tuning, an honest finding rather than an improvement. Still missing: an independently-measured English baseline EER against a public benchmark, and a second held-out Hindi synthesis system (needed to prove generalisation, not just recalibration). That gap is still the one most likely to decide the round.</p>
       </div>
 
       <p style="font-family:'IBM Plex Mono',monospace; font-size:12px; letter-spacing:.05em; text-transform:uppercase; color:var(--slate-soft); margin-top:30px;">Timeline against the plan</p>
@@ -677,7 +677,7 @@ figure.diagram figcaption b{color:var(--slate); font-weight:600;}
             <li>Persistent, replayable session history, survives restarts</li>
             <li>Browser dashboard — upload, live mic, diarization, enrollment, history, help tooltips</li>
             <li>Docker Compose runtime + central JSON log viewer (Dozzle)</li>
-            <li>96 automated tests passing (unit + integration)</li>
+            <li>98 automated tests passing (unit + integration)</li>
             <li>Indian-language eval pipeline (§04) — real CC BY 4.0 Hindi/Marathi genuine speech + real XTTS-v2 Hindi clones, scored and fine-tuned: <strong>10% EER for Hindi</strong> (unchanged before/after fine-tuning — an honest finding, not yet an improvement)</li>
           </ul>
         </div>

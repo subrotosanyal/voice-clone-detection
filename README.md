@@ -1,6 +1,6 @@
 # Satya-Vani — Live Call Path
 
-[![CI](https://github.com/subrotosanyal/voice-clone-detection/actions/workflows/ci.yml/badge.svg)](https://github.com/subrotosanyal/voice-clone-detection/actions/workflows/ci.yml)
+**[CI status](https://github.com/subrotosanyal/voice-clone-detection/actions/workflows/ci.yml)** — the inline badge image doesn't render for private repos (GitHub only serves it to an authenticated viewer with access; confirmed by hand, not a bug in the workflow itself — both jobs are passing, see the link).
 
 Real-time voice-spoof risk scoring: listens to a call, computes a
 continuously-updating risk score from independent, pluggable signals, and

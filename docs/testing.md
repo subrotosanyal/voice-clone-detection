@@ -9,7 +9,7 @@ pip install -r requirements-dev.txt                   # first time only
 pytest tests/ -v
 ```
 
-96 tests, no Docker needed — unit tests for each detector, the windowing
+98 tests, no Docker needed — unit tests for each detector, the windowing
 math, the fusion formula (including the abstain/renormalisation
 behaviour), the SQLite history and enrollment stores, the ECAPA-TDNN-based
 diarizer, the Whisper transcriber and its urgency-keyword detection, plus

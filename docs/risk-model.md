@@ -151,22 +151,30 @@ were whose" for an uploaded recording — see `docs/architecture.md`,
 "Diarization" for how. Real agglomerative clustering
 (`scipy.cluster.hierarchy`, cosine distance), not a lookup table.
 
-**Recalibrated 2026-09-08** after a real over-counting bug: one person's
-natural voice variation (breath, background noise, prosody drift) was
-splitting into multiple "speakers". Measured empirically (no real labeled
-multi-speaker corpus exists in this repo — see
-`eval/indian_language/README.md`'s own note on why that data doesn't exist
-either — so the measurement uses synthetic fixtures built specifically to
-carry per-segment natural-sounding jitter; see the CALIBRATION note in
-`embedding_cluster_diarizer.py`'s own docstring for the numbers) that
-lengthening segments 1500ms→2500ms and moving the clustering cutoff
-0.35→0.28 widened the margin between same-speaker and different-speaker
-embedding distances from 0.073 to 0.168. **What's still a placeholder**:
-fixed-length segmentation (not a proper voice-activity/change-point front
-end) can miss a speaker change mid-segment, and the new threshold, while
-measured, is still not validated against real recorded speech. Good
-enough for "roughly how many voices, roughly which stretches" — not
-turn-by-turn transcription-grade diarization.
+**Recalibrated 2026-09-08, twice, after a real over-counting bug**: one
+person's natural voice variation (breath, background noise, prosody
+drift) was splitting into multiple "speakers" (a real report: over 100
+phantom speakers for one call). The first same-day fix moved the
+clustering cutoff the WRONG direction (0.35→0.28 — lower is *stricter*,
+which makes over-counting worse, not better) and was confirmed broken
+immediately by that same report. Corrected: the cutoff now sits at 0.4
+(higher than even the original), and segments were lengthened
+1500ms→2500ms (more audio per embedding, independently useful regardless
+of the cutoff value). A `max_speakers` cap (default 8) was also added as
+a real safety net — no matter what the distance cutoff turns out to be
+wrong about on some future recording, this diarizer will never again
+report more speakers than that. See `embedding_cluster_diarizer.py`'s
+CALIBRATION HISTORY docstring note for the full account, including the
+reasoning error, kept rather than deleted so it doesn't happen again.
+**What's still a placeholder**: fixed-length segmentation (not a proper
+voice-activity/change-point front end) can miss a speaker change
+mid-segment, and the distance cutoff remains an unvalidated guess (no
+real labeled multi-speaker corpus exists in this repo — see
+`eval/indian_language/README.md`'s own note on why that data doesn't
+exist either). The `max_speakers` cap is the part of this you can
+actually trust regardless. Good enough for "roughly how many voices,
+roughly which stretches" — not turn-by-turn transcription-grade
+diarization.
 
 ## Transcription and urgency-language detection
 

@@ -245,13 +245,26 @@ from the History tab like any other session.
 **Honesty note**: fixed-length segmentation (not a proper voice-activity/
 change-point front end) misses a speaker change mid-segment. The
 clustering distance threshold and segment length were recalibrated
-2026-09-08 after a real over-counting bug (one speaker's natural voice
-variation was splitting into several) — measured on synthetic fixtures
-built to carry natural-sounding per-segment jitter, since no real labeled
-multi-speaker corpus exists in this repo; see the module's CALIBRATION
-docstring note for the actual numbers. Still not validated against real
-recorded speech. Real signal processing, reproducible, not turn-by-turn
-transcription-grade diarization.
+2026-09-08, twice, after a real over-counting bug (one speaker's natural
+voice variation was splitting into several — a real report saw over 100
+phantom speakers for one call). The first same-day fix moved the
+threshold the wrong direction and made it worse, confirmed immediately by
+that same report; see the module's CALIBRATION HISTORY docstring note for
+the full account. A `max_speakers` cap (default 8) was added as a real
+safety net independent of whatever the distance threshold turns out to be
+wrong about — this diarizer will never report more speakers than that,
+regardless. The threshold itself remains an unvalidated guess (no real
+labeled multi-speaker corpus exists in this repo). Real signal processing,
+reproducible, not turn-by-turn transcription-grade diarization.
+
+**Also fixed the same day**: diarized calls were re-transcribing the
+whole call once per detected speaker (N+1 Whisper calls for N speakers,
+compounding badly whenever the diarizer over-counted) — `Engine.
+score_call()`'s transcription guard only skips re-transcribing when the
+context it's given already carries a `transcript`, and each per-speaker
+call in `_diarize_and_score()` previously didn't. `app/api/http_router.py`
+now transcribes once and passes the same context to every score_call
+below it, whole-call and per-speaker alike.
 
 ## Transcription — feeding real call language into the contextual signal
 

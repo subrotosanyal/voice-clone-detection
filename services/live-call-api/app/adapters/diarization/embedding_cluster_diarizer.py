@@ -25,29 +25,33 @@ HONESTY NOTE: this is not a state-of-the-art diarizer. Fixed-length
 segmentation (rather than a proper voice-activity/change-point front end)
 means a speaker change mid-segment is missed.
 
-CALIBRATION (2026-09-08 — was over-counting speakers on real calls):
-`segment_ms` and `distance_threshold` were originally arbitrary
-placeholders (1500ms / 0.35), and in production this over-segmented a
-single speaker into several — natural moment-to-moment variation in a
-person's own voice (breath, background noise, prosody drift) pushed
-same-speaker embedding distance above the cutoff. Measured empirically
-(see tests/unit/test_embedding_cluster_diarizer.py, using
-tests/audio_fixtures.py's formant_voice() with per-take pitch/noise jitter
-to stand in for one person's natural variation across a call, since no
-real labeled multi-speaker corpus exists in this repo — see
-eval/indian_language/README.md's own note on why that data doesn't exist
-either): at the old 1500ms segment length, same-speaker distance ranged up
-to 0.254 while a genuinely different speaker measured as low as 0.327 —
-only a 0.073 margin for the 0.35 cutoff to sit in, and real speech is
-noisier than this synthetic simulation. Lengthening segments to 2500ms
-(more audio per embedding averages out more of that per-segment noise)
-widened the margin to 0.168 (same-speaker max 0.204, cross-speaker min
-0.372); `distance_threshold` was moved to 0.28 — comfortably inside that
-gap, closer to the same-speaker side, since the real-world failure being
-fixed was over- not under-counting. Still not validated against real
-recorded speech — see voiceprint_consistency.py's similarity anchors for
-the same class of caveat — but a real, reproducible, measured improvement
-over the previous unexamined guess, not just a different guess.
+CALIBRATION HISTORY — read this before touching distance_threshold again:
+2026-09-08 (first attempt, WRONG DIRECTION): a real over-counting bug was
+reported (one speaker split into several). Measured same-/cross-speaker
+embedding distance on synthetic fixtures and moved `distance_threshold`
+from 0.35 DOWN to 0.28 — but a *lower* fcluster distance cutoff is
+*stricter* (requires segments to be more similar to merge), which makes
+over-counting WORSE, not better; this was a real reasoning error, not a
+deliberate trade-off, and made it into a shipped commit. Confirmed wrong
+by a real user report immediately after: a real call produced 100+
+"speakers" (`speaker_124`).
+
+2026-09-08 (correction, same day): `distance_threshold` raised to 0.4 —
+*higher* than even the original 0.35 — because fixing over-counting means
+making it *easier* to merge two segments into the same speaker, not
+harder. `segment_ms` stays at 2500 (longer segments give a more stable
+embedding regardless of threshold, independently useful). A hard
+`max_speakers` cap was also added as a real safety net: no matter what
+distance_threshold turns out to be wrong about on some future real
+recording, this diarizer will never again report more than `max_speakers`
+distinct speakers for one call — if the distance-based clustering produces
+more than that, it re-clusters with a fixed cluster count instead. This is
+the actual fix for the catastrophic failure mode; the threshold value
+remains an unvalidated guess (no real labeled multi-speaker corpus exists
+in this repo — see eval/indian_language/README.md's own note on why that
+data doesn't exist either) and should not be trusted without real
+calibration data — see voiceprint_consistency.py's similarity anchors for
+the same class of caveat.
 
 Scope: file-upload path only (see app/ports/diarizer.py's scope note).
 """
@@ -70,11 +74,13 @@ class EmbeddingClusterDiarizer:
         embedding_model_source: str = "speechbrain/spkrec-ecapa-voxceleb",
         segment_ms: int = 2500,
         floor_rms: float = 1e-4,
-        distance_threshold: float = 0.28,
+        distance_threshold: float = 0.4,
+        max_speakers: int = 8,
     ) -> None:
         self.segment_ms = segment_ms
         self.floor_rms = floor_rms
         self.distance_threshold = distance_threshold
+        self.max_speakers = max_speakers
         self._embedding_extractor = EcapaEmbeddingExtractor(source=embedding_model_source)
 
     def diarize(self, samples: np.ndarray, sample_rate: int) -> list[SpeakerSegment]:
@@ -106,6 +112,17 @@ class EmbeddingClusterDiarizer:
             distances = pdist(embedding_matrix, metric="cosine")
             linkage_matrix = linkage(distances, method="average")
             cluster_labels = fcluster(linkage_matrix, t=self.distance_threshold, criterion="distance")
+
+            # Safety net, independent of whether distance_threshold happens
+            # to be well-tuned for this recording: a real phone call is
+            # never going to have more than a handful of participants, so
+            # if the distance-based cut produced more than max_speakers
+            # clusters (e.g. from noisy real audio the threshold wasn't
+            # calibrated against), fall back to a fixed cluster COUNT
+            # instead of a fixed distance — bounds the worst case no
+            # matter how wrong distance_threshold turns out to be.
+            if len(set(cluster_labels)) > self.max_speakers:
+                cluster_labels = fcluster(linkage_matrix, t=self.max_speakers, criterion="maxclust")
 
         speaker_labels = _stable_speaker_labels(cluster_labels)
         return _merge_consecutive(raw_segments, speaker_labels)

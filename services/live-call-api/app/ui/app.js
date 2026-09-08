@@ -526,6 +526,20 @@ async function loadHistoryList() {
   }
 }
 
+function formatSessionLabel(sessionId) {
+  // Per-speaker sub-sessions (see docs/architecture.md, "Diarization")
+  // are named "{base_session_id}::speaker_N" — clear to a developer, not
+  // to someone reading the History tab. Show "Speaker N" as the primary
+  // label with the underlying call id de-emphasised, rather than the raw
+  // id as-is. Plain (non-diarized) session ids are shown unchanged.
+  const speakerMatch = sessionId.match(/^(.+)::(speaker_\d+)$/);
+  if (!speakerMatch) return escapeHtml(sessionId);
+  const [, baseId, speakerPart] = speakerMatch;
+  const speakerNum = speakerPart.replace("speaker_", "");
+  const shortBase = baseId.length > 20 ? baseId.slice(0, 20) + "…" : baseId;
+  return `<strong>Speaker ${speakerNum}</strong> <span class="history-id-sub">— from call ${escapeHtml(shortBase)}</span>`;
+}
+
 function buildHistoryRow(s) {
   const row = document.createElement("div");
   row.className = "history-row";
@@ -533,7 +547,7 @@ function buildHistoryRow(s) {
   row.innerHTML = `
     <span class="history-band-dot ${s.final_band}"></span>
     <div class="history-main">
-      <div class="history-id">${s.session_id}</div>
+      <div class="history-id">${formatSessionLabel(s.session_id)}</div>
       <div class="history-meta">${started} · ${s.window_count} window${s.window_count === 1 ? "" : "s"}</div>
     </div>
     <span class="history-score mono" style="color:${BAND_COLOR[s.final_band] || "var(--slate-soft)"}">${s.final_smoothed_score.toFixed(0)}</span>

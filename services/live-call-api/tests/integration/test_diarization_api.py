@@ -69,3 +69,41 @@ def test_score_file_with_diarize_true_returns_per_speaker_breakdown():
         history_resp = client.get(f"/v1/sessions/{speaker['session_id']}")
         assert history_resp.status_code == 200
         assert history_resp.json()["window_count"] == len(speaker["trace"])
+
+
+def test_diarized_multi_speaker_call_transcribes_only_once():
+    """Regression test for a real bug: diarize=true previously called
+    Whisper once for the whole call PLUS once again per detected speaker
+    (N+1 total transcriptions for N speakers) — because each per-speaker
+    Engine.score_call() started from a context that didn't carry the
+    already-computed transcript forward, so its own transcription guard
+    re-ran ASR from scratch every time. This made diarized calls with
+    several speakers take dramatically longer than a plain score. Wraps
+    the REAL transcriber (not a fake) with a call counter, so this proves
+    the fix without replacing any real behaviour."""
+    with TestClient(app) as client:
+        transcriber = app.state.engine.transcriber
+        if transcriber is None:
+            pytest.skip("no transcriber configured on this instance")
+
+        call_count = 0
+        real_transcribe = transcriber.transcribe
+
+        def _counting_transcribe(samples, sample_rate):
+            nonlocal call_count
+            call_count += 1
+            return real_transcribe(samples, sample_rate)
+
+        transcriber.transcribe = _counting_transcribe
+        try:
+            resp = client.post(
+                "/v1/score/file",
+                files={"file": ("call.wav", _multi_speaker_wav_bytes(), "audio/wav")},
+                data={"diarize": "true"},
+            )
+        finally:
+            transcriber.transcribe = real_transcribe
+
+    assert resp.status_code == 200
+    assert len(resp.json()["speakers"]) >= 2  # confirms multiple speakers really were detected
+    assert call_count == 1, f"expected exactly one transcription for the whole call, got {call_count}"
