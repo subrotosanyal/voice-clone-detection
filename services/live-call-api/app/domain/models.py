@@ -146,9 +146,11 @@ class IntentClassificationResult:
     see app/ports/intent_classifier.py and app/adapters/intent/. `label_scores`
     carries every candidate label's own score (not just the winner), so a
     result stays fully explainable: which hypotheses the model considered,
-    not only which one it picked. See app/adapters/intent/
-    zero_shot_intent_classifier.py's own honesty note on why this signal
-    is NOT wired into the live risk formula by default."""
+    not only which one it picked. This signal IS wired into the active
+    risk formula (config/risk_formula.yaml's `intent` detector, weight
+    0.15) on both the file-upload and live WebSocket paths — see
+    app/adapters/intent/zero_shot_intent_classifier.py's own honesty note
+    for the known calibration caveat that motivated the low weight."""
 
     text: str
     top_label: str

@@ -433,7 +433,25 @@ micBtn.addEventListener("click", () => { isRecording ? stopMic() : startMic(); }
 async function startMic() {
   clearError("micError");
   try {
-    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    // Explicitly OFF, not left at browser defaults (which is "on" for all
+    // three in every current browser) — real bug found 2026-09-08: AASIST's
+    // live-mic spoof_probability was observed oscillating wildly (93.6% ->
+    // 90.8% -> 59.6% -> 72.8% -> 0.2%) across consecutive windows of
+    // continuous genuine English speech, correlating with loudness.
+    // autoGainControl continuously renormalises mic gain based on recent
+    // loudness — a real-time dynamic-range distortion AASIST never saw
+    // during training (ASVspoof2019 LA is raw studio audio, no AGC).
+    // noiseSuppression applies its own real-time spectral filter, a second
+    // plausible source of artifacts an anti-spoofing model is sensitive to.
+    // HONESTY NOTE: these are requests, not guarantees — a browser/OS may
+    // still apply some processing regardless (MediaStream constraints are
+    // "best effort"). Real trade-off accepted here: a genuinely noisy room
+    // now passes more raw noise into the pipeline than before, in exchange
+    // for not distorting the exact acoustic properties the acoustic and
+    // prosodic detectors key on.
+    mediaStream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+    });
   } catch (err) {
     showError("micError", "Microphone permission denied or unavailable: " + err.message);
     return;

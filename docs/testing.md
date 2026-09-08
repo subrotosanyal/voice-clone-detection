@@ -9,7 +9,7 @@ pip install -r requirements-dev.txt                   # first time only
 pytest tests/ -v
 ```
 
-122 tests, no Docker needed — unit tests for each detector, the windowing
+129 tests, no Docker needed — unit tests for each detector, the windowing
 math, the fusion formula (including the abstain/renormalisation
 behaviour), the SQLite history and enrollment stores, the ECAPA-TDNN-based
 diarizer and its pause-aware segmentation front end
@@ -18,11 +18,14 @@ Whisper transcriber and its urgency/financial/authority-claim keyword
 detection, the zero-shot intent classifier (`test_zero_shot_
 intent_classifier.py` — includes a KNOWN LIMITATION test that documents,
 rather than hides, the real calibration problem keeping it out of the
-active formula) and its detector (`test_intent_risk.py`), plus integration
-tests that drive the real FastAPI app with `TestClient`
+active formula) and its detector (`test_intent_risk.py`), the live
+WebSocket path's periodic transcription buffer (`test_live_transcription.py`
+— fake transcriber/intent-classifier objects, no real model load, async
+internals driven via plain `asyncio.run()`), plus integration tests that
+drive the real FastAPI app with `TestClient`
 (`tests/integration/test_api_score_file.py`, `test_ui_served.py`,
 `test_history_api.py`, `test_enrollment_api.py`, `test_diarization_api.py`,
-`test_transcription_api.py`).
+`test_transcription_api.py`, `test_live_transcription_ws.py`).
 
 **Real-speech tests use macOS's `say` command.** `test_whisper_transcriber.py`
 and `test_transcription_api.py` need genuinely intelligible speech, not a

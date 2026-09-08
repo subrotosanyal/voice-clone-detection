@@ -6,10 +6,15 @@ app/adapters/detectors/contextual_rules.py), never for anything else. Not
 a DetectorPort: a transcriber doesn't produce a risk score, it produces
 text that ContextualRulesDetector reads out of `context["transcript"]`.
 
-Scope note: wired into the file-upload path only (see
-app/pipeline/engine.py's score_call()), same reasoning as diarization
-(app/ports/diarizer.py) — transcribing a live, still-arriving stream
-incrementally is a substantially harder problem, deferred for now.
+Scope note: the file-upload path (app/pipeline/engine.py's score_call())
+transcribes the whole buffer once, up front. The live WebSocket path
+(added 2026-09-08, see app/pipeline/live_transcription.py) instead
+transcribes periodically in the background as audio accumulates — a
+different calling pattern, but the same port; nothing here changed to
+support it. Diarization (app/ports/diarizer.py) remains file-upload-only
+for the harder reason stated there (incremental speaker clustering from
+partial audio); transcription's earlier "substantially harder" framing
+for live no longer applies now that periodic re-transcription is built.
 """
 from __future__ import annotations
 

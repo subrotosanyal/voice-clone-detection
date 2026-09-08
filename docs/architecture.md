@@ -292,12 +292,15 @@ below it, whole-call and per-speaker alike.
 
 `app/ports/transcriber.py` (`TranscriberPort`) + `app/adapters/transcription/
 whisper_transcriber.py` (`WhisperTranscriber`) answer "what did the caller
-actually say" for an uploaded recording, using OpenAI's Whisper (MIT,
-confirmed ungated). Wired into `POST /v1/score/file` only (see the port's
-scope note — same file-upload-only reasoning as diarization), the whole
-buffer is transcribed once by `Engine.score_call()` and merged into
-`context["transcript"]` before windowing, so every window's third signal
-sees the same transcript.
+actually say", using OpenAI's Whisper (MIT, confirmed ungated). On
+`POST /v1/score/file`, the whole buffer is transcribed once by
+`Engine.score_call()` and merged into `context["transcript"]` before
+windowing, so every window's third signal sees the same transcript.
+
+**Live WebSocket path (added 2026-09-08)**: `app/pipeline/
+live_transcription.py` (`LiveTranscriptionBuffer`) brings the same
+signal to `/v1/stream/{session_id}` — see "Live transcription" below for
+how.
 
 **Model size — verified by hand, not assumed**: the smaller "base" model
 mis-transcribed real Hindi speech into Urdu script (a real, reproducible
@@ -320,10 +323,38 @@ transcript, shown in the component's `detail` — see `docs/risk-model.md`
 for why a transparent keyword list was chosen here over a black-box
 sentiment model.
 
-**Not built**: transcription on the live WebSocket path (same "substantially
-harder, deferred" reasoning as live diarization), and the keyword lists
-themselves aren't validated against real fraud-call transcripts — see the
-module's own honesty note.
+**Still not built/validated**: the keyword lists themselves aren't
+validated against real fraud-call transcripts — see the module's own
+honesty note. (Live-path transcription itself IS now built — see below.)
+
+## Live transcription — periodic, off-hot-path, for the WebSocket path
+
+`app/pipeline/live_transcription.py` (`LiveTranscriptionBuffer`) answers
+the same "what did the caller actually say" question on
+`/v1/stream/{session_id}`, where there's no natural "whole buffer" to
+transcribe until the call ends. `app/api/ws_router.py` holds one instance
+per connection; `ingest()` is called once per incoming window, appending
+only the TRAILING hop-worth of new audio to a rolling buffer (a window
+overlaps the previous one by construction, so only the newest hop is
+actually new — this assumes the client's hop matches
+`config/risk_formula.yaml`'s `windowing.hop_ms`, the same assumption
+`app/ui/app.js`'s own comment already makes). Every 4s of new audio, a
+transcription of the trailing 12s fires in a background `asyncio.Task`
+via `run_in_threadpool`, so it never blocks the per-window score
+response; the latest COMPLETED result (and, if configured, an intent
+classification of it) is merged into every subsequent window's context
+via `setdefault` — never overwriting a caller-supplied value, same rule
+`Engine.score_call()` already applies on the file-upload path. This is
+also what lets the already-active `intent` detector (weight 0.15) start
+contributing on the live path too, not just file uploads.
+
+**Honesty note**: deliberately never real-time-exact. A transcript lags
+real speech by up to 4s plus however long Whisper actually takes (observed:
+roughly 1-2s on CPU) — the very first several seconds of any live call have
+no transcript at all. If a WS client's hop doesn't match
+`windowing.hop_ms`, the reconstructed buffer stretches or compresses
+relative to real time — a documented limitation, not a silent one. See
+the module's own docstring for the full account.
 
 ## Intent detection — built, verified, active with a known caveat
 

@@ -117,18 +117,20 @@ implementations, not hand-rolled heuristics alone:
   against an enrollment (`POST /v1/enroll`); abstains gracefully until
   someone is enrolled.
 - **Third signal (contextual mode)** — now fed by real transcription:
-  **Whisper** (MIT) transcribes each uploaded call once, and a transparent
+  **Whisper** (MIT) transcribes each uploaded call once (and, on the live
+  microphone path, periodically in the background as the call proceeds —
+  see `docs/architecture.md`, "Live transcription"), and a transparent
   keyword list flags urgency/financial-request/authority-claim language in
   English, Hindi, and Marathi — no manual keyword entry required, though
   you still can. An authority claim ("this is your bank") paired with a
   financial request fires its own explicit combined-pressure rule.
 - **Intent classification** — a zero-shot NLI classifier
   (`MoritzLaurer/mDeBERTa-v3-base-mnli-xnli`, MIT, real Hindi coverage)
-  that scores the transcript against fraud-relevant candidate labels.
-  Enabled by default with a deliberately low weight (0.15) — a real
-  calibration check found it can misclassify ordinary conversation as
-  fraud-relevant, and the dashboard shows every candidate label's own
-  score for exactly that reason (see `docs/risk-model.md`).
+  that scores the transcript against fraud-relevant candidate labels, on
+  both call paths. Enabled by default with a deliberately low weight
+  (0.15) — a real calibration check found it can misclassify ordinary
+  conversation as fraud-relevant, and the dashboard shows every candidate
+  label's own score for exactly that reason (see `docs/risk-model.md`).
 
 Every model/checkpoint is fetched and cached at `docker compose up --build`
 time — see `docs/running-locally.md` for running without Docker. See

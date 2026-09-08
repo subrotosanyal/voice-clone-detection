@@ -17,8 +17,15 @@ zero_shot_intent_classifier.py's own honesty note for what mitigates the
 risk (a low fusion weight, full UI transparency) and what doesn't (the
 model still misjudges ordinary conversation).
 
-Scope note: same as TranscriberPort — file-upload path only. Depends on a
-transcript existing, so it's meaningless on the live streaming path.
+Scope note: depends on a transcript existing — the file-upload path
+provides one up front (Engine.score_call()); the live WebSocket path
+(added 2026-09-08) now does too, via app/pipeline/live_transcription.py's
+periodic background transcription, so this is no longer file-upload-only.
+The live path's classification necessarily lags real speech (see that
+module's own honesty note on the delay) and abstains entirely until the
+first background transcription completes — same abstain-on-no-transcript
+behaviour app/adapters/detectors/intent_risk.py already had, just now
+reachable from both call paths instead of one.
 """
 from __future__ import annotations
 

@@ -314,11 +314,15 @@ the adapter above, the detector (`app/adapters/detectors/intent_risk.py`,
 which reads a pre-computed classification out of `context` rather than
 calling the model per-window — the same "compute once per call" pattern
 transcription uses, for the same reason: an NLI forward pass is
-expensive), and the `Engine.score_call()`/`http_router.py` wiring that
-populates `context["intent_label"]` once per call. To disable it again,
-comment out the `intent_classification:` section and the `intent` entry
-under `detectors:` in `config/risk_formula.yaml` — the detector then
-simply abstains on every window.
+expensive), and — as of 2026-09-08 — BOTH call paths: `Engine.
+score_call()`/`http_router.py` populate `context["intent_label"]` once
+per whole-call upload; `app/pipeline/live_transcription.py`/`ws_router.py`
+populate the same keys periodically in the background on the live
+WebSocket path (see "Live transcription" in `docs/architecture.md`),
+lagging real speech by design rather than blocking the per-window score.
+To disable it again, comment out the `intent_classification:` section
+and the `intent` entry under `detectors:` in `config/risk_formula.yaml` —
+the detector then simply abstains on every window, on either path.
 
 ## The pluggable third signal, pros/cons
 
