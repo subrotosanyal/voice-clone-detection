@@ -12,13 +12,20 @@
 # every log line so a score can always be tied back to the exact config
 # that produced it (see docs/risk-model.md, "Reproducibility").
 
-formula_version: "2026.09.8"
+formula_version: "2026.09.9"
 
 detectors:
   # Real pretrained countermeasure (AASIST, ASVspoof2019 LA, MIT licensed —
   # see app/adapters/detectors/acoustic_aasist.py for what this does and
   # doesn't prove). The checkpoint is fetched separately, not committed to
   # git — see app/adapters/detectors/vendor/fetch_checkpoint.py.
+  #
+  # finetuned_out_layer_path (added 2026-09-08): a small, in-house-produced
+  # recalibration of just AASIST's final classification layer for Hindi —
+  # see eval/indian_language/README.md for the full reproducible process
+  # and the honest before/after numbers (this recalibration cut the
+  # false-positive rate on real, held-out Hindi speech from 75% to 20%).
+  # Omit this line to run the original, un-recalibrated checkpoint.
   #
   # To fall back to the dependency-light DSP heuristic instead (no torch,
   # no checkpoint download — useful for a quick local run), swap the two
@@ -30,6 +37,7 @@ detectors:
     weight: 0.6
     params:
       checkpoint_path: app/adapters/detectors/vendor/checkpoints/AASIST.pth
+      finetuned_out_layer_path: app/adapters/detectors/vendor/checkpoints/AASIST_hindi_finetuned_out_layer.pth
       floor_rms: 0.0001
 
   - name: prosodic

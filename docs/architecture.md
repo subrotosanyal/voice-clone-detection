@@ -453,11 +453,17 @@ build time (or once locally before running tests without Docker).
 **What it does and doesn't prove:** the model was trained to tell English
 bonafide speech apart from the specific TTS/voice-conversion attacks in
 one 2019 dataset. It had no exposure to Hindi or a held-out generator at
-training time — measuring that gap is exactly the work the project
-blueprint's §04 describes, and it has partially happened: see
-`eval/indian_language/README.md` for a real first EER number on Hindi and
-what's still missing (scope there is English + Hindi only, for now). It
-also has no exposure
+training time — measuring that gap (and, as of 2026-09-08, partially
+closing it) is exactly the work the project blueprint's §04 describes:
+see `eval/indian_language/README.md` for the full reproducible process
+and what's still missing (scope there is English + Hindi only, for now).
+The result is now wired into this detector itself, not just measured
+offline — `config/risk_formula.yaml`'s `finetuned_out_layer_path` param
+swaps in a small, in-house-produced recalibration of AASIST's final
+layer, cutting the false-positive rate on real, held-out Hindi speech
+from 75% to 20% (see `docs/risk-model.md`, "Hindi recalibration", and
+every score's `detail.hindi_finetuned_out_layer` flag for whether it was
+active). It also has no exposure
 to non-speech audio: our own synthetic test fixtures (a sine tone, white
 noise — see `scripts/gen_test_audio.py`) both score as ~99.99% "not
 bonafide", because neither one is real speech to begin with. That's the

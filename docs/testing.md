@@ -9,7 +9,10 @@ pip install -r requirements-dev.txt                   # first time only
 pytest tests/ -v
 ```
 
-129 tests, no Docker needed — unit tests for each detector, the windowing
+133 tests, no Docker needed — unit tests for each detector (including
+`test_acoustic_aasist.py`'s coverage of the optional Hindi-recalibrated
+`finetuned_out_layer_path`, verifying it actually changes the score, not
+just that the parameter is accepted), the windowing
 math, the fusion formula (including the abstain/renormalisation
 behaviour), the SQLite history and enrollment stores, the ECAPA-TDNN-based
 diarizer and its pause-aware segmentation front end

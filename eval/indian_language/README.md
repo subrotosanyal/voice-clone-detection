@@ -1,10 +1,20 @@
 # Indian-language dataset & held-out evaluation (blueprint §04)
 
 This is the offline pipeline that produces the "Indian-language gap" numbers
-referenced throughout `docs/blueprint.html` (§00, §04, §08) — it never
-touches the live-call runtime in `services/live-call-api/`. See
-`docs/architecture.md`'s second diagram ("Build-time — the Indian-language
-dataset & evaluation pipeline") for how this fits the overall project.
+referenced throughout `docs/blueprint.html` (§00, §04, §08). **As of
+2026-09-08 it DOES touch the live-call runtime**: `results/
+aasist_out_layer_finetuned.pth` (the fine-tuned output layer this pipeline
+produces) is copied to `services/live-call-api/app/adapters/detectors/
+vendor/checkpoints/AASIST_hindi_finetuned_out_layer.pth` (a small, ~3KB,
+in-house artifact — committed directly to git, not fetched, no license
+concern the way a third-party download would have) and wired in via
+`config/risk_formula.yaml`'s `finetuned_out_layer_path` param — see
+`docs/risk-model.md`'s "Hindi recalibration" note. Re-running this
+pipeline's scripts and re-copying the result is how you refresh that
+production artifact; nothing here happens automatically at deploy time.
+See `docs/architecture.md`'s second diagram ("Build-time — the
+Indian-language dataset & evaluation pipeline") for how this fits the
+overall project.
 
 ## Scope: English and Hindi only, for now
 
@@ -30,29 +40,56 @@ licensed public speech corpora instead of recruiting classmates:
 - A held-out-generator evaluation harness that runs the same
   `AasistAcousticDetector` the live service uses.
 
-**First real bonafide-vs-spoof measurement for Hindi** (see
-`results/summary.json`, run via `scripts/run_held_out_eval.py` against 20
-genuine Hindi utterances and 10 XTTS-v2-cloned Hindi utterances):
+**Real bonafide-vs-spoof measurement for Hindi** (see `results/
+summary.json`, run via `scripts/run_held_out_eval.py` against 200 genuine
+Hindi utterances and 40 XTTS-v2-cloned Hindi utterances — scaled up
+2026-09-08 from an original 20+10, see "Datasets" for the source corpus):
 
 | | Bonafide accuracy | Spoof accuracy | EER |
 |---|---|---|---|
-| **Before fine-tuning** | 85% | 100% | **10%** |
-| **After fine-tuning** (final layer only, 50 examples) | 100% | 80% | **10%** |
+| **Before fine-tuning** | 82% | 82.5% | **17.75%** |
+| **After fine-tuning** (final layer only, 260 examples, class-balanced loss) | 100% | 92.5% | **3.0%** |
 
-**Read this honestly, not optimistically:** fine-tuning did NOT reduce the
-EER — it moved AASIST's decision threshold, catching every genuine Hindi
-speaker correctly (85%→100%) at the direct cost of missing more of the
-cloned speech (100%→80% spoof accuracy). The Equal Error Rate — the
-number that actually measures how separable bonafide and spoof are for
-this model — stayed exactly at 10% before and after. That's the honest
-finding: **with only 50 total examples, fine-tuning the final layer
-re-balances where errors land, it doesn't make the model more capable of
-telling real from fake Hindi speech.** Real improvement needs real
-volume — more speakers, more sentences, and critically, a second held-out
-synthesis system so "after fine-tuning" can be measured on data the model
-never touched, instead of the same data it trained on (see
-`fine_tune_aasist.py`'s docstring on why only the last layer was
-fine-tuned at all, given this data volume).
+**Read this honestly — this result required finding and fixing two real
+bugs, not just scaling up data:**
+
+1. **Class imbalance, first attempt**: scaling genuine Hindi 10x (20→200)
+   while only scaling synthetic 2x (20→40) left training 5.5:1 imbalanced.
+   An unweighted loss plus selecting the "best" checkpoint by raw
+   validation accuracy let the model collapse toward always predicting
+   "bonafide" — measured directly: bonafide hit 100% but spoof fell to
+   25% (worse than before fine-tuning), and EER got slightly WORSE
+   (17.75%→19.75%), not better — a threshold shift disguised as an
+   improvement by an accuracy metric the imbalance was gaming. Fixed with
+   a class-weighted loss and selecting the best checkpoint by BALANCED
+   (per-class-averaged) accuracy instead of raw accuracy.
+
+2. **BatchNorm/Dropout statistics drift, second attempt (more
+   fundamental)**: AASIST has 18 BatchNorm1d/2d layers plus Dropout in
+   the "frozen" backbone. Setting `requires_grad=False` stops their
+   WEIGHTS from updating but does nothing to stop BatchNorm's running
+   statistics from drifting (they update via a momentum rule on every
+   forward pass in `.train()` mode, independent of gradients) or Dropout
+   from injecting fresh random noise, also only in `.train()` mode.
+   Verified by hand: the exact same saved `out_layer` weights gave
+   WILDLY different predictions live during training (drifted internal
+   state) vs. reloaded fresh (base checkpoint's original state) —
+   e.g. one held-out spoof example read spoof_probability~1.0 live but
+   0.39 after reloading. Every number from both the un-fixed run and the
+   imbalance-only-fixed run was measuring this never-saved, never-
+   reproducible drifted state, not the weights actually persisted to
+   disk. Fixed the simplest correct way: since `out_layer` is a bare
+   `nn.Linear` with no train/eval-mode-dependent behaviour of its own,
+   the whole model now stays in `.eval()` mode throughout training —
+   `.eval()` only changes BatchNorm/Dropout's forward behaviour, it
+   doesn't disable gradient flow to `out_layer`.
+
+With both fixed, the result above is genuinely reproducible (verified: a
+fresh reload through the exact production code path,
+`AasistAcousticDetector.score()`, gives the same numbers `run_held_out_
+eval.py` reports) — see `scripts/fine_tune_aasist.py`'s own REAL BUG
+comments for the full account, kept rather than deleted so this doesn't
+happen again.
 
 **What's still pending for the English + Hindi scope:**
 
@@ -60,31 +97,39 @@ fine-tuned at all, given this data volume).
   benchmark split — AASIST currently runs on its published checkpoint,
   unvalidated by this team on English (see `docs/architecture.md`, "The
   acoustic detector").
-- **A second, held-out synthesis system for Hindi** — the blueprint's design
-  needs *two* systems, one held out entirely from anything the acoustic
-  detector is fine-tuned on. Only one (XTTS-v2) is wired in so far, so
-  "after fine-tuning" is only measured on data the model already saw, not a
-  real generalisation test.
-- **More Hindi data** — the fine-tune ran on only 50 total examples; more
-  speakers and sentences from the same verified corpus (see "Datasets"
-  below) would make the EER number statistically meaningful rather than an
-  artifact of a 30-example test set.
+- **A second, held-out synthesis system for Hindi** — still missing.
+  The blueprint's design needs *two* systems, one held out entirely from
+  anything the acoustic detector is fine-tuned on. Only one (XTTS-v2) is
+  wired in so far, so "after fine-tuning" is still only measured on data
+  the model already saw (in whole or in part), not a true generalisation
+  test — fixing the two bugs above made the EXISTING measurement
+  trustworthy, it didn't add the second system this gap has always
+  needed.
+- **Only 40 spoof examples** — validation's spoof split is just 8
+  examples (each worth 12 percentage points on val_spoof_acc); the
+  headline numbers above are real and reproducible, but still a
+  calibration-scale result, not a statistically solid one. More spoof
+  volume (more reference speakers, more sentences, or the second
+  synthesis system above) would fix this properly.
 
-### Informal spot-check (2026-09-08): the real gap is larger than the 20-utterance sample above suggests
+### Informal spot-check (2026-09-08): the real gap is larger than the studio-recorded corpus above suggests
 
-The 85%/100%-before-fine-tune numbers above come from 20 IndicTTS-Hindi
-utterances — clean, studio-quality read speech. A user-supplied, larger and
-more varied set of real Hindi recordings (100 speakers, ordinary phone-
-/laptop-mic quality, not studio-read) gave a very different, worse result
-when spot-checked locally against the exact same shipped AASIST checkpoint:
-**75% false-positive rate** on 20 real genuine speakers sampled from it
-(mean spoof-probability 0.73 — i.e. the model is confidently, not just
-narrowly, wrong most of the time on this harder set). Applying this
-pipeline's own already-committed fine-tuned output layer
-(`results/aasist_out_layer_finetuned.pth`) to the same 20 speakers improved
-but did not fix it: 60% false-positive rate, mean spoof-probability 0.50 —
-consistent with the "real improvement needs real volume" honest reading
-above, now with a second, independent data point confirming it.
+The before-fine-tune numbers above come from IndicTTS-Hindi — clean,
+studio-quality read speech. A user-supplied, larger and more varied set
+of real Hindi recordings (100 speakers, ordinary phone-/laptop-mic
+quality, not studio-read) gave a very different, worse result when
+spot-checked locally against the exact same shipped (un-recalibrated)
+AASIST checkpoint: **75% false-positive rate** on 20 real genuine
+speakers sampled from it (mean spoof-probability 0.73 — i.e. the model
+is confidently, not just narrowly, wrong most of the time on this harder
+set). Applying the fine-tuned output layer NOW ACTUALLY WIRED INTO
+PRODUCTION (see above — the correctly-fixed one, not either of the two
+earlier broken attempts) to the same 20 speakers: **20% false-positive
+rate**, mean spoof-probability 0.25 — a real, substantial improvement on
+a genuinely held-out set the fine-tuning never saw. (An earlier version
+of this note reported 60% here, from a fine-tuned checkpoint produced
+before the class-imbalance and BatchNorm/Dropout-drift bugs above were
+found and fixed — that number is superseded, not additional evidence.)
 
 **This finding is not part of the committed pipeline and never will be
 using this specific data**: the source dataset
@@ -98,9 +143,14 @@ already-downloaded copy, and are recorded here only as a directional
 finding (studio TTS-adjacent read speech understates the real-world
 Hindi gap) — not as a dataset this project has adopted.
 
-**Actionable takeaway**: if this gap needs closing for real, the honest
-path is more *properly-licensed* Hindi bonafide data (see "Datasets"
-below) at real volume — not more scripts against this one unlicensed
+**Actionable takeaway, updated**: scaling genuine Hindi data to real
+volume (20→200, from the same properly-licensed IndicTTS-Hindi corpus)
+plus fixing the two real fine-tuning bugs above IS what closed most of
+this gap (75%→20%). What's left is now specifically **spoof-side**
+volume and diversity — only 40 synthetic examples from 4 cloned
+speakers exist; a second, held-out synthesis system (still pending
+above) would both fix that and finally answer the generalisation
+question honestly, rather than more scripts against this one unlicensed
 corpus.
 
 ### Marathi (out of scope)

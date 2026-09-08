@@ -4,12 +4,12 @@
   ],
   "before_finetune": {
     "hi": {
-      "n_genuine": 20,
-      "n_synthetic": 10,
-      "bonafide_accuracy": 0.85,
-      "spoof_accuracy": 1.0,
-      "eer": 0.1,
-      "mean_spoof_probability_genuine": 0.1542560460868117
+      "n_genuine": 200,
+      "n_synthetic": 40,
+      "bonafide_accuracy": 0.82,
+      "spoof_accuracy": 0.825,
+      "eer": 0.1775,
+      "mean_spoof_probability_genuine": 0.1877976777394906
     },
     "mr": {
       "n_genuine": 20,
@@ -22,12 +22,12 @@
   },
   "languages": {
     "hi": {
-      "n_genuine": 20,
-      "n_synthetic": 10,
-      "bonafide_accuracy": 0.85,
-      "spoof_accuracy": 1.0,
-      "eer": 0.1,
-      "mean_spoof_probability_genuine": 0.1542560460868117
+      "n_genuine": 200,
+      "n_synthetic": 40,
+      "bonafide_accuracy": 0.82,
+      "spoof_accuracy": 0.825,
+      "eer": 0.1775,
+      "mean_spoof_probability_genuine": 0.1877976777394906
     },
     "mr": {
       "n_genuine": 20,
@@ -40,12 +40,12 @@
   },
   "after_finetune": {
     "hi": {
-      "n_genuine": 20,
-      "n_synthetic": 10,
+      "n_genuine": 200,
+      "n_synthetic": 40,
       "bonafide_accuracy": 1.0,
-      "spoof_accuracy": 0.8,
-      "eer": 0.1,
-      "mean_spoof_probability_genuine": 0.05822154602064984
+      "spoof_accuracy": 0.925,
+      "eer": 0.030000000000000002,
+      "mean_spoof_probability_genuine": 0.02888497249523425
     },
     "mr": {
       "n_genuine": 20,
@@ -53,7 +53,7 @@
       "bonafide_accuracy": 1.0,
       "spoof_accuracy": null,
       "eer": null,
-      "mean_spoof_probability_genuine": 0.019369296057266183
+      "mean_spoof_probability_genuine": 0.00023029651583783561
     }
   }
 }

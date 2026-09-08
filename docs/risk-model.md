@@ -91,6 +91,25 @@ languages or about non-speech audio. Attribution and licence:
 - Checkpoint fetched and checksum-verified by
   `vendor/fetch_checkpoint.py`, not committed to git
 
+**Hindi recalibration (wired into production 2026-09-08)**: the `acoustic`
+detector's `finetuned_out_layer_path` param (`config/risk_formula.yaml`)
+swaps in a small (~3KB), in-house-produced recalibration of just AASIST's
+final classification layer — the base model, architecture, and training
+data are all unchanged; only `out_layer`'s weights differ. Produced by
+`eval/indian_language`'s fine-tuning pipeline (see that directory's
+README.md for the full reproducible process, including two real bugs
+found and fixed along the way: a class-imbalance issue that let an
+earlier attempt collapse toward always predicting "bonafide", and a
+BatchNorm/Dropout statistics-drift bug that made an even earlier attempt
+non-reproducible between training time and a fresh reload). Honest
+numbers: EER on the in-house eval corpus dropped 17.75% -> 3.0%; more
+meaningfully, false-positive rate on an independent, more varied real
+Hindi speech sample (never used in training) dropped 75% -> 20%. Every
+score's `detail.hindi_finetuned_out_layer` flag says whether this
+recalibration was active, so nothing here is hidden. Not "solved" —
+20% is still a real, material false-positive rate, just far better than
+before.
+
 ## The prosodic detector: Parselmouth (Praat), with real limits
 
 `prosody_parselmouth.py` (the default `prosodic` class as of

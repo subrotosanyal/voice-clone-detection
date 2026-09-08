@@ -19,6 +19,17 @@ from datasets import load_dataset
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data" / "genuine"
 N_PER_LANGUAGE = 20
+# Hindi override (2026-09-08): scaled up from the original 20 after an
+# informal spot-check against a larger, more varied (if unlicensed —
+# see README.md's "Informal spot-check" note) Hindi speech set found a
+# 75% AASIST false-positive rate on real genuine speech, much worse than
+# this 20-utterance sample's own 15% — the fine-tuning set needed more
+# genuine volume to have a real chance at closing that gap, not just a
+# rebalanced decision threshold on the same tiny sample. 200 is still far
+# short of "hundreds-to-thousands per class" (see fine_tune_aasist.py's
+# own honesty note on what a trustworthy full fine-tune would need) but a
+# real, meaningful step up from 20, not a token gesture.
+N_HINDI_GENUINE = 200
 
 _CORPORA = {
     "hi": {"dataset": "SPRINGLab/IndicTTS-Hindi", "license": "CC BY 4.0"},
@@ -97,7 +108,8 @@ def fetch(language: str, n: int = N_PER_LANGUAGE) -> list[dict]:
 def main() -> None:
     all_entries: list[dict] = []
     for lang in _CORPORA:
-        all_entries.extend(fetch(lang))
+        n = N_HINDI_GENUINE if lang == "hi" else N_PER_LANGUAGE
+        all_entries.extend(fetch(lang, n=n))
 
     manifest_path = DATA_DIR / "manifest.json"
     manifest_path.write_text(json.dumps(all_entries, ensure_ascii=False, indent=2))

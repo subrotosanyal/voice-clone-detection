@@ -7,8 +7,18 @@ __pycache__/
 .DS_Store
 
 # fetched at build/setup time, not committed — see
-# app/adapters/detectors/vendor/fetch_checkpoint.py
-services/live-call-api/app/adapters/detectors/vendor/checkpoints/
+# app/adapters/detectors/vendor/fetch_checkpoint.py. Excluding contents
+# via /* (not the bare directory) so the exception below can re-include
+# one specific file — git can't un-ignore a file whose parent directory
+# is itself excluded.
+services/live-call-api/app/adapters/detectors/vendor/checkpoints/*
+# Exception: the Hindi-recalibrated output-layer weights are small
+# (~3KB), produced entirely in-house by eval/indian_language's own
+# fine-tuning pipeline (not a third-party download, no license concern
+# the way the base checkpoint's provenance has), and committed directly
+# so the exact bytes are inspectable/reproducible from git history — see
+# eval/indian_language/README.md for the full process that produced them.
+!services/live-call-api/app/adapters/detectors/vendor/checkpoints/AASIST_hindi_finetuned_out_layer.pth
 
 # ECAPA-TDNN speaker-embedding model cache — fetched at build/setup time,
 # not committed. See app/adapters/embeddings/fetch_ecapa_model.py.

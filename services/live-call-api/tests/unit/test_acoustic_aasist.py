@@ -78,3 +78,59 @@ def test_resamples_non_16k_audio(aasist_checkpoint):
 
     assert result.score is not None
     assert result.detail["resampled_from_hz"] == 8_000
+
+
+_FINETUNED_OUT_LAYER = "app/adapters/detectors/vendor/checkpoints/AASIST_hindi_finetuned_out_layer.pth"
+
+
+def test_without_finetuned_param_detail_flag_is_false(aasist_checkpoint):
+    detector = AasistAcousticDetector(checkpoint_path=aasist_checkpoint)
+    rng = np.random.default_rng(3)
+    audio = rng.normal(0, 0.05, SR * 2).astype(np.float32)
+
+    result = detector.score(_window(audio), context={})
+
+    assert result.detail["hindi_finetuned_out_layer"] is False
+    assert "finetuned_out_layer_checkpoint" not in result.detail
+
+
+def test_finetuned_param_loads_and_flags_detail(aasist_checkpoint):
+    detector = AasistAcousticDetector(
+        checkpoint_path=aasist_checkpoint, finetuned_out_layer_path=_FINETUNED_OUT_LAYER
+    )
+    rng = np.random.default_rng(3)
+    audio = rng.normal(0, 0.05, SR * 2).astype(np.float32)
+
+    result = detector.score(_window(audio), context={})
+
+    assert result.score is not None
+    assert result.detail["hindi_finetuned_out_layer"] is True
+    assert result.detail["finetuned_out_layer_checkpoint"] == "AASIST_hindi_finetuned_out_layer.pth"
+
+
+def test_finetuned_out_layer_actually_changes_the_score(aasist_checkpoint):
+    """Not just an interface test — proves the fine-tuned weights are
+    genuinely swapped in, not silently ignored: the same audio must score
+    differently through the recalibrated out_layer than through the
+    original one."""
+    rng = np.random.default_rng(4)
+    audio = rng.normal(0, 0.05, SR * 2).astype(np.float32)
+    window = _window(audio)
+
+    base_detector = AasistAcousticDetector(checkpoint_path=aasist_checkpoint)
+    finetuned_detector = AasistAcousticDetector(
+        checkpoint_path=aasist_checkpoint, finetuned_out_layer_path=_FINETUNED_OUT_LAYER
+    )
+
+    base_score = base_detector.score(window, context={}).score
+    finetuned_score = finetuned_detector.score(window, context={}).score
+
+    assert base_score != finetuned_score
+
+
+def test_missing_finetuned_out_layer_file_raises_with_actionable_message(aasist_checkpoint, tmp_path):
+    with pytest.raises(FileNotFoundError, match="eval/indian_language"):
+        AasistAcousticDetector(
+            checkpoint_path=aasist_checkpoint,
+            finetuned_out_layer_path=str(tmp_path / "does_not_exist.pth"),
+        )

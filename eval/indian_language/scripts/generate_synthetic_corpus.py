@@ -55,24 +55,37 @@ def _parse_hindi_sentences() -> list[str]:
     return rows
 
 
-def _pick_reference_speakers(genuine: list[dict]) -> dict[int, dict]:
-    """One reference utterance per gender — the longest available recording
-    for that gender, since XTTS-v2's cloning quality benefits from more
-    reference audio (its own docs recommend ~6+ seconds)."""
-    by_gender: dict[int, dict] = {}
+MAX_REFERENCE_SPEAKERS_PER_GENDER = 4
+
+
+def _pick_reference_speakers(genuine: list[dict]) -> dict[str, dict]:
+    """Up to MAX_REFERENCE_SPEAKERS_PER_GENDER reference utterances per
+    gender (the longest available recordings for that gender, since
+    XTTS-v2's cloning quality benefits from more reference audio — its own
+    docs recommend ~6+ seconds), not just one. Scaled up from a single
+    speaker per gender (2026-09-08) alongside fetch_genuine_corpus.py's
+    N_HINDI_GENUINE increase — more distinct cloned voices means the
+    fine-tuned "spoof" class actually spans more than two speakers'
+    worth of cloning artifacts, closer to what a real deployment would
+    see than the original 2-speaker set."""
+    import soundfile as sf
+
+    by_gender: dict[int, list[dict]] = {}
     for entry in genuine:
         if entry["language"] != "hi":
             continue
         gender = entry["gender"]
         wav_path = _EVAL_DIR / entry["wav_path"]
-        import soundfile as sf
-
         info = sf.info(wav_path)
         duration = info.frames / info.samplerate
-        if gender not in by_gender or duration > by_gender[gender]["_duration"]:
-            entry_with_duration = {**entry, "_duration": duration}
-            by_gender[gender] = entry_with_duration
-    return by_gender
+        by_gender.setdefault(gender, []).append({**entry, "_duration": duration})
+
+    picked: dict[str, dict] = {}
+    for gender, entries in by_gender.items():
+        entries.sort(key=lambda e: e["_duration"], reverse=True)
+        for rank, entry in enumerate(entries[:MAX_REFERENCE_SPEAKERS_PER_GENDER]):
+            picked[f"{gender}_{rank}"] = entry
+    return picked
 
 
 def main() -> None:
@@ -83,9 +96,9 @@ def main() -> None:
     print(f"Loaded {len(sentences)} Hindi sentences from {SENTENCES_MD.name}")
 
     reference_speakers = _pick_reference_speakers(genuine)
-    print(f"Reference speakers (by gender code): {list(reference_speakers.keys())}")
-    for gender, ref in reference_speakers.items():
-        print(f"  gender={gender}: {ref['utterance_id']} ({ref['_duration']:.1f}s)")
+    print(f"Reference speakers ({len(reference_speakers)} total): {list(reference_speakers.keys())}")
+    for key, ref in reference_speakers.items():
+        print(f"  {key} (gender={ref['gender']}): {ref['utterance_id']} ({ref['_duration']:.1f}s)")
 
     print(f"\nLoading {_MODEL_ID} ...")
     tts = TTS(_MODEL_ID).to("cpu")
@@ -93,12 +106,12 @@ def main() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     manifest_entries = []
     i = 0
-    for gender, ref in reference_speakers.items():
+    for key, ref in reference_speakers.items():
         reference_wav = _EVAL_DIR / ref["wav_path"]
         for text in sentences:
             utterance_id = f"hi_synth_{i:05d}"
             wav_path = DATA_DIR / f"{utterance_id}.wav"
-            print(f"  synthesizing {utterance_id} (gender={gender}): {text[:40]}...")
+            print(f"  synthesizing {utterance_id} (ref={key}): {text[:40]}...")
             tts.tts_to_file(
                 text=text,
                 speaker_wav=str(reference_wav),
@@ -112,7 +125,7 @@ def main() -> None:
                     "text": text,
                     "source_dataset": "coqui/XTTS-v2",
                     "license": _LICENSE_NOTE,
-                    "gender": gender,
+                    "gender": ref["gender"],
                     "reference_utterance_id": ref["utterance_id"],
                     "wav_path": str(wav_path.relative_to(_EVAL_DIR)),
                     "sample_rate": 24000,  # XTTS-v2's native output rate

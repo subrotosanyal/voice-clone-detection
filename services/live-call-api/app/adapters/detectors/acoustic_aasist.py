@@ -19,6 +19,22 @@ what's still missing (scope there is English + Hindi only, for now).
 Treat this as "a real countermeasure is now wired in and reproducible,"
 not "spoof detection is solved."
 
+HINDI RECALIBRATION (wired into production 2026-09-08): `config/
+risk_formula.yaml`'s `acoustic:` entry now also passes
+`finetuned_out_layer_path`, pointing at `vendor/checkpoints/
+AASIST_hindi_finetuned_out_layer.pth` — a small (~3KB), in-house-produced
+recalibration of just the final classification layer, from
+eval/indian_language's fine-tuning pipeline (see that directory's
+README.md for the full reproducible process, the class-imbalance and
+BatchNorm/Dropout-drift bugs found and fixed along the way, and the
+honest before/after numbers: EER on the eval corpus 17.75% -> 3.0%,
+and — the more meaningful check, since it's a genuinely held-out set
+never used in training — false-positive rate on an independent, more
+varied real Hindi speech sample 75% -> 20%). Everything else about the
+base model (architecture, checkpoint, training data) is unchanged; only
+`out_layer`'s weights differ when this param is supplied. Omit the param
+to run the original, un-recalibrated checkpoint.
+
 Sign convention (verified against the original repo's evaluation code,
 see docs/risk-model.md): the model's training labels put bonafide at
 class index 1 and spoof at class index 0 (data_utils.genSpoof_list:
@@ -76,10 +92,12 @@ class AasistAcousticDetector:
         checkpoint_path: str,
         floor_rms: float = 1e-4,
         device: str = "cpu",
+        finetuned_out_layer_path: Optional[str] = None,
     ) -> None:
         self.checkpoint_path = Path(checkpoint_path)
         self.floor_rms = floor_rms
         self.device = torch.device(device)
+        self.finetuned_out_layer_path = Path(finetuned_out_layer_path) if finetuned_out_layer_path else None
 
         if not self.checkpoint_path.exists():
             raise FileNotFoundError(
@@ -91,6 +109,18 @@ class AasistAcousticDetector:
         self._model = AasistNet(_DEFAULT_MODEL_CONFIG)
         state_dict = torch.load(self.checkpoint_path, map_location=self.device)
         self._model.load_state_dict(state_dict, strict=True)
+
+        if self.finetuned_out_layer_path is not None:
+            if not self.finetuned_out_layer_path.exists():
+                raise FileNotFoundError(
+                    f"Fine-tuned output-layer checkpoint not found at {self.finetuned_out_layer_path}. "
+                    "This file is committed directly to git (small, in-house-produced — see "
+                    "eval/indian_language/README.md), not fetched at build time; if it's missing, "
+                    "something removed it from the working tree."
+                )
+            finetuned_state = torch.load(self.finetuned_out_layer_path, map_location=self.device)
+            self._model.out_layer.load_state_dict(finetuned_state)
+
         self._model.to(self.device)
         self._model.eval()
 
@@ -133,7 +163,10 @@ class AasistAcousticDetector:
             "nb_samp": _DEFAULT_MODEL_CONFIG["nb_samp"],
             "rms": rms,
             "explanation": _build_explanation(spoof_probability),
+            "hindi_finetuned_out_layer": self.finetuned_out_layer_path is not None,
         }
+        if self.finetuned_out_layer_path is not None:
+            detail["finetuned_out_layer_checkpoint"] = self.finetuned_out_layer_path.name
         if resampled_from_hz is not None:
             detail["resampled_from_hz"] = resampled_from_hz
 
