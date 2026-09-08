@@ -80,12 +80,11 @@ async def score_file(
         if transcript_result.text:
             context_dict["transcript"] = transcript_result.text
 
-    # Same one-time-per-call reasoning as transcription above, for the
-    # same reason: intent_classifier is None on every deployment that
-    # hasn't deliberately opted in (see app/adapters/intent/
-    # zero_shot_intent_classifier.py's HONESTY NOTE — it's not in
-    # config/risk_formula.yaml's active detectors by default), but if it
-    # ever is configured, this must run once here, not once per speaker.
+    # Same one-time-per-call reasoning as transcription above: this is
+    # enabled by default (config/risk_formula.yaml's `intent` detector —
+    # see app/adapters/intent/zero_shot_intent_classifier.py's HONESTY
+    # NOTE for the known calibration caveat that comes with it), and must
+    # run once here, not once per speaker in the diarization fan-out below.
     intent_classifier = request.app.state.engine.intent_classifier
     if intent_classifier is not None and context_dict.get("transcript") and "intent_label" not in context_dict:
         intent_result = await run_in_threadpool(intent_classifier.classify, context_dict["transcript"])

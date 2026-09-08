@@ -6,7 +6,12 @@
 // app/api/ws_router.py) are the source of truth.
 
 const BAND_COLOR = { low: "var(--risk-low)", elevated: "var(--risk-med)", high: "var(--risk-high)" };
-const COMPONENT_LABEL = { acoustic: "Acoustic (AASIST)", prosodic: "Prosodic", third_signal: "Third signal" };
+const COMPONENT_LABEL = {
+  acoustic: "Acoustic (AASIST)",
+  prosodic: "Prosodic",
+  third_signal: "Third signal",
+  intent: "Intent (zero-shot)",
+};
 const GAUGE_CIRCUMFERENCE = 2 * Math.PI * 62;
 
 // ---------- help tooltips — plain-language explanations for jargon in the UI ----------
@@ -14,6 +19,7 @@ const COMPONENT_HELP = {
   acoustic: "Detects whether the VOICE ITSELF was AI-generated or cloned, as opposed to a real person speaking — using AASIST, a neural network trained specifically to spot the audio artifacts text-to-speech and voice-cloning tools leave behind that a real human voice doesn't have. Higher % = more likely synthetic/cloned. Only validated on English speech so far.",
   prosodic: "Detects whether the voice's pitch and loudness are suspiciously steady — a real human voice naturally wavers a little from breath to breath (jitter, shimmer); a voice that's unusually 'too smooth' can be a sign of synthesis. Higher % = less natural variation than typical speech. This is a heuristic rule of thumb, not a trained classifier like Acoustic.",
   third_signal: "A third, swappable check — NOT about the audio itself. Either (a) red flags about the CALL: an unknown number, an odd hour, urgent/pressuring language, an authority claim (bank/police/government) — especially combined with a financial request, the classic fraud script — or (b) a direct voice match check against a caller's enrolled voiceprint (Voiceprints tab), when one exists. Whichever ran is named in 'view raw JSON'.",
+  intent: "Scores the TRANSCRIPT (not the audio) against fraud-relevant candidate labels — 'requesting a money transfer', 'requesting an OTP/PIN', 'impersonating a bank or government official', 'creating urgency', or 'ordinary conversation' — using a zero-shot language model, not exact keyword matching like Third signal. KNOWN LIMITATION: testing found it sometimes misjudges completely ordinary conversation as suspicious — the breakdown below shows every candidate's own score, not just the winner, specifically so you can sanity-check it rather than trust one number blindly. Weighted low in the overall score for that reason. Abstains with no transcript.",
 };
 const BAND_HELP = {
   low: "LOW risk (score 0–34): nothing here looks suspicious across the signals that ran. Recommended action: no special handling needed.",
@@ -46,6 +52,34 @@ function renderTranscriptNote(detail) {
 function renderExplanationNote(detail) {
   if (!detail || !detail.explanation) return "";
   return `<div class="explanation-note">${escapeHtml(detail.explanation)}</div>`;
+}
+
+// Shows EVERY candidate label's own score, not just the winner — the
+// intent detector's whole point is that a false positive should be
+// visible and inspectable here, not hidden inside one opaque number. See
+// app/adapters/intent/zero_shot_intent_classifier.py's HONESTY NOTE.
+function renderIntentBreakdown(detail) {
+  if (!detail || !detail.label_scores) return "";
+  const entries = Object.entries(detail.label_scores).sort((a, b) => b[1] - a[1]);
+  const rows = entries
+    .map(([label, score]) => {
+      const pct = Math.round(score * 100);
+      const isOrdinary = label === "ordinary conversation";
+      return `
+        <div class="intent-row${isOrdinary ? " intent-row-ordinary" : ""}">
+          <span class="intent-label">${escapeHtml(label)}</span>
+          <div class="intent-bar-track"><div class="intent-bar-fill${isOrdinary ? " ordinary" : ""}" style="width:${pct}%"></div></div>
+          <span class="intent-pct mono">${pct}%</span>
+        </div>
+      `;
+    })
+    .join("");
+  return `
+    <div class="intent-breakdown">
+      <div class="intent-breakdown-label">Every candidate the model considered (not just the top pick)</div>
+      ${rows}
+    </div>
+  `;
 }
 
 function helpIcon(text) {
@@ -252,6 +286,7 @@ function renderFusedScore(fs) {
       <div class="bar-track"><div class="bar-fill" style="width:${c.abstained ? 100 : pct}%"></div></div>
       ${c.abstained ? `<div class="abstain-note">${c.detail && c.detail.abstain_reason ? c.detail.abstain_reason : "no signal for this window"}</div>` : renderExplanationNote(c.detail)}
       ${renderTranscriptNote(c.detail)}
+      ${renderIntentBreakdown(c.detail)}
     `;
     if (COMPONENT_HELP[c.name]) row.querySelector(".name").appendChild(helpIcon(COMPONENT_HELP[c.name]));
     compEl.appendChild(row);

@@ -14,12 +14,13 @@ merges `intent_label`/`intent_top_score`/`intent_label_scores` into
 matching the same "transcribe once, read many times" pattern already
 established for `context["transcript"]`.
 
-STATUS: this detector is real and correct, but is NOT present in
-config/risk_formula.yaml's active `detectors:` list by default — see
-app/adapters/intent/zero_shot_intent_classifier.py's HONESTY NOTE for the
-real calibration problem found before shipping this live. Wiring this in
-requires both an `intent_classification:` config section (to populate the
-context fields this detector reads) AND an `intent` entry in `detectors:`.
+STATUS: enabled by default (the `intent` entry in config/risk_formula.yaml's
+`detectors:` list) at explicit user instruction, despite a real,
+documented calibration problem — see app/adapters/intent/
+zero_shot_intent_classifier.py's HONESTY NOTE before changing the
+weight/threshold here. Mitigated, not fixed, by a deliberately low weight
+and full UI transparency (every candidate label's score is shown, not
+just the winner — see app/ui/app.js).
 
 RISK MAPPING: `raw_score = 1.0 - label_scores["ordinary conversation"]` —
 deliberately reads only the negative class's own score, not "whichever

@@ -24,37 +24,46 @@ discipline):
   CC100 pretraining, same caveat class as the cardiffnlp sentiment model
   discussed for the separate, still-unbuilt sentiment feature.
 
-HONESTY NOTE — READ THIS BEFORE ENABLING THIS DETECTOR (2026-09-08):
-this module is built and the model loads and runs correctly, but it is
-NOT wired into config/risk_formula.yaml's active `detectors:` list, and
-should not be enabled without addressing the finding below first.
+HONESTY NOTE — READ THIS BEFORE TOUCHING THE CALIBRATION (2026-09-08,
+enabled 2026-09-08): this module is wired into config/risk_formula.yaml's
+active `detectors:` list (the `intent` entry) at explicit user
+instruction, despite a real, documented calibration problem — see below.
+It was NOT enabled lightly: the finding was surfaced in full first.
 
-Before wiring this up, three real transcripts were run through it by
-hand: a clear fraud script ("this is your bank... your account has been
-compromised... transfer your funds immediately"), a clear impersonation
-script ("this is inspector from cyber crime cell... share the OTP"), and
-two completely ordinary sentences ("are we still on for dinner tonight?",
-"the weather has been really nice this week"). The fraud/impersonation
-examples classified sensibly. Both ordinary sentences did NOT: "dinner
-tonight" scored just 4.5% for "ordinary conversation" against 38.9% for
-"creating urgency or time pressure" — a severe false positive on
-completely benign text. This was tested three ways (default settings,
-`multi_label=True`, and a phone-call-specific `hypothesis_template`) and
-the miscalibration persisted in all three. The likely cause: a 4-candidate
-"risky" set against only 1 "ordinary" candidate structurally disadvantages
-the negative class in `multi_label=False` mode, and `multi_label=True`
-scores each hypothesis independently against the whole premise, which this
-model does not do reliably for short, informal spoken-style text.
+Before this was first built, three real transcripts were run through it
+by hand: a clear fraud script ("this is your bank... your account has
+been compromised... transfer your funds immediately"), a clear
+impersonation script ("this is inspector from cyber crime cell... share
+the OTP"), and two completely ordinary sentences ("are we still on for
+dinner tonight?", "the weather has been really nice this week"). The
+fraud/impersonation examples classified sensibly. Both ordinary sentences
+did NOT: "dinner tonight" scored just 4.5% for "ordinary conversation"
+against 38.9% for "creating urgency or time pressure" — a severe false
+positive on completely benign text. This was tested three ways (default
+settings, `multi_label=True`, and a phone-call-specific
+`hypothesis_template`) and the miscalibration persisted in all three. The
+likely cause: a 4-candidate "risky" set against only 1 "ordinary"
+candidate structurally disadvantages the negative class in
+`multi_label=False` mode, and `multi_label=True` scores each hypothesis
+independently against the whole premise, which this model does not do
+reliably for short, informal spoken-style text.
 
-This is NOT a reason to delete the work — the port, adapter, detector,
-and wiring are all real and correct, and this stands as a genuine,
-verified option once the calibration issue is addressed (candidates:
-several distinct "ordinary" hypotheses instead of one, a larger held-out
-evaluation set before trusting any threshold, or a different base model).
-It IS a reason not to let an unvalidated signal silently score real calls
-in a fraud-detection product. Re-run the three-sentence check above by
-hand before ever adding an `intent:` entry to config/risk_formula.yaml's
-`detectors:` list.
+**What mitigates the risk of shipping this anyway**: a deliberately low
+fusion weight (0.15, see config/risk_formula.yaml — auto-renormalised
+against acoustic/prosodic/third_signal, so it can meaningfully raise a
+score but is unlikely to single-handedly push a genuine bonafide call
+into High on its own), and full UI transparency — every candidate label's
+own score is shown in the dashboard (app/ui/app.js), not just the winner,
+so a false positive here is visible and inspectable, not hidden inside
+one opaque number. This does NOT fix the miscalibration; it means an
+operator sees "creating urgency or time pressure: 39%, ordinary
+conversation: 4%" and can judge for themselves, the same trust model this
+project's other honestly-flagged heuristic thresholds (prosodic,
+voiceprint consistency) already rely on.
+
+Real follow-up work, not done yet: several distinct "ordinary" hypotheses
+instead of one, a larger held-out evaluation set before trusting any
+threshold, or a different base model.
 """
 from __future__ import annotations
 

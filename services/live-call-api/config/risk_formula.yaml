@@ -12,7 +12,7 @@
 # every log line so a score can always be tied back to the exact config
 # that produced it (see docs/risk-model.md, "Reproducibility").
 
-formula_version: "2026.09.6"
+formula_version: "2026.09.7"
 
 detectors:
   # Real pretrained countermeasure (AASIST, ASVspoof2019 LA, MIT licensed —
@@ -64,6 +64,24 @@ detectors:
       consistency_params:
         enrollment_db_path: data/voiceprints.db
 
+  - name: intent
+    # Zero-shot NLI classification of the transcript against fraud-relevant
+    # candidate labels (see app/adapters/detectors/intent_risk.py and
+    # app/adapters/intent/zero_shot_intent_classifier.py) — real MIT-licensed
+    # model, confirmed ungated, real Hindi coverage via XNLI.
+    #
+    # KNOWN LIMITATION, enabled anyway at explicit user instruction: a real
+    # calibration check found this model misclassifies completely ordinary
+    # conversation as fraud-relevant under three configurations tried (see
+    # zero_shot_intent_classifier.py's HONESTY NOTE for the exact numbers).
+    # Weighted low (0.15, auto-renormalised against the others — see
+    # app/adapters/fusion/weighted_sum.py) precisely because this signal is
+    # not yet trusted as much as acoustic/prosodic/third_signal. Abstains
+    # entirely when no transcript is available.
+    class: app.adapters.detectors.intent_risk:IntentRiskDetector
+    weight: 0.15
+    params: {}
+
 fusion:
   class: app.adapters.fusion.weighted_sum:WeightedSumFusion
   # EMA smoothing across a session's windows: higher = more reactive to the
@@ -108,27 +126,19 @@ transcription:
     model_size: small  # "base" was tested and found unreliable for Hindi — see whisper_transcriber.py
     floor_rms: 0.0001
 
-# NOT ACTIVE — built and verified (real model, real MIT license, real
-# Hindi coverage via XNLI — see app/adapters/intent/
-# zero_shot_intent_classifier.py), but a real calibration problem was
-# found before shipping this live: it misclassified completely ordinary
-# sentences as fraud-relevant under three different configurations tried.
-# Read that module's HONESTY NOTE in full before uncommenting the section
-# below AND adding the matching `intent` entry to `detectors:` above (both
-# are required — this section alone just computes the classification and
-# throws it away, since no detector reads it without that second step).
-#
-# intent_classification:
-#   class: app.adapters.intent.zero_shot_intent_classifier:ZeroShotIntentClassifier
-#   params:
-#     model_name: MoritzLaurer/mDeBERTa-v3-base-mnli-xnli
-#
-# ...and in detectors: above:
-#   - name: intent
-#     class: app.adapters.detectors.intent_risk:IntentRiskDetector
-#     weight: 0.15  # modest — an unvalidated new signal, not yet trusted
-#                   # as much as acoustic/prosodic/third_signal. Weights
-#                   # are auto-renormalised against their own sum (see
-#                   # app/adapters/fusion/weighted_sum.py), so adding this
-#                   # doesn't require hand-rebalancing 0.6/0.2/0.2 above.
-#     params: {}
+# Feeds the `intent` detector above once per call, same "compute once,
+# read many times" pattern as transcription — see Engine.score_call()'s
+# docstring. Real MIT-licensed model, confirmed ungated, real Hindi
+# coverage via XNLI. KNOWN LIMITATION: a real calibration check found it
+# misclassifies completely ordinary conversation as fraud-relevant (see
+# app/adapters/intent/zero_shot_intent_classifier.py's HONESTY NOTE for
+# the exact numbers) — enabled anyway at explicit user instruction, with
+# a deliberately modest weight (see the `intent` detector entry above)
+# and full transparency in the dashboard (every candidate label's score
+# is shown, not just the winner — see app/ui/app.js's intent-breakdown
+# rendering). Omit this whole section to disable intent classification
+# entirely; the `intent` detector then simply abstains on every window.
+intent_classification:
+  class: app.adapters.intent.zero_shot_intent_classifier:ZeroShotIntentClassifier
+  params:
+    model_name: MoritzLaurer/mDeBERTa-v3-base-mnli-xnli

@@ -124,7 +124,16 @@ class WeightedSumFusion:
             raw_score_0_100=raw_score_0_100,
             smoothed_score_0_100=smoothed_score_0_100,
             band=band,
-            formula_version=self.version,
+            # The CONFIG's formula_version (config/risk_formula.yaml), not
+            # self.version (this fusion CLASS's own code version — a
+            # different thing, same distinction as a detector's own
+            # detector_version vs. this field). This was a real bug: it
+            # used to read self.version here, so every FusedScore was
+            # stamped "0.1.0" regardless of the actual config version,
+            # contradicting docs/risk-model.md's documented reproducibility
+            # promise that formula_version ties a score back to the exact
+            # config that produced it.
+            formula_version=config["formula_version"],
             third_signal_mode=third_signal_mode,
             components=components,
             recommended_action=recommended_action,

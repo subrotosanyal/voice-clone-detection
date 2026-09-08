@@ -77,6 +77,13 @@ RUN python -m app.adapters.embeddings.fetch_ecapa_model
 # path works fine here.
 RUN python app/adapters/transcription/fetch_whisper_model.py
 
+# Same reasoning for the zero-shot intent-classification model — see
+# app/adapters/intent/fetch_intent_model.py (no `app.*` imports, plain
+# script path works). Active by default since config/risk_formula.yaml's
+# `intent` detector is enabled — see that config's own comment for the
+# known calibration caveat this signal carries.
+RUN python app/adapters/intent/fetch_intent_model.py
+
 ENV PYTHONUNBUFFERED=1
 EXPOSE 8000
 

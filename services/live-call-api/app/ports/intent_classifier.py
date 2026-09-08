@@ -10,11 +10,12 @@ like TranscriberPort, this produces a classification result that a
 detector (app/adapters/detectors/intent_risk.py) reads out of context,
 not a risk score directly.
 
-STATUS: built and verified (real model, real license, real language
-coverage — see docs/risk-model.md's "Intent detection" section), but NOT
-wired into config/risk_formula.yaml's active `detectors:` list by
-default. A real calibration problem was found before shipping this live:
-see zero_shot_intent_classifier.py's own honesty note.
+STATUS: built, verified, and enabled by default (see docs/risk-model.md's
+"Intent detection" section) — with a real, documented calibration
+problem that was surfaced in full before enabling, not fixed. See
+zero_shot_intent_classifier.py's own honesty note for what mitigates the
+risk (a low fusion weight, full UI transparency) and what doesn't (the
+model still misjudges ordinary conversation).
 
 Scope note: same as TranscriberPort — file-upload path only. Depends on a
 transcript existing, so it's meaningless on the live streaming path.

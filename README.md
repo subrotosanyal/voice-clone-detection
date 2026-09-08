@@ -52,10 +52,13 @@ file uploads, an optional **diarizer** can also split a multi-speaker
 recording and score each voice separately. Nothing here is a black box —
 see `docs/risk-model.md`.
 
-A fifth, **zero-shot intent classifier** is built and verified (real
-model, real MIT license, real Hindi coverage) but deliberately NOT active
-by default — see `docs/risk-model.md`, "Intent detection" for the real
-calibration problem that keeps it opt-in only.
+A fifth, **zero-shot intent classifier** (real model, real MIT license,
+real Hindi coverage) scores the transcript against fraud-relevant
+candidate labels — enabled by default with a deliberately low weight and
+full UI transparency (every candidate label's own score is shown, not
+just the winner), because a real calibration check found it can
+misjudge ordinary conversation. See `docs/risk-model.md`, "Intent
+detection" for the honest account and why it shipped anyway.
 
 ## Repo layout
 
@@ -70,8 +73,8 @@ services/live-call-api/         # the one service that exists so far
     adapters/                   # concrete detectors + fusion + history/enrollment stores +
                                  # diarizer + transcription/ (Whisper + urgency/authority-
                                  # claim keyword detection) + intent/ (zero-shot classifier,
-                                 # built but not active by default) + the shared ECAPA-TDNN
-                                 # embedding extractor + the plugin registry
+                                 # active by default, known calibration caveat) + the shared
+                                 # ECAPA-TDNN embedding extractor + the plugin registry
     pipeline/                   # windowing + orchestration (engine.py)
     api/                        # FastAPI routes (REST + WebSocket + session history + enrollment)
     ui/                         # the browser dashboard (no build step — plain HTML/JS)
@@ -119,13 +122,13 @@ implementations, not hand-rolled heuristics alone:
   English, Hindi, and Marathi — no manual keyword entry required, though
   you still can. An authority claim ("this is your bank") paired with a
   financial request fires its own explicit combined-pressure rule.
-- **Intent classification (built, not active)** — a zero-shot NLI
-  classifier (`MoritzLaurer/mDeBERTa-v3-base-mnli-xnli`, MIT, real Hindi
-  coverage) that scores the transcript against fraud-relevant candidate
-  labels. Fully wired (port, adapter, detector, Engine integration) but
-  commented out in `config/risk_formula.yaml` — a real calibration check
-  found it misclassifies ordinary conversation as fraud-relevant; see
-  `docs/risk-model.md`.
+- **Intent classification** — a zero-shot NLI classifier
+  (`MoritzLaurer/mDeBERTa-v3-base-mnli-xnli`, MIT, real Hindi coverage)
+  that scores the transcript against fraud-relevant candidate labels.
+  Enabled by default with a deliberately low weight (0.15) — a real
+  calibration check found it can misclassify ordinary conversation as
+  fraud-relevant, and the dashboard shows every candidate label's own
+  score for exactly that reason (see `docs/risk-model.md`).
 
 Every model/checkpoint is fetched and cached at `docker compose up --build`
 time — see `docs/running-locally.md` for running without Docker. See

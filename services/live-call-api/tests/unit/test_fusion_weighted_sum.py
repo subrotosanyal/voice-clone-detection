@@ -2,6 +2,7 @@ from app.adapters.fusion.weighted_sum import WeightedSumFusion
 from app.domain.models import Band, DetectorResult
 
 CONFIG = {
+    "formula_version": "test-formula-v1",
     "detectors": [
         {"name": "acoustic", "weight": 0.6},
         {"name": "prosodic", "weight": 0.2},
@@ -25,6 +26,24 @@ def test_all_signals_present_weighted_sum_is_exact():
     # all three at 0.5 -> weighted sum is 0.5 regardless of weight split
     assert fused.raw_score_0_100 == 50.0
     assert fused.smoothed_score_0_100 == 50.0  # no previous score -> raw == smoothed
+
+
+def test_formula_version_comes_from_config_not_the_fusion_class():
+    """Regression test for a real bug: FusedScore.formula_version used to
+    be stamped from WeightedSumFusion.version (a hardcoded class
+    attribute, "0.1.0") instead of config["formula_version"] — meaning
+    every score was mislabeled with the same fixed string regardless of
+    which config actually produced it, contradicting docs/risk-model.md's
+    documented reproducibility promise. CONFIG's formula_version here is
+    deliberately different from WeightedSumFusion.version so this would
+    fail loudly if the bug ever came back."""
+    fusion = WeightedSumFusion()
+    assert CONFIG["formula_version"] != fusion.version
+    results = [_result("acoustic", 0.5), _result("prosodic", 0.5), _result("third_signal", 0.5)]
+
+    fused = fusion.fuse("s1", 0, 0, results, previous_smoothed_score=None, config=CONFIG)
+
+    assert fused.formula_version == CONFIG["formula_version"]
 
 
 def test_abstained_signal_is_renormalised_not_zeroed():

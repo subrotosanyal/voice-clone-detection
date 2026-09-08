@@ -3,12 +3,11 @@ app/adapters/intent/.cache/ (kept inside the repo tree, same pattern as
 every other model cache in this project — see fetch_checkpoint.py,
 fetch_ecapa_model.py, fetch_whisper_model.py).
 
-NOT called from the Dockerfile by default: ZeroShotIntentClassifier is
-built and verified but not wired into config/risk_formula.yaml's active
-`detectors:` list — see that module's own HONESTY NOTE on why. Run this
-by hand (`python app/adapters/intent/fetch_intent_model.py`) only if
-you're deliberately opting into the feature after addressing the
-calibration issue described there.
+Called from the Dockerfile at build time: ZeroShotIntentClassifier is
+enabled by default in config/risk_formula.yaml's active `detectors:` list
+(with a known calibration caveat — see that module's own HONESTY NOTE).
+Run this by hand (`python app/adapters/intent/fetch_intent_model.py`)
+outside Docker, same as the other fetch_*.py scripts in this project.
 
 Idempotent: huggingface_hub's download machinery skips re-downloading
 whenever cache_dir already has the file.

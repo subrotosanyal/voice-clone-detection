@@ -95,12 +95,17 @@ replacing what you supply. An authority claim paired with a financial
 request also fires its own `combined_authority_financial_pressure` rule
 (`detail.rules_fired`) — the classic fraud script, flagged explicitly.
 
-**Zero-shot intent classification — built, not enabled by default.** A
-zero-shot classifier (`app/adapters/intent/`) that scores the transcript
-against candidate fraud-intent labels exists and is fully wired, but is
-commented out in `config/risk_formula.yaml` — a real calibration check
-found it misclassifies completely ordinary sentences as fraud-relevant.
-See `docs/risk-model.md`, "Intent detection" before uncommenting it.
+**Zero-shot intent classification runs automatically too**, feeding a
+fourth, separately-weighted `intent` component (`app/adapters/intent/`)
+that scores the transcript against candidate fraud-intent labels — a
+real calibration check found this model can misclassify completely
+ordinary sentences as fraud-relevant, so it's weighted low (0.15) and the
+dashboard shows every candidate label's own score under the "Intent"
+component (`detail.label_scores`), not just the winner, so a false
+positive here is visible rather than hidden inside one number. See
+`docs/risk-model.md`, "Intent detection" for the full account. To disable
+it, comment out `intent_classification:` and the `intent` entry under
+`detectors:` in `config/risk_formula.yaml`.
 
 ## Voiceprint enrollment
 

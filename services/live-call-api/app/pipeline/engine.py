@@ -145,9 +145,10 @@ class Engine:
         pass is expensive, and IntentRiskDetector only ever reads the
         precomputed `intent_label`/`intent_top_score`/`intent_label_scores`
         this merges into `context` — see that detector's own docstring).
-        Note this detector is NOT in config/risk_formula.yaml's active
-        `detectors:` list by default; see app/adapters/intent/
-        zero_shot_intent_classifier.py's HONESTY NOTE.
+        This detector IS in config/risk_formula.yaml's active `detectors:`
+        list (weighted low, 0.15) despite a known calibration problem; see
+        app/adapters/intent/zero_shot_intent_classifier.py's HONESTY NOTE
+        for what mitigates that risk and what doesn't.
         """
         self.sessions.reset(session_id)
 

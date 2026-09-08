@@ -18,10 +18,11 @@ services/live-call-api/app/adapters/embeddings/.cache/
 # committed. See app/adapters/transcription/fetch_whisper_model.py.
 services/live-call-api/app/adapters/transcription/.cache/
 
-# Zero-shot intent-classification model cache — fetched only if you
-# opt in (not by default — see app/adapters/intent/
-# zero_shot_intent_classifier.py's HONESTY NOTE). Not committed either
-# way. See app/adapters/intent/fetch_intent_model.py.
+# Zero-shot intent-classification model cache — fetched at build/setup
+# time (active by default — see app/adapters/intent/
+# zero_shot_intent_classifier.py's HONESTY NOTE for the known calibration
+# caveat this signal carries). Not committed. See
+# app/adapters/intent/fetch_intent_model.py.
 services/live-call-api/app/adapters/intent/.cache/
 
 # session history — local runtime data, not committed. See

@@ -23,9 +23,8 @@ praat-parselmouth==0.4.7
 openai-whisper==20250625
 
 # Zero-shot intent classification (app/adapters/intent/
-# zero_shot_intent_classifier.py) — built and verified (real model, real
-# MIT license, real Hindi coverage via XNLI), but NOT wired into
-# config/risk_formula.yaml's active detectors by default. See that
-# module's own HONESTY NOTE for the calibration problem found before
-# shipping this live.
+# zero_shot_intent_classifier.py) — built, verified, and active by
+# default (real model, real MIT license, real Hindi coverage via XNLI),
+# despite a real calibration problem enabled with full knowledge of. See
+# that module's own HONESTY NOTE.
 transformers==5.16.1

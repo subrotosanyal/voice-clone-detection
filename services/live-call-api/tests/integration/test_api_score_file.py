@@ -52,7 +52,7 @@ def test_config_endpoint_reflects_loaded_formula():
     assert resp.status_code == 200
     body = resp.json()
     assert "formula_version" in body
-    assert {d["name"] for d in body["detectors"]} == {"acoustic", "prosodic", "third_signal"}
+    assert {d["name"] for d in body["detectors"]} == {"acoustic", "prosodic", "third_signal", "intent"}
 
 
 def test_score_file_end_to_end():
@@ -72,10 +72,17 @@ def test_score_file_end_to_end():
     final = body["final"]
     assert 0.0 <= final["smoothed_score_0_100"] <= 100.0
     assert final["band"] in {"low", "elevated", "high"}
-    assert final["formula_version"]
-    assert len(final["components"]) == 3
+    # Regression check: formula_version must reflect the real running
+    # config (config/risk_formula.yaml), not WeightedSumFusion's own
+    # hardcoded class version — see test_fusion_weighted_sum.py's
+    # test_formula_version_comes_from_config_not_the_fusion_class for the
+    # unit-level version of this same check.
+    with TestClient(app) as client:
+        loaded_config = client.get("/v1/config").json()
+    assert final["formula_version"] == loaded_config["formula_version"]
+    assert len(final["components"]) == 4
     names = {c["name"] for c in final["components"]}
-    assert names == {"acoustic", "prosodic", "third_signal"}
+    assert names == {"acoustic", "prosodic", "third_signal", "intent"}
     third_signal = next(c for c in final["components"] if c["name"] == "third_signal")
     assert third_signal["detail"]["detector_name"]  # the actual implementation, for tracing
 

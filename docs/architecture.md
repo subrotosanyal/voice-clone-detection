@@ -20,9 +20,9 @@ adapters/   concrete implementations of the ports, plus the registry that
                             authority-claim keyword detector it feeds (see
                             "Transcription" below).
             intent/         zero-shot IntentClassifierPort implementation —
-                            built and verified, but NOT wired into the
-                            active formula by default (see "Intent
-                            detection" below).
+                            active by default, weighted low, with a known
+                            calibration caveat (see "Intent detection"
+                            below).
 pipeline/   windowing (audio -> AudioWindow) and the engine that
             orchestrates detectors -> fusion -> logging for one window.
 api/        FastAPI routes. Thin — every route just calls into pipeline/.
@@ -308,7 +308,7 @@ harder, deferred" reasoning as live diarization), and the keyword lists
 themselves aren't validated against real fraud-call transcripts — see the
 module's own honesty note.
 
-## Intent detection — built, verified, not active by default
+## Intent detection — built, verified, active with a known caveat
 
 `app/ports/intent_classifier.py` (`IntentClassifierPort`) +
 `app/adapters/intent/zero_shot_intent_classifier.py`
@@ -318,7 +318,9 @@ fraud-relevant candidate labels using zero-shot NLI classification
 Hindi coverage via XNLI) — meant to generalise beyond
 `urgency_language.py`'s exact keyword matches, while staying explainable
 (every score traces to "the model judged this X% consistent with
-candidate Y", for every candidate).
+candidate Y", for every candidate — and unlike most components, the
+dashboard shows the FULL breakdown, every candidate's own score, not just
+the winner; see "Intent" in the browser dashboard).
 
 Wired the same way as transcription: `Engine.score_call()` (and
 `http_router.py`, for the diarization fan-out) computes the classification
@@ -330,16 +332,18 @@ expensive, and calling it once per 2-second window would repeat the exact
 class of redundant-computation bug fixed the same day for
 transcription-during-diarization (see "Diarization" above).
 
-**Why this is built but NOT in `config/risk_formula.yaml`'s active
-`detectors:` list**: a real calibration check (three hand-run transcripts:
-a fraud script, an impersonation script, two ordinary sentences) found
-the model severely misclassifies completely benign text as
-fraud-relevant, under three different configurations tried — see
-`zero_shot_intent_classifier.py`'s HONESTY NOTE for the full account. The
-port/adapter/detector/wiring are all real and correct; the model just
-isn't trustworthy enough yet to score real calls unsupervised. See
-`docs/risk-model.md`, "Intent detection" for the full writeup and what
-would need fixing before enabling it.
+**Why this is enabled despite a real calibration problem**: a hand-run
+check (a fraud script, an impersonation script, two ordinary sentences)
+found the model can misclassify completely benign text as fraud-relevant,
+under three different configurations tried — see
+`zero_shot_intent_classifier.py`'s HONESTY NOTE for the full account. It
+was enabled anyway, at explicit user instruction, with two real
+mitigations rather than none: a deliberately low fusion weight (0.15,
+auto-renormalised against the others — see "Fusion" above) so it can't
+single-handedly push a genuine call into High, and full UI transparency
+(the dashboard shows every candidate label's own score, so a false
+positive here is visible and inspectable, not hidden inside one number).
+See `docs/risk-model.md`, "Intent detection" for the full writeup.
 
 ## Concurrency: keeping the event loop free during a long score
 

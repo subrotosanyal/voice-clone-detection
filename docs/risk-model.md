@@ -94,7 +94,7 @@ languages or about non-speech audio. Attribution and licence:
 ## The prosodic detector: Parselmouth (Praat), with real limits
 
 `prosody_parselmouth.py` (the default `prosodic` class as of
-`formula_version: "2026.09.5"`) computes jitter, shimmer, and harmonics-to-
+`formula_version: "2026.09.7"`) computes jitter, shimmer, and harmonics-to-
 noise ratio via **Parselmouth** — the official Python binding for **Praat**,
 the long-standing reference tool in clinical voice-quality research.
 Attribution and licence:
@@ -220,7 +220,7 @@ your account has been compromised, transfer your funds now") scored as
 its own explicit, named rule rather than silently summed from the two
 components. Same starting-point caveat as the other keyword lists above.
 
-## Intent detection (zero-shot classifier) — built, verified, NOT enabled by default
+## Intent detection (zero-shot classifier) — built, verified, active with a known caveat
 
 `app/adapters/intent/zero_shot_intent_classifier.py` classifies a
 transcript against five fixed candidate labels (`"requesting a money
@@ -244,34 +244,45 @@ Y", for every candidate, not just the winner.
   sentiment model discussed for the separate, still-unbuilt sentiment
   feature.
 
-**Why this is built but NOT wired into `config/risk_formula.yaml`'s
-active `detectors:` list**: before enabling it, three real transcripts
-were run through it by hand — a clear fraud script, a clear impersonation
-script, and two completely ordinary sentences ("are we still on for
-dinner tonight?", "the weather has been really nice this week"). The
-fraud/impersonation examples classified sensibly. Both ordinary sentences
-did NOT: "dinner tonight" scored just 4.5% for "ordinary conversation"
-against 38.9% for "creating urgency or time pressure" — a severe false
-positive on completely benign text. This was tested three ways (default
-settings, `multi_label=True`, and a phone-call-specific
-`hypothesis_template`) and the miscalibration persisted in all three —
-see `zero_shot_intent_classifier.py`'s own HONESTY NOTE for the full
-numbers. A fraud-detection product cannot ship a signal that flags an
-innocent dinner plan as suspicious, so this stays built-but-inactive
-until the calibration issue is actually fixed (candidates: several
-distinct "ordinary" hypotheses instead of one, a real held-out evaluation
-set, or a different base model).
+**The known calibration problem, surfaced before enabling this, not
+after**: three real transcripts were run through it by hand — a clear
+fraud script, a clear impersonation script, and two completely ordinary
+sentences ("are we still on for dinner tonight?", "the weather has been
+really nice this week"). The fraud/impersonation examples classified
+sensibly. Both ordinary sentences did NOT: "dinner tonight" scored just
+4.5% for "ordinary conversation" against 38.9% for "creating urgency or
+time pressure" — a severe false positive on completely benign text. This
+was tested three ways (default settings, `multi_label=True`, and a
+phone-call-specific `hypothesis_template`) and the miscalibration
+persisted in all three — see `zero_shot_intent_classifier.py`'s own
+HONESTY NOTE for the full numbers.
 
-**What IS real and working**: the port (`app/ports/intent_classifier.py`),
+**Enabled anyway, at explicit user instruction, with two real
+mitigations**: a deliberately low fusion weight (`0.15` in
+`config/risk_formula.yaml`, auto-renormalised against
+acoustic/prosodic/third_signal — see "The formula" above — so this alone
+can't push a genuine bonafide call into High), and full UI transparency:
+the dashboard shows every candidate label's own score for the "Intent"
+component, not just the winner, specifically so a false positive here is
+visible and inspectable rather than hidden inside one opaque number. This
+does not fix the miscalibration — it means an operator sees "creating
+urgency or time pressure: 39%, ordinary conversation: 4%" laid out in
+full and can judge for themselves, the same trust model this project's
+other honestly-flagged heuristic thresholds (prosodic, voiceprint
+consistency) already rely on. Real fixes not done yet: several distinct
+"ordinary" hypotheses instead of one, a real held-out evaluation set, or
+a different base model.
+
+**What's real and working**: the port (`app/ports/intent_classifier.py`),
 the adapter above, the detector (`app/adapters/detectors/intent_risk.py`,
 which reads a pre-computed classification out of `context` rather than
 calling the model per-window — the same "compute once per call" pattern
 transcription uses, for the same reason: an NLI forward pass is
 expensive), and the `Engine.score_call()`/`http_router.py` wiring that
-would populate `context["intent_label"]` if the `intent_classification:`
-config section were ever uncommented. Enabling it requires uncommenting
-that section AND adding an `intent` entry to `detectors:` — see the
-commented block in `config/risk_formula.yaml` itself for exact syntax.
+populates `context["intent_label"]` once per call. To disable it again,
+comment out the `intent_classification:` section and the `intent` entry
+under `detectors:` in `config/risk_formula.yaml` — the detector then
+simply abstains on every window.
 
 ## The pluggable third signal, pros/cons
 
