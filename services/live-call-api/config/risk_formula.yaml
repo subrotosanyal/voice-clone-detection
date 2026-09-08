@@ -12,7 +12,7 @@
 # every log line so a score can always be tied back to the exact config
 # that produced it (see docs/risk-model.md, "Reproducibility").
 
-formula_version: "2026.09.7"
+formula_version: "2026.09.8"
 
 detectors:
   # Real pretrained countermeasure (AASIST, ASVspoof2019 LA, MIT licensed —
@@ -103,13 +103,22 @@ windowing:
 diarization:
   class: app.adapters.diarization.embedding_cluster_diarizer:EmbeddingClusterDiarizer
   params:
-    # segment_ms/distance_threshold/max_speakers were recalibrated
-    # 2026-09-08, twice — an earlier same-day fix moved distance_threshold
-    # the WRONG direction (made over-counting worse, confirmed by a real
-    # 100+-speaker report) and has been corrected here. See the full
-    # CALIBRATION HISTORY note in embedding_cluster_diarizer.py's own
-    # docstring before changing these again.
-    segment_ms: 2500
+    # distance_threshold/max_speakers were recalibrated 2026-09-08, twice
+    # — an earlier same-day fix moved distance_threshold the WRONG
+    # direction (made over-counting worse, confirmed by a real
+    # 100+-speaker report) and has been corrected here. Segmentation
+    # itself was then changed from a fixed clock (segment_ms) to
+    # pause-aware boundaries (see app/adapters/diarization/
+    # pause_segmentation.py) — max_segment_ms below is now only a cap for
+    # sub-slicing long uninterrupted stretches, not the primary
+    # segmentation unit. See the full CALIBRATION HISTORY note in
+    # embedding_cluster_diarizer.py's own docstring before changing any
+    # of this again.
+    max_segment_ms: 2500
+    min_segment_ms: 500
+    silence_threshold_db: -25.0
+    min_silence_s: 0.1
+    min_sounding_s: 0.1
     floor_rms: 0.0001
     distance_threshold: 0.4
     max_speakers: 8

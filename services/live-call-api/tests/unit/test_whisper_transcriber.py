@@ -86,3 +86,20 @@ def test_result_carries_detector_identity(transcriber):
     result = transcriber.transcribe(silence, SR)
     assert result.detector_name == "whisper_transcriber"
     assert result.detector_version == "whisper-small"
+
+
+def test_repeated_calls_on_non_speech_audio_are_deterministic(transcriber):
+    """Regression test for a real intermittent bug found 2026-09-08: without
+    a fixed temperature, Whisper's default fallback-to-sampling behaviour on
+    non-speech audio (this exact tone fixture) produced a different result
+    call to call within the same process — sometimes an empty transcript,
+    sometimes a hallucinated one ("MMMMMMMMMMMMMM", observed by hand) — which
+    then fed the intent classifier and changed the final fused score
+    non-deterministically (see this test's counterpart in
+    tests/integration/test_api_score_file.py, and WhisperTranscriber's own
+    REPRODUCIBILITY FIX docstring note). temperature=0.0 forces greedy
+    decoding, which must give the identical result every time."""
+    samples, sr = sf.read("samples/genuine_tone.wav", dtype="float32", always_2d=False)
+    results = [transcriber.transcribe(samples, sr) for _ in range(5)]
+    texts = {r.text for r in results}
+    assert len(texts) == 1, f"expected identical transcript every call, got {texts}"

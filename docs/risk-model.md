@@ -166,15 +166,36 @@ wrong about on some future recording, this diarizer will never again
 report more speakers than that. See `embedding_cluster_diarizer.py`'s
 CALIBRATION HISTORY docstring note for the full account, including the
 reasoning error, kept rather than deleted so it doesn't happen again.
-**What's still a placeholder**: fixed-length segmentation (not a proper
-voice-activity/change-point front end) can miss a speaker change
-mid-segment, and the distance cutoff remains an unvalidated guess (no
-real labeled multi-speaker corpus exists in this repo — see
+
+**Segmentation redesigned 2026-09-08 (same day, after the above): pause-aware,
+not fixed-length.** Investigating whether simply lengthening segments would
+help surfaced a second, distinct over-counting mechanism: a segment that
+straddles a real speaker change produces an ECAPA-TDNN embedding that
+resembles NEITHER speaker (measured by hand on synthetic splices: cosine
+similarity 0.04-0.34 against either pure voice, far below the normal
+cross-speaker baseline of ~0.67-0.70) — not a "blend", a phantom cluster of
+its own. `pause_segmentation.py` now cuts segment boundaries at real
+acoustic pauses (Praat's own silence detector — no new dependency,
+Parselmouth is already required for the prosodic detector) instead of a
+fixed clock, so a segment no longer straddles a detected speaker turn.
+`max_segment_ms` (still 2500 by default) is now only a cap for sub-slicing
+long uninterrupted stretches, not the primary segmentation unit. **Honest
+limit, verified by hand**: a ~150ms gap between speakers is reliably
+detected; a genuine zero-gap turn-take (immediate back-to-back speech, or
+overlap) leaves no acoustic silence for any pause-based method to find, no
+matter how it's tuned — `max_segment_ms` bounds the damage from a missed
+zero-gap turn to at most one chunk, same as the old fixed-grid behaviour,
+rather than eliminating the case. See `pause_segmentation.py`'s own HONESTY
+NOTE for the measurements.
+
+**What's still a placeholder**: the distance cutoff remains an unvalidated
+guess (no real labeled multi-speaker corpus exists in this repo — see
 `eval/indian_language/README.md`'s own note on why that data doesn't
-exist either). The `max_speakers` cap is the part of this you can
-actually trust regardless. Good enough for "roughly how many voices,
-roughly which stretches" — not turn-by-turn transcription-grade
-diarization.
+exist either), and a genuine zero-gap turn-take is still undetectable by
+this or any pause-based method (see above). The `max_speakers` cap is the
+part of this you can actually trust regardless. Good enough for "roughly
+how many voices, roughly which stretches" — not turn-by-turn
+transcription-grade diarization.
 
 ## Transcription and urgency-language detection
 
@@ -207,6 +228,21 @@ were drafted for thematic coverage, not validated against real fraud-call
 transcripts — same class of caveat as the prosodic/voiceprint detectors'
 placeholder thresholds elsewhere in this document. Real ASR, real keyword
 matches; the specific word lists are a starting point.
+
+**Reproducibility fix, 2026-09-08**: a real intermittent bug was found and
+fixed — Whisper's `transcribe()` defaults to a temperature FALLBACK tuple,
+not a single fixed value, and on non-speech audio (silence, a pure tone —
+exactly this project's synthetic test fixtures) the initial greedy pass can
+fail Whisper's own quality gates and fall back to sampling, which draws
+from PyTorch's global, unseeded RNG. Verified by hand: this made
+transcription genuinely non-deterministic call to call on identical audio
+within one process, sometimes returning an empty transcript and sometimes
+a hallucinated one ("MMMMMMMMMMMMMM", observed directly) — which then fed
+the intent classifier and changed the final fused score run to run. Fixed
+by pinning `temperature=0.0`, which forces pure greedy decoding — see
+`whisper_transcriber.py`'s own REPRODUCIBILITY FIX docstring note for the
+full account and the trade-off this accepts (Whisper's one real recovery
+path, retrying at higher temperature on hard audio, is now disabled).
 
 **Authority-claim detection and the combined-pressure rule (added
 2026-09-08)**: `urgency_language.py` also scans for a third category —

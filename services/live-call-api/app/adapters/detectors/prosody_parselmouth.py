@@ -27,21 +27,10 @@ part; the risk thresholds are not.
 """
 from __future__ import annotations
 
-import threading
-
 import numpy as np
 
+from app.adapters.praat_lock import PRAAT_LOCK
 from app.domain.models import AudioWindow, DetectorResult
-
-# Praat's C++ core predates any concept of being called from multiple
-# threads at once (it was originally a single-threaded desktop app), and
-# Parselmouth doesn't document it as thread-safe. Now that
-# app/api/http_router.py and ws_router.py run detectors via
-# run_in_threadpool (so one slow request doesn't block the whole async
-# event loop), concurrent calls into Praat are a real possibility — this
-# lock serialises them process-wide. Cheap: one _measure_voice_quality()
-# call is tens of milliseconds.
-_PRAAT_LOCK = threading.Lock()
 
 _MIN_PITCH_HZ = 70.0
 _MAX_PITCH_HZ = 400.0
@@ -162,7 +151,7 @@ def _measure_voice_quality(samples: np.ndarray, sample_rate: int) -> tuple[float
     import parselmouth
     from parselmouth.praat import call
 
-    with _PRAAT_LOCK:
+    with PRAAT_LOCK:
         sound = parselmouth.Sound(samples.astype(np.float64), sampling_frequency=sample_rate)
 
         point_process = call(sound, "To PointProcess (periodic, cc)", _MIN_PITCH_HZ, _MAX_PITCH_HZ)

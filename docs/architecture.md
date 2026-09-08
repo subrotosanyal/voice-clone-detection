@@ -230,11 +230,11 @@ embedding_cluster_diarizer.py` (`EmbeddingClusterDiarizer`) answer "how many
 people spoke, and which stretches were whose" for an uploaded recording.
 Deliberately NOT pyannote.audio (its pretrained pipelines are all gated on
 HuggingFace — would need every user to manage an auth token just to build
-the image). Instead: fixed-length segments, skip near-silent ones, extract
-an ECAPA-TDNN embedding per segment (the same shared extractor voiceprint
-consistency uses), agglomerative clustering (`scipy.cluster.hierarchy`,
-cosine distance) groups same-voice segments, consecutive same-cluster
-segments merge into a `SpeakerSegment`.
+the image). Instead: pause-aligned segments (see below), skip near-silent
+ones, extract an ECAPA-TDNN embedding per segment (the same shared
+extractor voiceprint consistency uses), agglomerative clustering
+(`scipy.cluster.hierarchy`, cosine distance) groups same-voice segments,
+consecutive same-cluster segments merge into a `SpeakerSegment`.
 
 Wired into `POST /v1/score/file` only, via an optional `diarize=true` form
 field (`app/api/http_router.py::_diarize_and_score`) — **not** the live
@@ -247,20 +247,37 @@ every per-speaker window still flows through the normal fusion + history-
 save machinery, and each speaker's trace is independently browsable later
 from the History tab like any other session.
 
-**Honesty note**: fixed-length segmentation (not a proper voice-activity/
-change-point front end) misses a speaker change mid-segment. The
-clustering distance threshold and segment length were recalibrated
-2026-09-08, twice, after a real over-counting bug (one speaker's natural
-voice variation was splitting into several — a real report saw over 100
-phantom speakers for one call). The first same-day fix moved the
-threshold the wrong direction and made it worse, confirmed immediately by
-that same report; see the module's CALIBRATION HISTORY docstring note for
-the full account. A `max_speakers` cap (default 8) was added as a real
-safety net independent of whatever the distance threshold turns out to be
-wrong about — this diarizer will never report more speakers than that,
-regardless. The threshold itself remains an unvalidated guess (no real
-labeled multi-speaker corpus exists in this repo). Real signal processing,
-reproducible, not turn-by-turn transcription-grade diarization.
+**Honesty note**: the clustering distance threshold and segment length were
+recalibrated 2026-09-08, twice, after a real over-counting bug (one
+speaker's natural voice variation was splitting into several — a real
+report saw over 100 phantom speakers for one call). The first same-day fix
+moved the threshold the wrong direction and made it worse, confirmed
+immediately by that same report; see the module's CALIBRATION HISTORY
+docstring note for the full account. A `max_speakers` cap (default 8) was
+added as a real safety net independent of whatever the distance threshold
+turns out to be wrong about — this diarizer will never report more
+speakers than that, regardless. The threshold itself remains an
+unvalidated guess (no real labeled multi-speaker corpus exists in this
+repo). Real signal processing, reproducible, not turn-by-turn
+transcription-grade diarization.
+
+**Segmentation redesigned, same day**: fixed-length segmentation (a plain
+clock, no voice-activity/change-point front end) turned out to have a
+second, distinct over-counting mechanism — a segment straddling a real
+speaker change produces an embedding resembling NEITHER speaker (measured
+by hand: cosine similarity 0.04-0.34 against either pure voice, far below
+the ~0.67-0.70 normal cross-speaker baseline), a phantom cluster of its
+own. `app/adapters/diarization/pause_segmentation.py` now cuts boundaries
+at real acoustic pauses detected by Praat's own silence detector (no new
+dependency — Parselmouth is already required for the prosodic detector),
+so a segment no longer straddles a detected turn; `max_segment_ms` is now
+only a cap for sub-slicing long uninterrupted stretches, not the primary
+segmentation unit. Verified by hand: a ~150ms gap between speakers is
+reliably detected; a genuine zero-gap turn-take (immediate back-to-back
+speech, or overlap) is not — no acoustic silence exists for any pause-based
+method to find there, so `max_segment_ms` bounds (not eliminates) the
+damage from that case, same as the old fixed-grid fallback. See
+`pause_segmentation.py`'s own HONESTY NOTE for the measurements.
 
 **Also fixed the same day**: diarized calls were re-transcribing the
 whole call once per detected speaker (N+1 Whisper calls for N speakers,

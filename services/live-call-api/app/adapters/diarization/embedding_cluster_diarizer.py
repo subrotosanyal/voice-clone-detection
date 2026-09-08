@@ -10,8 +10,18 @@ app/adapters/embeddings/ecapa_embedding.py's docstring for the same
 reasoning applied to the embedding model this diarizer reuses.
 
 HOW IT WORKS (real, but intentionally simple):
-  1. Slice the recording into fixed, non-overlapping segments.
-  2. Skip near-silent segments (nothing to attribute to a speaker).
+  1. Slice the recording into segments boundary-aligned to detected
+     pauses (app/adapters/diarization/pause_segmentation.py), not a fixed
+     clock — see that module's docstring for why: a segment straddling a
+     real speaker change produces an embedding that resembles NEITHER
+     speaker, reliably becoming a phantom extra "speaker" under
+     clustering. Long uninterrupted stretches are still sub-sliced at
+     `max_segment_ms`, same fallback as before.
+  2. Skip near-silent segments (nothing to attribute to a speaker) — kept
+     as an independent check even though pause_segmentation already
+     excludes detected silence, since Praat's silence detector can
+     mislabel a perfectly flat/silent clip as "sounding" (verified by
+     hand on an all-zeros clip) — this RMS floor catches that case.
   3. Extract an ECAPA-TDNN embedding per remaining segment.
   4. Agglomerative clustering (scipy.cluster.hierarchy — average linkage,
      cosine distance, cut at `distance_threshold`) groups segments that
@@ -21,9 +31,12 @@ HOW IT WORKS (real, but intentionally simple):
      first appearance (an arbitrary, per-call id — never a claimed or
      verified identity).
 
-HONESTY NOTE: this is not a state-of-the-art diarizer. Fixed-length
-segmentation (rather than a proper voice-activity/change-point front end)
-means a speaker change mid-segment is missed.
+HONESTY NOTE: this is not a state-of-the-art diarizer. Pause-aware
+segmentation (2026-09-08) catches most real speaker turns but not all —
+a genuine zero-gap turn-take (immediate back-to-back speech, or
+overlapping speech) leaves no acoustic silence for any pause-based
+method to detect, no matter how it's tuned; see
+pause_segmentation.py's own HONESTY NOTE for the measurements.
 
 CALIBRATION HISTORY — read this before touching distance_threshold again:
 2026-09-08 (first attempt, WRONG DIRECTION): a real over-counting bug was
@@ -53,6 +66,24 @@ data doesn't exist either) and should not be trusted without real
 calibration data — see voiceprint_consistency.py's similarity anchors for
 the same class of caveat.
 
+2026-09-08 (later same day): fixed-length segmentation replaced with
+pause-aware segmentation (see pause_segmentation.py) after measuring that
+a segment straddling a real speaker change produces an embedding
+resembling neither speaker (cosine similarity 0.04-0.34 against either
+pure voice — far below even the normal cross-speaker baseline of
+~0.67-0.70) — not the moderately-confusable "blend" that might be
+expected. That reliably forms an isolated phantom cluster under
+clustering, the same over-counting failure class as above, but via a
+completely different mechanism (temporal straddling, not natural
+single-speaker variation) that survived the distance_threshold/
+max_speakers fix untouched. `segment_ms` (fixed grid) became
+`max_segment_ms` (a cap for sub-slicing only, now that segmentation is
+otherwise pause-aligned) — kept at the same value the segment_ms
+calibration above already measured to help embedding stability.
+`distance_threshold`/`max_speakers` are unchanged; they still matter for
+real speaker-clustering decisions and for whatever this new segmentation
+still misses (a genuine zero-gap turn-take — see the HONESTY NOTE above).
+
 Scope: file-upload path only (see app/ports/diarizer.py's scope note).
 """
 from __future__ import annotations
@@ -61,6 +92,7 @@ import numpy as np
 from scipy.cluster.hierarchy import fcluster, linkage
 from scipy.spatial.distance import pdist
 
+from app.adapters.diarization.pause_segmentation import detect_speech_segments
 from app.adapters.embeddings.ecapa_embedding import EcapaEmbeddingExtractor
 from app.domain.models import SpeakerSegment
 
@@ -72,35 +104,58 @@ class EmbeddingClusterDiarizer:
     def __init__(
         self,
         embedding_model_source: str = "speechbrain/spkrec-ecapa-voxceleb",
-        segment_ms: int = 2500,
+        max_segment_ms: int = 2500,
+        min_segment_ms: int = 500,
+        silence_threshold_db: float = -25.0,
+        min_silence_s: float = 0.1,
+        min_sounding_s: float = 0.1,
         floor_rms: float = 1e-4,
         distance_threshold: float = 0.4,
         max_speakers: int = 8,
     ) -> None:
-        self.segment_ms = segment_ms
+        self.max_segment_ms = max_segment_ms
+        self.min_segment_ms = min_segment_ms
+        self.silence_threshold_db = silence_threshold_db
+        self.min_silence_s = min_silence_s
+        self.min_sounding_s = min_sounding_s
         self.floor_rms = floor_rms
         self.distance_threshold = distance_threshold
         self.max_speakers = max_speakers
         self._embedding_extractor = EcapaEmbeddingExtractor(source=embedding_model_source)
 
     def diarize(self, samples: np.ndarray, sample_rate: int) -> list[SpeakerSegment]:
-        seg_len = int(sample_rate * self.segment_ms / 1000)
-        if seg_len <= 0 or samples.size == 0:
+        if samples.size == 0:
             return []
+
+        detected_segments = detect_speech_segments(
+            samples,
+            sample_rate,
+            silence_threshold_db=self.silence_threshold_db,
+            min_silence_s=self.min_silence_s,
+            min_sounding_s=self.min_sounding_s,
+            min_segment_ms=self.min_segment_ms,
+            max_segment_ms=self.max_segment_ms,
+        )
 
         raw_segments: list[tuple[int, int]] = []
         embeddings: list[np.ndarray] = []
-        for start in range(0, samples.size, seg_len):
-            chunk = samples[start : start + seg_len]
-            if chunk.size < seg_len // 2:  # trailing sliver too short to trust
+        for start_ms, end_ms in detected_segments:
+            start_sample = int(start_ms / 1000 * sample_rate)
+            end_sample = min(int(end_ms / 1000 * sample_rate), samples.size)
+            chunk = samples[start_sample:end_sample]
+            if chunk.size == 0:
                 continue
             rms = float(np.sqrt(np.mean(np.square(chunk))))
             if rms < self.floor_rms:
-                continue  # silence — not attributed to any speaker
+                # silence — not attributed to any speaker. Kept as an
+                # independent check even though pause_segmentation already
+                # tries to exclude silence, since Praat's silence detector
+                # can mislabel a perfectly flat/silent clip as "sounding"
+                # (verified by hand on an all-zeros clip) — this RMS floor
+                # catches that case.
+                continue
             embeddings.append(self._embedding_extractor.extract(chunk, sample_rate))
-            start_ms = int(start / sample_rate * 1000)
-            end_ms = int(min(start + seg_len, samples.size) / sample_rate * 1000)
-            raw_segments.append((start_ms, end_ms))
+            raw_segments.append((start_ms, min(end_ms, int(samples.size / sample_rate * 1000))))
 
         if not raw_segments:
             return []

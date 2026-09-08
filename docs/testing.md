@@ -9,11 +9,13 @@ pip install -r requirements-dev.txt                   # first time only
 pytest tests/ -v
 ```
 
-114 tests, no Docker needed — unit tests for each detector, the windowing
+122 tests, no Docker needed — unit tests for each detector, the windowing
 math, the fusion formula (including the abstain/renormalisation
 behaviour), the SQLite history and enrollment stores, the ECAPA-TDNN-based
-diarizer, the Whisper transcriber and its urgency/financial/authority-claim
-keyword detection, the zero-shot intent classifier (`test_zero_shot_
+diarizer and its pause-aware segmentation front end
+(`test_pause_segmentation.py`, `test_embedding_cluster_diarizer.py`), the
+Whisper transcriber and its urgency/financial/authority-claim keyword
+detection, the zero-shot intent classifier (`test_zero_shot_
 intent_classifier.py` — includes a KNOWN LIMITATION test that documents,
 rather than hides, the real calibration problem keeping it out of the
 active formula) and its detector (`test_intent_risk.py`), plus integration
@@ -176,6 +178,23 @@ publishes an aarch64 wheel by the time you're reading this
 acoustic detector is a real speech classifier; see the note at the top of
 `scripts/gen_test_audio.py`. Neither fixture is real speech, so neither
 reads as "bonafide" — that's correct model behaviour, not a broken test.
+
+**`test_repeated_calls_with_same_input_are_reproducible` fails
+intermittently (fixed 2026-09-08)** — this was a real, genuinely
+non-deterministic bug, not flaky infrastructure: Whisper's `transcribe()`
+defaults to a temperature FALLBACK tuple, and on non-speech audio (this
+test's synthetic fixture) the initial greedy pass could fail Whisper's own
+quality gates and fall back to sampling from PyTorch's unseeded global
+RNG — producing a different transcript call to call (observed directly:
+empty on most calls, a hallucinated `"MMMMMMMMMMMMMM"` on others), which
+then changed the intent classifier's output and the final fused score.
+Fixed by pinning `temperature=0.0` in `whisper_transcriber.py` (forces
+pure greedy decoding, deterministic by construction) — see that file's
+REPRODUCIBILITY FIX docstring note and
+`test_repeated_calls_on_non_speech_audio_are_deterministic` in
+`test_whisper_transcriber.py` for the regression coverage. If a similar
+"same input, different score" report ever resurfaces, suspect any model
+call that isn't pinned to greedy/deterministic decoding first.
 
 ## Debugging the browser dashboard
 
