@@ -107,3 +107,28 @@ transcription:
   params:
     model_size: small  # "base" was tested and found unreliable for Hindi — see whisper_transcriber.py
     floor_rms: 0.0001
+
+# NOT ACTIVE — built and verified (real model, real MIT license, real
+# Hindi coverage via XNLI — see app/adapters/intent/
+# zero_shot_intent_classifier.py), but a real calibration problem was
+# found before shipping this live: it misclassified completely ordinary
+# sentences as fraud-relevant under three different configurations tried.
+# Read that module's HONESTY NOTE in full before uncommenting the section
+# below AND adding the matching `intent` entry to `detectors:` above (both
+# are required — this section alone just computes the classification and
+# throws it away, since no detector reads it without that second step).
+#
+# intent_classification:
+#   class: app.adapters.intent.zero_shot_intent_classifier:ZeroShotIntentClassifier
+#   params:
+#     model_name: MoritzLaurer/mDeBERTa-v3-base-mnli-xnli
+#
+# ...and in detectors: above:
+#   - name: intent
+#     class: app.adapters.detectors.intent_risk:IntentRiskDetector
+#     weight: 0.15  # modest — an unvalidated new signal, not yet trusted
+#                   # as much as acoustic/prosodic/third_signal. Weights
+#                   # are auto-renormalised against their own sum (see
+#                   # app/adapters/fusion/weighted_sum.py), so adding this
+#                   # doesn't require hand-rebalancing 0.6/0.2/0.2 above.
+#     params: {}

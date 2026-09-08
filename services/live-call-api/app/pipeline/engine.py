@@ -23,6 +23,7 @@ from app.domain.models import AudioWindow, FusedScore
 from app.logging_setup import get_logger
 from app.pipeline.windowing import make_windows
 from app.ports.history_store import HistoryStorePort
+from app.ports.intent_classifier import IntentClassifierPort
 from app.ports.transcriber import TranscriberPort
 
 logger = get_logger(component="pipeline_engine")
@@ -58,11 +59,13 @@ class Engine:
         session_store: Optional[SessionStore] = None,
         history: Optional[HistoryStorePort] = None,
         transcriber: Optional[TranscriberPort] = None,
+        intent_classifier: Optional[IntentClassifierPort] = None,
     ) -> None:
         self.pipeline = pipeline
         self.sessions = session_store or SessionStore()
         self.history = history
         self.transcriber = transcriber
+        self.intent_classifier = intent_classifier
 
     def score_window(self, window: AudioWindow, context: dict[str, Any]) -> FusedScore:
         results = [detector.score(window, context) for detector in self.pipeline.detectors]
@@ -136,6 +139,15 @@ class Engine:
         same transcript. A caller-supplied `transcript` in context is never
         overwritten. Live streaming (score_window/score_windows) has no
         transcription — see app/ports/transcriber.py's scope note.
+
+        If an intent_classifier is ALSO configured, the same transcript is
+        classified once here too (same reasoning: a zero-shot NLI forward
+        pass is expensive, and IntentRiskDetector only ever reads the
+        precomputed `intent_label`/`intent_top_score`/`intent_label_scores`
+        this merges into `context` — see that detector's own docstring).
+        Note this detector is NOT in config/risk_formula.yaml's active
+        `detectors:` list by default; see app/adapters/intent/
+        zero_shot_intent_classifier.py's HONESTY NOTE.
         """
         self.sessions.reset(session_id)
 
@@ -154,6 +166,26 @@ class Engine:
                     "transcript": transcript_result.text,
                     "transcript_language": transcript_result.language,
                 }
+
+        if (
+            self.intent_classifier is not None
+            and context.get("transcript")
+            and "intent_label" not in context
+        ):
+            intent_result = self.intent_classifier.classify(context["transcript"])
+            logger.info(
+                "intent_classified",
+                session_id=session_id,
+                detector_name=intent_result.detector_name,
+                top_label=intent_result.top_label,
+                top_score=intent_result.top_score,
+            )
+            context = {
+                **context,
+                "intent_label": intent_result.top_label,
+                "intent_top_score": intent_result.top_score,
+                "intent_label_scores": intent_result.label_scores,
+            }
 
         windowing_cfg = self.pipeline.config["windowing"]
         windows = make_windows(

@@ -42,12 +42,20 @@ Audio is cut into overlapping 2-second windows. Each window is scored by
 several independent, pluggable **detectors** (acoustic — AASIST; prosodic —
 Parselmouth/Praat; and a config-selectable "third signal" — rule-based
 context, fed by real **Whisper** transcription and transparent urgency/
-financial-language keyword detection, or real ECAPA-TDNN voiceprint
-consistency). A **fusion** step combines their scores into one 0–100 risk
-number with a full, human-readable breakdown of exactly which signal
-contributed what. On file uploads, an optional **diarizer** can also split
-a multi-speaker recording and score each voice separately. Nothing here is
-a black box — see `docs/risk-model.md`.
+financial-language/authority-claim keyword detection — an authority claim
+plus a financial request together fires its own explicit combined-pressure
+rule — or real ECAPA-TDNN voiceprint consistency). A **fusion** step
+combines their scores into one 0–100 risk number with a full,
+human-readable breakdown of exactly which signal contributed what, plus a
+one-sentence plain-language explanation of *why* under each component. On
+file uploads, an optional **diarizer** can also split a multi-speaker
+recording and score each voice separately. Nothing here is a black box —
+see `docs/risk-model.md`.
+
+A fifth, **zero-shot intent classifier** is built and verified (real
+model, real MIT license, real Hindi coverage) but deliberately NOT active
+by default — see `docs/risk-model.md`, "Intent detection" for the real
+calibration problem that keeps it opt-in only.
 
 ## Repo layout
 
@@ -57,11 +65,13 @@ services/live-call-api/         # the one service that exists so far
   app/
     domain/models.py            # framework-free core types
     ports/                      # the interfaces — detector.py, fusion.py, history_store.py,
-                                 # enrollment_store.py, diarizer.py, transcriber.py
+                                 # enrollment_store.py, diarizer.py, transcriber.py,
+                                 # intent_classifier.py
     adapters/                   # concrete detectors + fusion + history/enrollment stores +
-                                 # diarizer + transcription/ (Whisper + urgency-keyword
-                                 # detection) + the shared ECAPA-TDNN embedding extractor +
-                                 # the plugin registry
+                                 # diarizer + transcription/ (Whisper + urgency/authority-
+                                 # claim keyword detection) + intent/ (zero-shot classifier,
+                                 # built but not active by default) + the shared ECAPA-TDNN
+                                 # embedding extractor + the plugin registry
     pipeline/                   # windowing + orchestration (engine.py)
     api/                        # FastAPI routes (REST + WebSocket + session history + enrollment)
     ui/                         # the browser dashboard (no build step — plain HTML/JS)
@@ -105,8 +115,17 @@ implementations, not hand-rolled heuristics alone:
   someone is enrolled.
 - **Third signal (contextual mode)** — now fed by real transcription:
   **Whisper** (MIT) transcribes each uploaded call once, and a transparent
-  keyword list flags urgency/financial-request language in English, Hindi,
-  and Marathi — no manual keyword entry required, though you still can.
+  keyword list flags urgency/financial-request/authority-claim language in
+  English, Hindi, and Marathi — no manual keyword entry required, though
+  you still can. An authority claim ("this is your bank") paired with a
+  financial request fires its own explicit combined-pressure rule.
+- **Intent classification (built, not active)** — a zero-shot NLI
+  classifier (`MoritzLaurer/mDeBERTa-v3-base-mnli-xnli`, MIT, real Hindi
+  coverage) that scores the transcript against fraud-relevant candidate
+  labels. Fully wired (port, adapter, detector, Engine integration) but
+  commented out in `config/risk_formula.yaml` — a real calibration check
+  found it misclassifies ordinary conversation as fraud-relevant; see
+  `docs/risk-model.md`.
 
 Every model/checkpoint is fetched and cached at `docker compose up --build`
 time — see `docs/running-locally.md` for running without Docker. See

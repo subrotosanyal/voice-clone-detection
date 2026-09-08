@@ -62,7 +62,7 @@ curl -F "file=@services/live-call-api/samples/genuine_tone.wav" \
 
 `context` is optional JSON — see `app/api/schemas.py::CallContext` for the
 full field list (`known_number`, `hour_of_day`, `is_financial_request`,
-`urgency_keywords`, `claimed_identity`).
+`urgency_keywords`, `authority_claim`, `claimed_identity`).
 
 Split a recording by speaker and score each one separately (file-upload
 only — see `docs/architecture.md`, "Diarization"):
@@ -83,14 +83,24 @@ speakers" checkbox.
 Transcription runs automatically on every `/v1/score/file` call when
 configured (the default — see `config/risk_formula.yaml`'s
 `transcription:` section) — no flag needed. The transcript and any
-detected urgency/financial-request language show up in the `third_signal`
-component's `detail` (`detail.transcript`,
+detected urgency/financial-request/authority-claim language show up in
+the `third_signal` component's `detail` (`detail.transcript`,
 `detail.urgency_keywords_from_transcript`,
-`detail.is_financial_request_from_transcript`), visible in the dashboard
+`detail.is_financial_request_from_transcript`,
+`detail.authority_keywords_from_transcript`), visible in the dashboard
 under that component and via "view raw JSON". You can still supply
-`urgency_keywords`/`is_financial_request` by hand in `context` — the
-transcript-derived signals are merged with them, never replacing what you
-supply.
+`urgency_keywords`/`is_financial_request`/`authority_claim` by hand in
+`context` — the transcript-derived signals are merged with them, never
+replacing what you supply. An authority claim paired with a financial
+request also fires its own `combined_authority_financial_pressure` rule
+(`detail.rules_fired`) — the classic fraud script, flagged explicitly.
+
+**Zero-shot intent classification — built, not enabled by default.** A
+zero-shot classifier (`app/adapters/intent/`) that scores the transcript
+against candidate fraud-intent labels exists and is fully wired, but is
+commented out in `config/risk_formula.yaml` — a real calibration check
+found it misclassifies completely ordinary sentences as fraud-relevant.
+See `docs/risk-model.md`, "Intent detection" before uncommenting it.
 
 ## Voiceprint enrollment
 

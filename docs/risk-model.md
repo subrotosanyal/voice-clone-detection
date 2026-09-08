@@ -208,6 +208,71 @@ transcripts — same class of caveat as the prosodic/voiceprint detectors'
 placeholder thresholds elsewhere in this document. Real ASR, real keyword
 matches; the specific word lists are a starting point.
 
+**Authority-claim detection and the combined-pressure rule (added
+2026-09-08)**: `urgency_language.py` also scans for a third category —
+the caller asserting they're a bank, police, or government official
+("this is your bank", "cyber crime cell", "arrest warrant"). Alone this
+is weak evidence (a real bank call also opens that way); its real weight
+comes from `ContextualRulesDetector`'s new `combined_authority_financial_pressure`
+rule, which fires only when an authority claim AND a financial request
+appear in the same call — the classic fraud script ("this is your bank,
+your account has been compromised, transfer your funds now") scored as
+its own explicit, named rule rather than silently summed from the two
+components. Same starting-point caveat as the other keyword lists above.
+
+## Intent detection (zero-shot classifier) — built, verified, NOT enabled by default
+
+`app/adapters/intent/zero_shot_intent_classifier.py` classifies a
+transcript against five fixed candidate labels (`"requesting a money
+transfer or payment"`, `"requesting an OTP or PIN"`, `"impersonating a
+bank or government official"`, `"creating urgency or time pressure"`,
+`"ordinary conversation"`) using zero-shot NLI classification — meant to
+generalise beyond exact keyword matches, while staying explainable: every
+score traces back to "the model judged this X% consistent with candidate
+Y", for every candidate, not just the winner.
+
+**Model — verified before adoption**:
+- Source: `MoritzLaurer/mDeBERTa-v3-base-mnli-xnli`
+- Licence: MIT — an explicit tag on the model card, confirmed via the HF
+  API. No ambiguity, unlike the sentiment-analysis candidate discussed
+  (but not adopted) elsewhere in this project.
+- Confirmed ungated on HuggingFace
+- Real Hindi coverage: fine-tuned on the XNLI dataset, which includes
+  Hindi among its 15 languages. Marathi is NOT in XNLI — any Marathi
+  result would be unvalidated cross-lingual transfer from the base
+  model's 100-language pretraining, same caveat class as the cardiffnlp
+  sentiment model discussed for the separate, still-unbuilt sentiment
+  feature.
+
+**Why this is built but NOT wired into `config/risk_formula.yaml`'s
+active `detectors:` list**: before enabling it, three real transcripts
+were run through it by hand — a clear fraud script, a clear impersonation
+script, and two completely ordinary sentences ("are we still on for
+dinner tonight?", "the weather has been really nice this week"). The
+fraud/impersonation examples classified sensibly. Both ordinary sentences
+did NOT: "dinner tonight" scored just 4.5% for "ordinary conversation"
+against 38.9% for "creating urgency or time pressure" — a severe false
+positive on completely benign text. This was tested three ways (default
+settings, `multi_label=True`, and a phone-call-specific
+`hypothesis_template`) and the miscalibration persisted in all three —
+see `zero_shot_intent_classifier.py`'s own HONESTY NOTE for the full
+numbers. A fraud-detection product cannot ship a signal that flags an
+innocent dinner plan as suspicious, so this stays built-but-inactive
+until the calibration issue is actually fixed (candidates: several
+distinct "ordinary" hypotheses instead of one, a real held-out evaluation
+set, or a different base model).
+
+**What IS real and working**: the port (`app/ports/intent_classifier.py`),
+the adapter above, the detector (`app/adapters/detectors/intent_risk.py`,
+which reads a pre-computed classification out of `context` rather than
+calling the model per-window — the same "compute once per call" pattern
+transcription uses, for the same reason: an NLI forward pass is
+expensive), and the `Engine.score_call()`/`http_router.py` wiring that
+would populate `context["intent_label"]` if the `intent_classification:`
+config section were ever uncommented. Enabling it requires uncommenting
+that section AND adding an `intent` entry to `detectors:` — see the
+commented block in `config/risk_formula.yaml` itself for exact syntax.
+
 ## The pluggable third signal, pros/cons
 
 | Mode | Pros | Cons |

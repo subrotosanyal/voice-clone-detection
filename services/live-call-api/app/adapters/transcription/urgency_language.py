@@ -1,4 +1,5 @@
-"""Urgency/financial-request language detection over a real transcript.
+"""Urgency/financial-request/authority-claim language detection over a
+real transcript.
 
 WHY KEYWORD MATCHING, NOT A SENTIMENT MODEL: the "sentiment" this project
 actually needs isn't generic positive/negative polarity — it's specific,
@@ -9,7 +10,9 @@ matching the same "legible to a non-technical reader" design goal
 contextual_rules.py's own docstring already states for its other rules —
 a black-box sentiment score wouldn't explain itself the same way. See
 docs/risk-model.md for the full reasoning and for what a real sentiment
-model would add if this is ever revisited.
+model would add if this is ever revisited (and app/adapters/intent/ for a
+real zero-shot classifier that was built and evaluated, but is NOT wired
+into the live formula — see that module's own honesty note on why).
 
 HONESTY NOTE: these keyword lists are a starting point, not validated
 against real fraud-call transcripts — same class of caveat as the
@@ -47,14 +50,39 @@ _FINANCIAL_KEYWORDS: dict[str, list[str]] = {
     ],
 }
 
+# Authority-claim phrases — the caller asserting they're a bank, police, or
+# government official, or otherwise invoking legal/institutional weight.
+# On its own this is weaker evidence than financial-request or urgency
+# language (a real bank call also says "this is your bank"); it's meant to
+# be combined with the other signals — see ContextualRulesDetector's
+# combined_authority_financial_pressure rule, which is where this actually
+# earns its weight.
+_AUTHORITY_KEYWORDS: dict[str, list[str]] = {
+    "en": [
+        "this is your bank", "calling from your bank", "calling from the bank",
+        "cyber crime", "cyber cell", "police", "inspector", "government",
+        "income tax department", "legal action", "arrest warrant",
+        "account has been compromised", "court notice",
+    ],
+    "hi": [
+        "आपका बैंक", "बैंक से बोल रहा", "पुलिस", "इंस्पेक्टर", "सरकार",
+        "कानूनी कार्रवाई", "गिरफ्तारी वारंट", "साइबर सेल", "साइबर क्राइम",
+    ],
+    "mr": [
+        "तुमचा बँक", "बँकेतून बोलत आहे", "पोलीस", "इन्स्पेक्टर", "सरकार",
+        "कायदेशीर कारवाई", "अटक वॉरंट", "सायबर सेल",
+    ],
+}
 
-def detect_urgency_signals(text: str, language: str | None = None) -> tuple[list[str], bool]:
-    """Returns (matched_urgency_phrases, is_financial_request_detected) for
-    a transcript. Checks every language's list rather than only the
-    detected `language`, since Whisper's language ID isn't perfectly
-    reliable and a phrase match is cheap and harmless either way."""
+
+def detect_urgency_signals(text: str, language: str | None = None) -> tuple[list[str], bool, list[str]]:
+    """Returns (matched_urgency_phrases, is_financial_request_detected,
+    matched_authority_claim_phrases) for a transcript. Checks every
+    language's list rather than only the detected `language`, since
+    Whisper's language ID isn't perfectly reliable and a phrase match is
+    cheap and harmless either way."""
     if not text:
-        return [], False
+        return [], False, []
 
     text_lower = text.lower()
     matched_urgency: list[str] = []
@@ -67,4 +95,10 @@ def detect_urgency_signals(text: str, language: str | None = None) -> tuple[list
         phrase.lower() in text_lower for keywords in _FINANCIAL_KEYWORDS.values() for phrase in keywords
     )
 
-    return matched_urgency, is_financial
+    matched_authority: list[str] = []
+    for keywords in _AUTHORITY_KEYWORDS.values():
+        for phrase in keywords:
+            if phrase.lower() in text_lower and phrase not in matched_authority:
+                matched_authority.append(phrase)
+
+    return matched_urgency, is_financial, matched_authority

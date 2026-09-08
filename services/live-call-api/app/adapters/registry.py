@@ -18,6 +18,7 @@ from app.adapters.detectors.third_signal_router import ThirdSignalRouter
 from app.ports.detector import DetectorPort
 from app.ports.diarizer import DiarizerPort
 from app.ports.fusion import FusionPort
+from app.ports.intent_classifier import IntentClassifierPort
 from app.ports.transcriber import TranscriberPort
 
 
@@ -85,6 +86,20 @@ def _build_transcriber(config: dict[str, Any]) -> TranscriberPort | None:
     return cls(**transcription_cfg.get("params", {}))
 
 
+def _build_intent_classifier(config: dict[str, Any]) -> IntentClassifierPort | None:
+    """Intent classification is optional, same reasoning as transcription
+    above — no `intent_classification:` section means Engine.score_call()
+    never sets context["intent_label"], and IntentRiskDetector (if it were
+    ever added to `detectors:` — it is NOT there by default) would simply
+    abstain. See app/adapters/intent/zero_shot_intent_classifier.py's
+    HONESTY NOTE before ever adding that detector entry."""
+    intent_cfg = config.get("intent_classification")
+    if intent_cfg is None:
+        return None
+    cls = _load_class(intent_cfg["class"])
+    return cls(**intent_cfg.get("params", {}))
+
+
 @dataclass(frozen=True)
 class Pipeline:
     """Everything the engine needs, built once from config and reused."""
@@ -94,6 +109,7 @@ class Pipeline:
     fusion: FusionPort
     diarizer: DiarizerPort | None = None
     transcriber: TranscriberPort | None = None
+    intent_classifier: IntentClassifierPort | None = None
 
 
 def build_pipeline(config_path: str | Path) -> Pipeline:
@@ -102,6 +118,12 @@ def build_pipeline(config_path: str | Path) -> Pipeline:
     fusion = _build_fusion(config)
     diarizer = _build_diarizer(config)
     transcriber = _build_transcriber(config)
+    intent_classifier = _build_intent_classifier(config)
     return Pipeline(
-        config=config, detectors=detectors, fusion=fusion, diarizer=diarizer, transcriber=transcriber
+        config=config,
+        detectors=detectors,
+        fusion=fusion,
+        diarizer=diarizer,
+        transcriber=transcriber,
+        intent_classifier=intent_classifier,
     )

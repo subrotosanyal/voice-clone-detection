@@ -21,3 +21,11 @@ praat-parselmouth==0.4.7
 # Whisper transcription (feeds the contextual detector's urgency/financial
 # keyword detection — see app/adapters/transcription/whisper_transcriber.py)
 openai-whisper==20250625
+
+# Zero-shot intent classification (app/adapters/intent/
+# zero_shot_intent_classifier.py) — built and verified (real model, real
+# MIT license, real Hindi coverage via XNLI), but NOT wired into
+# config/risk_formula.yaml's active detectors by default. See that
+# module's own HONESTY NOTE for the calibration problem found before
+# shipping this live.
+transformers==5.16.1

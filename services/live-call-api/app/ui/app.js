@@ -13,7 +13,7 @@ const GAUGE_CIRCUMFERENCE = 2 * Math.PI * 62;
 const COMPONENT_HELP = {
   acoustic: "Detects whether the VOICE ITSELF was AI-generated or cloned, as opposed to a real person speaking — using AASIST, a neural network trained specifically to spot the audio artifacts text-to-speech and voice-cloning tools leave behind that a real human voice doesn't have. Higher % = more likely synthetic/cloned. Only validated on English speech so far.",
   prosodic: "Detects whether the voice's pitch and loudness are suspiciously steady — a real human voice naturally wavers a little from breath to breath (jitter, shimmer); a voice that's unusually 'too smooth' can be a sign of synthesis. Higher % = less natural variation than typical speech. This is a heuristic rule of thumb, not a trained classifier like Acoustic.",
-  third_signal: "A third, swappable check — NOT about the audio itself. Either (a) red flags about the CALL: an unknown number, an odd hour, urgent/pressuring language, or (b) a direct voice match check against a caller's enrolled voiceprint (Voiceprints tab), when one exists. Whichever ran is named in 'view raw JSON'.",
+  third_signal: "A third, swappable check — NOT about the audio itself. Either (a) red flags about the CALL: an unknown number, an odd hour, urgent/pressuring language, an authority claim (bank/police/government) — especially combined with a financial request, the classic fraud script — or (b) a direct voice match check against a caller's enrolled voiceprint (Voiceprints tab), when one exists. Whichever ran is named in 'view raw JSON'.",
 };
 const BAND_HELP = {
   low: "LOW risk (score 0–34): nothing here looks suspicious across the signals that ran. Recommended action: no special handling needed.",
@@ -30,12 +30,14 @@ function escapeHtml(s) {
 function renderTranscriptNote(detail) {
   if (!detail || !detail.transcript) return "";
   const keywords = detail.urgency_keywords_from_transcript || [];
+  const authorityKeywords = detail.authority_keywords_from_transcript || [];
   const financial = detail.is_financial_request_from_transcript;
   return `
     <div class="transcript-note">
       <div class="transcript-label">Transcript (auto-detected, feeds this signal)</div>
       <div class="transcript-text">"${escapeHtml(detail.transcript)}"</div>
       ${keywords.length ? `<div class="transcript-tags">urgency: ${keywords.map((k) => `<span class="tag">${escapeHtml(k)}</span>`).join(" ")}</div>` : ""}
+      ${authorityKeywords.length ? `<div class="transcript-tags">authority claim: ${authorityKeywords.map((k) => `<span class="tag">${escapeHtml(k)}</span>`).join(" ")}</div>` : ""}
       ${financial ? `<div class="transcript-tags"><span class="tag owner">financial request detected</span></div>` : ""}
     </div>
   `;
@@ -93,6 +95,7 @@ function buildContextFields(container) {
   container.innerHTML = `
     <div class="field checkbox"><input type="checkbox" class="f-known"><label>Caller's number is known / on file</label></div>
     <div class="field checkbox"><input type="checkbox" class="f-financial"><label>A financial action is being requested</label></div>
+    <div class="field checkbox"><input type="checkbox" class="f-authority"><label>Caller claims to be a bank/police/government official</label></div>
     <div class="field">
       <label>Hour of day</label>
       <select class="f-hour"></select>
@@ -120,11 +123,18 @@ document.querySelectorAll(".field-grid").forEach(buildContextFields);
 function readContext(scopeEl) {
   const known = scopeEl.querySelector(".f-known").checked;
   const financial = scopeEl.querySelector(".f-financial").checked;
+  const authority = scopeEl.querySelector(".f-authority").checked;
   const hour = parseInt(scopeEl.querySelector(".f-hour").value, 10);
   const urgencyRaw = scopeEl.querySelector(".f-urgency").value.trim();
   const urgency_keywords = urgencyRaw ? urgencyRaw.split(",").map((s) => s.trim()).filter(Boolean) : [];
   const identity = scopeEl.querySelector(".f-identity").value.trim();
-  const context = { known_number: known, is_financial_request: financial, hour_of_day: hour, urgency_keywords };
+  const context = {
+    known_number: known,
+    is_financial_request: financial,
+    authority_claim: authority,
+    hour_of_day: hour,
+    urgency_keywords,
+  };
   if (identity) context.claimed_identity = identity;
   return context;
 }

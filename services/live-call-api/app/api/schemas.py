@@ -22,6 +22,7 @@ class CallContext(BaseModel):
     hour_of_day: Optional[int] = Field(default=None, ge=0, le=23)
     is_financial_request: Optional[bool] = None
     urgency_keywords: list[str] = Field(default_factory=list)
+    authority_claim: Optional[bool] = None
 
 
 class ComponentContributionOut(BaseModel):

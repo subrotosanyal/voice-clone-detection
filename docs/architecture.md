@@ -6,18 +6,23 @@
 domain/     framework-free types (AudioWindow, DetectorResult, FusedScore, Band,
             SpeakerSegment, EnrollmentSummary)
 ports/      interfaces — DetectorPort, FusionPort, HistoryStorePort,
-            EnrollmentStorePort, DiarizerPort, TranscriberPort. Nothing
-            outside adapters/ ever imports a concrete detector/fusion/
-            diarizer/transcriber class directly.
+            EnrollmentStorePort, DiarizerPort, TranscriberPort,
+            IntentClassifierPort. Nothing outside adapters/ ever imports a
+            concrete detector/fusion/diarizer/transcriber/intent-classifier
+            class directly.
 adapters/   concrete implementations of the ports, plus the registry that
             builds them from config/risk_formula.yaml by dotted path.
             embeddings/     shared ECAPA-TDNN speaker-embedding extractor,
                             used by both the voiceprint consistency detector
                             and the diarizer (not itself a port — see below).
             transcription/  Whisper-based TranscriberPort implementation +
-                            the transparent urgency/financial-language
-                            keyword detector it feeds (see "Transcription"
-                            below).
+                            the transparent urgency/financial-language/
+                            authority-claim keyword detector it feeds (see
+                            "Transcription" below).
+            intent/         zero-shot IntentClassifierPort implementation —
+                            built and verified, but NOT wired into the
+                            active formula by default (see "Intent
+                            detection" below).
 pipeline/   windowing (audio -> AudioWindow) and the engine that
             orchestrates detectors -> fusion -> logging for one window.
 api/        FastAPI routes. Thin — every route just calls into pipeline/.
@@ -285,19 +290,56 @@ straight). "small" was tested on the same audio and got it right, so
 that's the default — still fast on CPU (~1-2s once loaded).
 
 `app/adapters/transcription/urgency_language.py` then scans the transcript
-for fraud-relevant language — urgency phrases and financial-request
-words, in English/Hindi/Marathi — and `ContextualRulesDetector`
+for fraud-relevant language — urgency phrases, financial-request words,
+and authority-claim phrases ("this is your bank", "cyber crime cell"), in
+English/Hindi/Marathi — and `ContextualRulesDetector`
 (`app/adapters/detectors/contextual_rules.py`) merges whatever it finds
-with any manually-supplied `urgency_keywords`/`is_financial_request`,
-never replacing them. Every match is traceable to an actual word in the
-actual transcript, shown in the component's `detail` — see
-`docs/risk-model.md` for why a transparent keyword list was chosen here
-over a black-box sentiment model.
+with any manually-supplied `urgency_keywords`/`is_financial_request`/
+`authority_claim`, never replacing them. An authority claim paired with a
+financial request also fires its own `combined_authority_financial_pressure`
+rule — the classic fraud script, scored explicitly rather than left as an
+implicit sum. Every match is traceable to an actual word in the actual
+transcript, shown in the component's `detail` — see `docs/risk-model.md`
+for why a transparent keyword list was chosen here over a black-box
+sentiment model.
 
 **Not built**: transcription on the live WebSocket path (same "substantially
 harder, deferred" reasoning as live diarization), and the keyword lists
 themselves aren't validated against real fraud-call transcripts — see the
 module's own honesty note.
+
+## Intent detection — built, verified, not active by default
+
+`app/ports/intent_classifier.py` (`IntentClassifierPort`) +
+`app/adapters/intent/zero_shot_intent_classifier.py`
+(`ZeroShotIntentClassifier`) classify a transcript against a fixed list of
+fraud-relevant candidate labels using zero-shot NLI classification
+(`MoritzLaurer/mDeBERTa-v3-base-mnli-xnli`, MIT, confirmed ungated, real
+Hindi coverage via XNLI) — meant to generalise beyond
+`urgency_language.py`'s exact keyword matches, while staying explainable
+(every score traces to "the model judged this X% consistent with
+candidate Y", for every candidate).
+
+Wired the same way as transcription: `Engine.score_call()` (and
+`http_router.py`, for the diarization fan-out) computes the classification
+ONCE per call and merges `intent_label`/`intent_top_score`/
+`intent_label_scores` into `context`; `app/adapters/detectors/
+intent_risk.py` (`IntentRiskDetector`) only ever reads those precomputed
+fields, never calling the model itself — an NLI forward pass is
+expensive, and calling it once per 2-second window would repeat the exact
+class of redundant-computation bug fixed the same day for
+transcription-during-diarization (see "Diarization" above).
+
+**Why this is built but NOT in `config/risk_formula.yaml`'s active
+`detectors:` list**: a real calibration check (three hand-run transcripts:
+a fraud script, an impersonation script, two ordinary sentences) found
+the model severely misclassifies completely benign text as
+fraud-relevant, under three different configurations tried — see
+`zero_shot_intent_classifier.py`'s HONESTY NOTE for the full account. The
+port/adapter/detector/wiring are all real and correct; the model just
+isn't trustworthy enough yet to score real calls unsupervised. See
+`docs/risk-model.md`, "Intent detection" for the full writeup and what
+would need fixing before enabling it.
 
 ## Concurrency: keeping the event loop free during a long score
 

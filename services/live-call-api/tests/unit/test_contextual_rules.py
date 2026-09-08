@@ -108,3 +108,52 @@ def test_transcript_with_no_urgency_language_does_not_fire_the_rule():
     # pre-existing convention (see test_abstains_with_no_context): a rule
     # only appears in rules_fired when there's something to report.
     assert "financial_request" not in result.detail["rules_fired"]
+
+
+def test_manual_authority_claim_fires_its_own_rule():
+    detector = ContextualRulesDetector()
+    result = detector.score(WINDOW, context={"authority_claim": True})
+    assert result.detail["rules_fired"]["authority_claim"] is True
+    assert result.score == 0.25  # weight_authority_claim, alone
+
+
+def test_transcript_auto_detects_authority_claim():
+    # Deliberately avoids the word "bank" — it's also a financial keyword,
+    # which would make this a bad example of "authority claim alone".
+    detector = ContextualRulesDetector()
+    result = detector.score(
+        WINDOW, context={"transcript": "This is the police calling about a noise complaint at your address."}
+    )
+    assert result.detail["rules_fired"]["authority_claim"] is True
+    assert "police" in result.detail["authority_keywords_from_transcript"]
+    # no financial ask here — the combined pattern must NOT fire on an
+    # authority claim alone, only on authority + financial together.
+    assert "combined_authority_financial_pressure" not in result.detail["rules_fired"]
+
+
+def test_authority_claim_and_financial_request_together_fires_combined_pattern():
+    """The classic fraud script — 'this is your bank, your account has
+    been compromised, transfer your funds now' — should score higher than
+    the two component rules alone would sum to, via the explicit combined
+    rule, not just financial_request + authority_claim added up."""
+    detector = ContextualRulesDetector()
+    result = detector.score(
+        WINDOW,
+        context={
+            "transcript": "This is your bank calling. Your account has been compromised. "
+            "Please transfer your funds to a safe account immediately."
+        },
+    )
+    fired = result.detail["rules_fired"]
+    assert fired["authority_claim"] is True
+    assert fired["financial_request"] is True
+    assert fired["combined_authority_financial_pressure"] is True
+    # 0.25 (authority) + 0.30 (financial) + 0.20 (urgency, "immediately") +
+    # 0.25 (combined) = 1.00, capped
+    assert result.score == 1.0
+
+
+def test_financial_request_without_authority_claim_does_not_fire_combined_pattern():
+    detector = ContextualRulesDetector()
+    result = detector.score(WINDOW, context={"is_financial_request": True})
+    assert "combined_authority_financial_pressure" not in result.detail["rules_fired"]

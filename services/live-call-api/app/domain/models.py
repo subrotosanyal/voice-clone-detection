@@ -138,3 +138,21 @@ class TranscriptResult:
     language: Optional[str]
     detector_name: str
     detector_version: str
+
+
+@dataclass(frozen=True)
+class IntentClassificationResult:
+    """What an IntentClassifierPort returns for one call's transcript —
+    see app/ports/intent_classifier.py and app/adapters/intent/. `label_scores`
+    carries every candidate label's own score (not just the winner), so a
+    result stays fully explainable: which hypotheses the model considered,
+    not only which one it picked. See app/adapters/intent/
+    zero_shot_intent_classifier.py's own honesty note on why this signal
+    is NOT wired into the live risk formula by default."""
+
+    text: str
+    top_label: str
+    top_score: float
+    label_scores: dict[str, float]
+    detector_name: str
+    detector_version: str

@@ -80,6 +80,19 @@ async def score_file(
         if transcript_result.text:
             context_dict["transcript"] = transcript_result.text
 
+    # Same one-time-per-call reasoning as transcription above, for the
+    # same reason: intent_classifier is None on every deployment that
+    # hasn't deliberately opted in (see app/adapters/intent/
+    # zero_shot_intent_classifier.py's HONESTY NOTE — it's not in
+    # config/risk_formula.yaml's active detectors by default), but if it
+    # ever is configured, this must run once here, not once per speaker.
+    intent_classifier = request.app.state.engine.intent_classifier
+    if intent_classifier is not None and context_dict.get("transcript") and "intent_label" not in context_dict:
+        intent_result = await run_in_threadpool(intent_classifier.classify, context_dict["transcript"])
+        context_dict["intent_label"] = intent_result.top_label
+        context_dict["intent_top_score"] = intent_result.top_score
+        context_dict["intent_label_scores"] = intent_result.label_scores
+
     # Scoring a whole file runs every 2s window through AASIST + Parselmouth
     # + (maybe) ECAPA-TDNN, in a plain synchronous call — genuinely CPU-
     # bound, and can take a while for a long recording. Running it directly
