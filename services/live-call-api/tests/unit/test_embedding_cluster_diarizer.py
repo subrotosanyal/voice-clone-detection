@@ -66,3 +66,25 @@ def test_skips_silent_gap_between_speakers():
     assert len(segments) == 2
     assert segments[0].end_ms == 1000
     assert segments[1].start_ms == 2000
+
+
+def test_one_speakers_natural_variation_is_not_over_counted_as_several():
+    """Regression test for the real over-counting bug fixed 2026-09-08 (see
+    embedding_cluster_diarizer.py's CALIBRATION note): one person's voice
+    naturally drifts a little segment to segment (breath, background noise,
+    prosody) — formant_voice's seed/pitch_hz jitter stands in for that here,
+    since no real labeled multi-speaker corpus exists in this repo. With the
+    class's DEFAULT segment_ms/distance_threshold (not overridden, unlike
+    the other tests above), six such takes of the SAME voice must still
+    cluster as one speaker, not several."""
+    diarizer = _diarizer()  # class defaults: segment_ms=2500, distance_threshold=0.28
+    takes = [
+        formant_voice(VOICE_A_FORMANTS, seed=seed, pitch_hz=pitch, duration_s=2.5)
+        for seed, pitch in [(1, 120), (2, 122), (3, 118), (4, 126), (5, 115), (6, 130)]
+    ]
+    full_call = np.concatenate(takes)
+
+    segments = diarizer.diarize(full_call, SR)
+
+    labels = {s.speaker_label for s in segments}
+    assert labels == {"speaker_1"}, f"expected one speaker across all natural variation, got {labels}"

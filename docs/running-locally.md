@@ -33,8 +33,13 @@ http://localhost:8020/ in a browser. Upload a recording, or click the
 microphone tab and speak — the risk meter, the per-signal breakdown, and
 the score-over-time chart all update from the same two endpoints above.
 Every detector name and risk band has a small "?" icon — hover or focus it
-for a plain-language explanation of what it means. Microphone access needs
-a secure context (`localhost` counts) and browser permission on first use.
+for a plain-language explanation of what it means. Below each signal's bar,
+a one-sentence explanation of *this specific score* also appears (e.g.
+"elevated because the request appears to be financial; urgency language
+was detected" or "AASIST's trained classifier assigned 82% probability
+this is synthetic") — built from the same `detail` fields visible in "view
+raw JSON", not a separate model. Microphone access needs a secure context
+(`localhost` counts) and browser permission on first use.
 The **History** tab lists every session ever scored (persisted in
 `services/live-call-api/data/sessions.db`, mounted as a docker-compose
 volume — it survives `docker compose down` and rebuilds); click one to

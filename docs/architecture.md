@@ -243,10 +243,15 @@ save machinery, and each speaker's trace is independently browsable later
 from the History tab like any other session.
 
 **Honesty note**: fixed-length segmentation (not a proper voice-activity/
-change-point front end) misses a speaker change mid-segment, and the
-clustering distance threshold is a placeholder pending calibration on
-labeled multi-speaker audio — see the module's docstring. Real signal
-processing, reproducible, not turn-by-turn transcription-grade diarization.
+change-point front end) misses a speaker change mid-segment. The
+clustering distance threshold and segment length were recalibrated
+2026-09-08 after a real over-counting bug (one speaker's natural voice
+variation was splitting into several) — measured on synthetic fixtures
+built to carry natural-sounding per-segment jitter, since no real labeled
+multi-speaker corpus exists in this repo; see the module's CALIBRATION
+docstring note for the actual numbers. Still not validated against real
+recorded speech. Real signal processing, reproducible, not turn-by-turn
+transcription-grade diarization.
 
 ## Transcription — feeding real call language into the contextual signal
 

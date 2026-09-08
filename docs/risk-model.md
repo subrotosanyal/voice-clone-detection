@@ -45,6 +45,20 @@ If you can't answer "why is this score 62 and not 40" from the JSON alone,
 that's a bug in a detector's `detail`, not something to fix by reading
 source code.
 
+**`detail.explanation`** — every non-abstaining detector also writes one
+plain-language sentence into its own `detail`, shown directly under that
+signal's bar in the dashboard (not just in "view raw JSON"). It's built
+from the same numbers already in `detail`, nothing extra: contextual names
+which rules fired and which words triggered them; prosodic names whichever
+of jitter/shimmer/HNR actually pushed the score, with the measured value
+next to its reference; voiceprint consistency states the measured cosine
+similarity against both anchors. The acoustic detector (AASIST) is the
+deliberate exception: it's a trained neural classifier, not a rule engine,
+so its explanation states its confidence honestly ("the model assigned
+X% probability this is synthetic, based on its internal representation")
+rather than inventing a feature-level reason it doesn't actually have —
+see `acoustic_aasist.py`'s `_build_explanation()` docstring.
+
 ## Reproducibility
 
 `fuse()` is a pure function of `(results, previous_smoothed_score, config)`
@@ -80,7 +94,7 @@ languages or about non-speech audio. Attribution and licence:
 ## The prosodic detector: Parselmouth (Praat), with real limits
 
 `prosody_parselmouth.py` (the default `prosodic` class as of
-`formula_version: "2026.09.4"`) computes jitter, shimmer, and harmonics-to-
+`formula_version: "2026.09.5"`) computes jitter, shimmer, and harmonics-to-
 noise ratio via **Parselmouth** — the official Python binding for **Praat**,
 the long-standing reference tool in clinical voice-quality research.
 Attribution and licence:
@@ -135,12 +149,24 @@ thresholds here are not yet calibrated.
 extractor to answer "roughly how many people spoke, and which stretches
 were whose" for an uploaded recording — see `docs/architecture.md`,
 "Diarization" for how. Real agglomerative clustering
-(`scipy.cluster.hierarchy`, cosine distance), not a lookup table. **What's
-still a placeholder**: fixed-length segmentation (not a proper voice-
-activity/change-point front end) can miss a speaker change mid-segment,
-and the clustering distance threshold is a placeholder pending calibration
-on labeled multi-speaker audio. Good enough for "roughly how many voices,
-roughly which stretches" — not turn-by-turn transcription-grade diarization.
+(`scipy.cluster.hierarchy`, cosine distance), not a lookup table.
+
+**Recalibrated 2026-09-08** after a real over-counting bug: one person's
+natural voice variation (breath, background noise, prosody drift) was
+splitting into multiple "speakers". Measured empirically (no real labeled
+multi-speaker corpus exists in this repo — see
+`eval/indian_language/README.md`'s own note on why that data doesn't exist
+either — so the measurement uses synthetic fixtures built specifically to
+carry per-segment natural-sounding jitter; see the CALIBRATION note in
+`embedding_cluster_diarizer.py`'s own docstring for the numbers) that
+lengthening segments 1500ms→2500ms and moving the clustering cutoff
+0.35→0.28 widened the margin between same-speaker and different-speaker
+embedding distances from 0.073 to 0.168. **What's still a placeholder**:
+fixed-length segmentation (not a proper voice-activity/change-point front
+end) can miss a speaker change mid-segment, and the new threshold, while
+measured, is still not validated against real recorded speech. Good
+enough for "roughly how many voices, roughly which stretches" — not
+turn-by-turn transcription-grade diarization.
 
 ## Transcription and urgency-language detection
 

@@ -118,6 +118,9 @@ class VoiceprintConsistencyDetector:
                 "no_match_similarity_anchor": self.no_match_similarity,
                 "embedding_model": self.embedding_model_source,
                 "rms": rms,
+                "explanation": _build_explanation(
+                    similarity, self.match_similarity, self.no_match_similarity, claimed_identity, raw_score
+                ),
             },
         )
 
@@ -134,3 +137,28 @@ class VoiceprintConsistencyDetector:
 
     def delete_enrollment(self, identity: str) -> bool:
         return self._enrollment_store.delete(identity)
+
+
+def _build_explanation(
+    similarity: float, match_anchor: float, no_match_anchor: float, claimed_identity: str, raw_score: float
+) -> str:
+    """States the measured cosine similarity against both reference anchors
+    already in `detail` — no inference beyond those three numbers."""
+    similarity_pct = similarity * 100
+    if raw_score < 0.15:
+        return (
+            f"The live voice closely matches the enrolled voiceprint for {claimed_identity!r} "
+            f"({similarity_pct:.0f}% similarity, at/above the {match_anchor * 100:.0f}% match reference) "
+            "— consistent with the claimed identity."
+        )
+    if raw_score > 0.6:
+        return (
+            f"The live voice does not match the enrolled voiceprint for {claimed_identity!r} well "
+            f"({similarity_pct:.0f}% similarity, close to the {no_match_anchor * 100:.0f}% no-match reference) "
+            "— inconsistent with the claimed identity."
+        )
+    return (
+        f"The live voice partially matches the enrolled voiceprint for {claimed_identity!r} "
+        f"({similarity_pct:.0f}% similarity, between the {no_match_anchor * 100:.0f}% no-match and "
+        f"{match_anchor * 100:.0f}% match references) — not a confident match either way."
+    )

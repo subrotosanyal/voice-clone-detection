@@ -23,12 +23,31 @@ HOW IT WORKS (real, but intentionally simple):
 
 HONESTY NOTE: this is not a state-of-the-art diarizer. Fixed-length
 segmentation (rather than a proper voice-activity/change-point front end)
-means a speaker change mid-segment is missed, and `distance_threshold` is a
-placeholder heuristic pending calibration on labeled multi-speaker audio —
-same caveat as voiceprint_consistency.py's similarity anchors. It is real
-signal processing, reproducible, and good enough to answer "roughly how
-many people spoke, and which stretches were whose" — not turn-by-turn
-transcription-grade diarization.
+means a speaker change mid-segment is missed.
+
+CALIBRATION (2026-09-08 — was over-counting speakers on real calls):
+`segment_ms` and `distance_threshold` were originally arbitrary
+placeholders (1500ms / 0.35), and in production this over-segmented a
+single speaker into several — natural moment-to-moment variation in a
+person's own voice (breath, background noise, prosody drift) pushed
+same-speaker embedding distance above the cutoff. Measured empirically
+(see tests/unit/test_embedding_cluster_diarizer.py, using
+tests/audio_fixtures.py's formant_voice() with per-take pitch/noise jitter
+to stand in for one person's natural variation across a call, since no
+real labeled multi-speaker corpus exists in this repo — see
+eval/indian_language/README.md's own note on why that data doesn't exist
+either): at the old 1500ms segment length, same-speaker distance ranged up
+to 0.254 while a genuinely different speaker measured as low as 0.327 —
+only a 0.073 margin for the 0.35 cutoff to sit in, and real speech is
+noisier than this synthetic simulation. Lengthening segments to 2500ms
+(more audio per embedding averages out more of that per-segment noise)
+widened the margin to 0.168 (same-speaker max 0.204, cross-speaker min
+0.372); `distance_threshold` was moved to 0.28 — comfortably inside that
+gap, closer to the same-speaker side, since the real-world failure being
+fixed was over- not under-counting. Still not validated against real
+recorded speech — see voiceprint_consistency.py's similarity anchors for
+the same class of caveat — but a real, reproducible, measured improvement
+over the previous unexamined guess, not just a different guess.
 
 Scope: file-upload path only (see app/ports/diarizer.py's scope note).
 """
@@ -49,9 +68,9 @@ class EmbeddingClusterDiarizer:
     def __init__(
         self,
         embedding_model_source: str = "speechbrain/spkrec-ecapa-voxceleb",
-        segment_ms: int = 1500,
+        segment_ms: int = 2500,
         floor_rms: float = 1e-4,
-        distance_threshold: float = 0.35,
+        distance_threshold: float = 0.28,
     ) -> None:
         self.segment_ms = segment_ms
         self.floor_rms = floor_rms

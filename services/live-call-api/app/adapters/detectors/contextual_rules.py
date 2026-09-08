@@ -126,9 +126,32 @@ class ContextualRulesDetector:
             detail["urgency_keywords_manual"] = manual_urgency_keywords
             detail["urgency_keywords_from_transcript"] = transcript_urgency_keywords
             detail["is_financial_request_from_transcript"] = transcript_is_financial
+        detail["explanation"] = _build_explanation(fired, urgency_keywords, hour if isinstance(hour, int) else None)
         return DetectorResult(
             detector_name=self.name,
             detector_version=self.version,
             score=raw_score,
             detail=detail,
         )
+
+
+def _build_explanation(fired: dict[str, bool], urgency_keywords: list[str], hour: int | None) -> str:
+    """Turns `fired` (+ the specific values that triggered it) into one
+    plain-language sentence — every clause here names a concrete,
+    reproducible fact already in `detail`, nothing inferred beyond it."""
+    reasons: list[str] = []
+    if fired.get("unknown_number"):
+        reasons.append("the caller's number is not on file")
+    if fired.get("unusual_hour"):
+        reasons.append(f"the call was placed at an unusual hour ({hour:02d}:00)" if hour is not None else "the call was placed at an unusual hour")
+    if fired.get("financial_request"):
+        reasons.append("the request appears to be financial")
+    if fired.get("urgency_language"):
+        if urgency_keywords:
+            quoted = ", ".join(f'"{kw}"' for kw in urgency_keywords)
+            reasons.append(f"urgency language was detected ({quoted})")
+        else:
+            reasons.append("urgency language was detected")
+    if not reasons:
+        return "No contextual risk factors detected: known number, ordinary hour, no financial or urgency language found."
+    return "Elevated because " + "; ".join(reasons) + "."

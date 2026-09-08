@@ -41,6 +41,11 @@ function renderTranscriptNote(detail) {
   `;
 }
 
+function renderExplanationNote(detail) {
+  if (!detail || !detail.explanation) return "";
+  return `<div class="explanation-note">${escapeHtml(detail.explanation)}</div>`;
+}
+
 function helpIcon(text) {
   const span = document.createElement("span");
   span.className = "help-icon";
@@ -235,7 +240,7 @@ function renderFusedScore(fs) {
         <span class="value mono">${c.abstained ? "abstained" : pct + "%"}</span>
       </div>
       <div class="bar-track"><div class="bar-fill" style="width:${c.abstained ? 100 : pct}%"></div></div>
-      ${c.abstained ? `<div class="abstain-note">${c.detail && c.detail.abstain_reason ? c.detail.abstain_reason : "no signal for this window"}</div>` : ""}
+      ${c.abstained ? `<div class="abstain-note">${c.detail && c.detail.abstain_reason ? c.detail.abstain_reason : "no signal for this window"}</div>` : renderExplanationNote(c.detail)}
       ${renderTranscriptNote(c.detail)}
     `;
     if (COMPONENT_HELP[c.name]) row.querySelector(".name").appendChild(helpIcon(COMPONENT_HELP[c.name]));

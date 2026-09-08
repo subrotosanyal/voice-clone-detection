@@ -10,11 +10,14 @@ a class rename); the checkpoint is fetched separately by
 WHAT THIS DOES AND DOESN'T PROVE
 This model was trained to distinguish bonafide human speech from the
 specific TTS/voice-conversion attacks in the ASVspoof2019 LA training set
-— all English. It has no exposure to Hindi, Marathi, or the held-out-
-generator discipline the project blueprint's §04 calls for; measuring
-that gap (and fine-tuning to close it) is exactly the work §04 describes,
-and hasn't happened yet. Treat this as "a real countermeasure is now
-wired in and reproducible," not "spoof detection is solved."
+— all English. It had no exposure to Hindi or the held-out-generator
+discipline the project blueprint's §04 calls for at training time;
+measuring that gap (and fine-tuning to close it) is exactly the work §04
+describes, and it has partially happened — see
+eval/indian_language/README.md for a real first EER number on Hindi and
+what's still missing (scope there is English + Hindi only, for now).
+Treat this as "a real countermeasure is now wired in and reproducible,"
+not "spoof detection is solved."
 
 Sign convention (verified against the original repo's evaluation code,
 see docs/risk-model.md): the model's training labels put bonafide at
@@ -129,6 +132,7 @@ class AasistAcousticDetector:
             "trained_on": "ASVspoof2019 LA (English only)",
             "nb_samp": _DEFAULT_MODEL_CONFIG["nb_samp"],
             "rms": rms,
+            "explanation": _build_explanation(spoof_probability),
         }
         if resampled_from_hz is not None:
             detail["resampled_from_hz"] = resampled_from_hz
@@ -139,6 +143,25 @@ class AasistAcousticDetector:
             score=spoof_probability,
             detail=detail,
         )
+
+
+def _build_explanation(spoof_probability: float) -> str:
+    """Honest by construction: AASIST is a trained neural classifier, not a
+    rule engine, so there is no feature-level cue to name — only the
+    confidence value itself, which is already in `detail`. Do not invent a
+    more specific-sounding reason than the model actually produces."""
+    if spoof_probability >= 0.5:
+        return (
+            f"AASIST's trained classifier assigned {spoof_probability * 100:.1f}% probability that this audio "
+            "is synthetic, based on its internal learned representation — not a specific acoustic cue this "
+            "system can name. (AASIST is a neural network, not a rule engine: there is no feature-level "
+            "\"why\" to report beyond this confidence value.)"
+        )
+    return (
+        f"AASIST's trained classifier assigned {(1 - spoof_probability) * 100:.1f}% probability that this audio "
+        "is bonafide human speech, based on its internal learned representation — not a specific acoustic cue "
+        "this system can name."
+    )
 
 
 def _resample(samples: np.ndarray, orig_sr: int, target_sr: int) -> np.ndarray:

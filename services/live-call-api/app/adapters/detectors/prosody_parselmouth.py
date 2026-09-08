@@ -124,8 +124,35 @@ class ParselmouthProsodyDetector:
                 "shimmer_floor_reference": self.shimmer_floor,
                 "hnr_ceiling_reference": self.hnr_ceiling,
                 "rms": rms,
+                "explanation": _build_explanation(
+                    jitter, shimmer, hnr_db, jitter_risk, shimmer_risk, hnr_risk,
+                    self.jitter_floor, self.shimmer_floor, self.hnr_ceiling,
+                ),
             },
         )
+
+
+def _build_explanation(
+    jitter: float, shimmer: float, hnr_db: float,
+    jitter_risk: float, shimmer_risk: float, hnr_risk: float,
+    jitter_floor: float, shimmer_floor: float, hnr_ceiling: float,
+) -> str:
+    """Names whichever of the three sub-scores actually contributed, with
+    the real measured value next to its reference — every clause here is
+    a fact already in `detail`, not a new inference."""
+    candidates = [
+        (jitter_risk, f"jitter is unusually low ({jitter * 100:.2f}% vs. a {jitter_floor * 100:.1f}% natural-voice reference)"),
+        (shimmer_risk, f"shimmer is unusually low ({shimmer * 100:.2f}% vs. a {shimmer_floor * 100:.1f}% natural-voice reference)"),
+        (hnr_risk, f"harmonics-to-noise ratio is unusually high ({hnr_db:.1f}dB vs. a {hnr_ceiling:.0f}dB natural-voice reference)"),
+    ]
+    contributing = [desc for risk, desc in candidates if risk > 0.0]
+    if not contributing:
+        return "Voice quality (jitter, shimmer, HNR) is within the natural-voice reference range — no prosodic risk factors detected."
+    return (
+        "Elevated because " + "; ".join(contributing) + " — an unusually smooth/regular voice can indicate "
+        "synthetic speech, though this jitter/shimmer/HNR-to-risk mapping is an unvalidated heuristic, not a "
+        "trained classifier (see this detector's HONESTY NOTE)."
+    )
 
 
 def _measure_voice_quality(samples: np.ndarray, sample_rate: int) -> tuple[float, float, float]:
