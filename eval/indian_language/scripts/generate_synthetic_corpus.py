@@ -13,22 +13,26 @@ accepts that model licence non-interactively; it is set here, not hidden
 from you — read https://coqui.ai/cpml before using this for anything
 beyond evaluation.
 
-Honesty note: this produces spoof examples from exactly ONE synthesis
-system. The blueprint's held-out-generator design needs a SECOND system,
-held out entirely from anything the acoustic detector is fine-tuned on —
-that's still missing (see README.md's Status). Everything generated here
-should be treated as "the trained-on system", not the honest held-out
-number, until a second system is wired in.
+Honesty note: this produces spoof examples from Coqui XTTS-v2 — see
+generate_synthetic_corpus_chatterbox.py for the SECOND, independent
+synthesis system (Resemble Chatterbox) the blueprint's held-out-generator
+design needs, held out entirely from anything the acoustic detector is
+fine-tuned on. Run BOTH before drawing a generalisation conclusion —
+either alone is "the trained-on system", not the honest held-out number.
 """
 from __future__ import annotations
 
 import json
 import os
+import sys
 from pathlib import Path
 
 os.environ.setdefault("COQUI_TOS_AGREED", "1")
 
 _EVAL_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _corpus_utils import parse_hindi_sentences, pick_reference_speakers  # noqa: E402
+
 DATA_DIR = _EVAL_DIR / "data" / "synthetic"
 GENUINE_MANIFEST = _EVAL_DIR / "data" / "genuine" / "manifest.json"
 SENTENCES_MD = _EVAL_DIR / "prompts" / "sentences.md"
@@ -40,62 +44,14 @@ _LICENSE_NOTE = (
 )
 
 
-def _parse_hindi_sentences() -> list[str]:
-    """Pulls the Hindi column straight out of sentences.md's table — one
-    source of truth, not a duplicated hardcoded list that could drift out
-    of sync with the file a human actually reads and edits."""
-    rows = []
-    for line in SENTENCES_MD.read_text(encoding="utf-8").splitlines():
-        if not line.startswith("|") or line.startswith("| #") or line.startswith("|---"):
-            continue
-        cells = [c.strip() for c in line.strip("|").split("|")]
-        if len(cells) < 3 or not cells[0].isdigit():
-            continue
-        rows.append(cells[2])  # column order: #, English, Hindi, Marathi
-    return rows
-
-
-MAX_REFERENCE_SPEAKERS_PER_GENDER = 4
-
-
-def _pick_reference_speakers(genuine: list[dict]) -> dict[str, dict]:
-    """Up to MAX_REFERENCE_SPEAKERS_PER_GENDER reference utterances per
-    gender (the longest available recordings for that gender, since
-    XTTS-v2's cloning quality benefits from more reference audio — its own
-    docs recommend ~6+ seconds), not just one. Scaled up from a single
-    speaker per gender (2026-09-08) alongside fetch_genuine_corpus.py's
-    N_HINDI_GENUINE increase — more distinct cloned voices means the
-    fine-tuned "spoof" class actually spans more than two speakers'
-    worth of cloning artifacts, closer to what a real deployment would
-    see than the original 2-speaker set."""
-    import soundfile as sf
-
-    by_gender: dict[int, list[dict]] = {}
-    for entry in genuine:
-        if entry["language"] != "hi":
-            continue
-        gender = entry["gender"]
-        wav_path = _EVAL_DIR / entry["wav_path"]
-        info = sf.info(wav_path)
-        duration = info.frames / info.samplerate
-        by_gender.setdefault(gender, []).append({**entry, "_duration": duration})
-
-    picked: dict[str, dict] = {}
-    for gender, entries in by_gender.items():
-        entries.sort(key=lambda e: e["_duration"], reverse=True)
-        for rank, entry in enumerate(entries[:MAX_REFERENCE_SPEAKERS_PER_GENDER]):
-            picked[f"{gender}_{rank}"] = entry
-    return picked
-
-
 def main() -> None:
     from TTS.api import TTS
 
     genuine = json.loads(GENUINE_MANIFEST.read_text())
-    sentences = _parse_hindi_sentences()
+    sentences = parse_hindi_sentences(SENTENCES_MD)
     print(f"Loaded {len(sentences)} Hindi sentences from {SENTENCES_MD.name}")
 
-    reference_speakers = _pick_reference_speakers(genuine)
+    reference_speakers = pick_reference_speakers(genuine, _EVAL_DIR)
     print(f"Reference speakers ({len(reference_speakers)} total): {list(reference_speakers.keys())}")
     for key, ref in reference_speakers.items():
         print(f"  {key} (gender={ref['gender']}): {ref['utterance_id']} ({ref['_duration']:.1f}s)")

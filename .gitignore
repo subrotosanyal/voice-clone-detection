@@ -43,6 +43,10 @@ services/live-call-api/data/
 # (see eval/indian_language/README.md). Only results/summary.json (numbers,
 # no audio) is tracked.
 eval/indian_language/.venv/
+# Chatterbox needs its own dedicated venv, separate from the main one
+# above — see generate_synthetic_corpus_chatterbox.py's docstring for
+# why (a real, confirmed torch/transformers pin conflict with coqui-tts).
+eval/indian_language/.venv-chatterbox/
 eval/indian_language/data/
 eval/indian_language/results/*.wav
 eval/indian_language/results/*.pth

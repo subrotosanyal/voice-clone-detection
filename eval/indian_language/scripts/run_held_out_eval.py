@@ -120,6 +120,7 @@ def _score_all_languages(detector: AasistAcousticDetector, genuine: list[dict], 
 def main() -> None:
     genuine = _load_manifest(_EVAL_DIR / "data" / "genuine" / "manifest.json")
     synthetic = _load_manifest(_EVAL_DIR / "data" / "synthetic" / "manifest.json")
+    synthetic_chatterbox = _load_manifest(_EVAL_DIR / "data" / "synthetic_chatterbox" / "manifest.json")
 
     if not genuine:
         print("No genuine corpus found — run scripts/fetch_genuine_corpus.py first.")
@@ -152,14 +153,36 @@ def main() -> None:
         finetuned_state = torch.load(finetuned_path, map_location="cpu")
         finetuned_detector._model.out_layer.load_state_dict(finetuned_state)
         finetuned_detector._model.eval()
-        print("\n--- AFTER fine-tuning ---")
+        print("\n--- AFTER fine-tuning (same synthesis system it was fine-tuned on) ---")
         summary["after_finetune"] = _score_all_languages(finetuned_detector, genuine, synthetic)
         summary["notes"].append(
-            "after_finetune is evaluated on the SAME data the fine-tune ran "
-            "on (no genuinely held-out second synthesis system exists yet) "
-            "— read this as 'did the mechanism improve fit', not a "
-            "generalisation claim. See fine_tune_aasist.py's docstring."
+            "after_finetune is evaluated on the SAME data (XTTS-v2) the "
+            "fine-tune ran on — read this as 'did the mechanism improve "
+            "fit', not a generalisation claim. See held_out_chatterbox "
+            "below for the genuine generalisation check."
         )
+
+        if synthetic_chatterbox:
+            print("\n--- AFTER fine-tuning, HELD-OUT second synthesis system (Chatterbox) ---")
+            summary["held_out_chatterbox"] = _score_all_languages(
+                finetuned_detector, genuine, synthetic_chatterbox
+            )
+            summary["notes"].append(
+                "held_out_chatterbox is the genuine generalisation check the "
+                "blueprint's held-out-generator design always needed: "
+                "Chatterbox (Resemble AI) is a completely different model "
+                "family/training data from XTTS-v2 (Coqui), and its output "
+                "was never used in fine-tuning — see "
+                "generate_synthetic_corpus_chatterbox.py's own docstring for "
+                "how it was generated and verified."
+            )
+        else:
+            summary["notes"].append(
+                "No held-out Chatterbox corpus found — run "
+                "scripts/generate_synthetic_corpus_chatterbox.py (its own "
+                "dedicated venv, see that script's docstring) for the "
+                "genuine generalisation check."
+            )
     else:
         summary["notes"].append(
             "No fine-tuned checkpoint found — run scripts/fine_tune_aasist.py "

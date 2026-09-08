@@ -36,7 +36,11 @@ reference, not as tracked scope going forward.
 licensed public speech corpora instead of recruiting classmates:
 
 - Real, consented genuine speech in **Hindi** — see "Datasets" below.
-- Real synthetic (spoof) speech in **Hindi** via Coqui XTTS-v2.
+- Real synthetic (spoof) speech in **Hindi** via Coqui XTTS-v2
+  (`generate_synthetic_corpus.py`) AND, as of 2026-09-08, a second,
+  independent system, Resemble AI's Chatterbox
+  (`generate_synthetic_corpus_chatterbox.py`) — see "Held-out
+  generalisation check" below.
 - A held-out-generator evaluation harness that runs the same
   `AasistAcousticDetector` the live service uses.
 
@@ -91,26 +95,47 @@ eval.py` reports) — see `scripts/fine_tune_aasist.py`'s own REAL BUG
 comments for the full account, kept rather than deleted so this doesn't
 happen again.
 
+## Held-out generalisation check (2026-09-08): does the recalibration actually generalise?
+
+Every number above is measured against XTTS-v2 — the SAME synthesis
+system the fine-tune trained on. That answers "did the mechanism improve
+fit", not "does this generalise to a spoof system it's never seen" — the
+blueprint's held-out-generator design has needed a second, independent
+system for this the whole time. **Resemble AI's Chatterbox** (MIT,
+`generate_synthetic_corpus_chatterbox.py`, run under its own dedicated
+venv — see that script's docstring for why) is a genuinely different
+model family and training data from XTTS-v2, and its output was NEVER
+used in fine-tuning:
+
+| | Bonafide accuracy | Spoof accuracy | EER |
+|---|---|---|---|
+| **Before fine-tuning** (XTTS-v2, trained-on) | 82% | 82.5% | **17.75%** |
+| **After fine-tuning** (XTTS-v2, trained-on) | 100% | 92.5% | **3.0%** |
+| **After fine-tuning, HELD-OUT** (Chatterbox, never seen) | 100% | 75% | **10.25%** |
+
+**Read this honestly**: the held-out EER (10.25%) is worse than the
+trained-on EER (3.0%) — expected, not a red flag; a model always does
+better on the exact distribution it was calibrated against than on a
+genuinely novel one. What matters is the comparison against the
+BEFORE-fine-tuning baseline (17.75%): the recalibration cuts the held-out
+EER nearly in half (17.75%→10.25%) against a synthesis system it never
+trained on, which is real evidence this generalises to some degree,
+not just memorised XTTS-v2's specific artifacts. It is also honestly not
+as strong a result as the trained-on number, and 40 held-out spoof
+examples (from 4 cloned reference speakers) is still a calibration-scale
+sample, not a statistically solid one.
+
 **What's still pending for the English + Hindi scope:**
 
 - **An independently-measured English baseline EER** against a public
   benchmark split — AASIST currently runs on its published checkpoint,
   unvalidated by this team on English (see `docs/architecture.md`, "The
   acoustic detector").
-- **A second, held-out synthesis system for Hindi** — still missing.
-  The blueprint's design needs *two* systems, one held out entirely from
-  anything the acoustic detector is fine-tuned on. Only one (XTTS-v2) is
-  wired in so far, so "after fine-tuning" is still only measured on data
-  the model already saw (in whole or in part), not a true generalisation
-  test — fixing the two bugs above made the EXISTING measurement
-  trustworthy, it didn't add the second system this gap has always
-  needed.
-- **Only 40 spoof examples** — validation's spoof split is just 8
-  examples (each worth 12 percentage points on val_spoof_acc); the
-  headline numbers above are real and reproducible, but still a
-  calibration-scale result, not a statistically solid one. More spoof
-  volume (more reference speakers, more sentences, or the second
-  synthesis system above) would fix this properly.
+- **More held-out spoof volume** — 40 examples (4 reference speakers ×
+  10 sentences) from Chatterbox is a real, independent check, but still
+  small. More reference speakers and sentences from either system would
+  make the held-out EER a statistically solid number rather than a
+  calibration-scale one.
 
 ### Informal spot-check (2026-09-08): the real gap is larger than the studio-recorded corpus above suggests
 
