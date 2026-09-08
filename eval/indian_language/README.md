@@ -70,6 +70,39 @@ fine-tuned at all, given this data volume).
   below) would make the EER number statistically meaningful rather than an
   artifact of a 30-example test set.
 
+### Informal spot-check (2026-09-08): the real gap is larger than the 20-utterance sample above suggests
+
+The 85%/100%-before-fine-tune numbers above come from 20 IndicTTS-Hindi
+utterances — clean, studio-quality read speech. A user-supplied, larger and
+more varied set of real Hindi recordings (100 speakers, ordinary phone-
+/laptop-mic quality, not studio-read) gave a very different, worse result
+when spot-checked locally against the exact same shipped AASIST checkpoint:
+**75% false-positive rate** on 20 real genuine speakers sampled from it
+(mean spoof-probability 0.73 — i.e. the model is confidently, not just
+narrowly, wrong most of the time on this harder set). Applying this
+pipeline's own already-committed fine-tuned output layer
+(`results/aasist_out_layer_finetuned.pth`) to the same 20 speakers improved
+but did not fix it: 60% false-positive rate, mean spoof-probability 0.50 —
+consistent with the "real improvement needs real volume" honest reading
+above, now with a second, independent data point confirming it.
+
+**This finding is not part of the committed pipeline and never will be
+using this specific data**: the source dataset
+(`github.com/shivam-shukla/Speech-Dataset-in-Hindi-Language`) has **no
+license declared** (confirmed via the GitHub API: `license: null`, no
+LICENSE file, no license section in its README) — same situation as the
+GramVaani corpus below, and the same rule applies: not usable in
+`fetch_genuine_corpus.py`, fine-tuning, or any reported/shipped result. The
+two numbers above were measured locally, once, against the user's own
+already-downloaded copy, and are recorded here only as a directional
+finding (studio TTS-adjacent read speech understates the real-world
+Hindi gap) — not as a dataset this project has adopted.
+
+**Actionable takeaway**: if this gap needs closing for real, the honest
+path is more *properly-licensed* Hindi bonafide data (see "Datasets"
+below) at real volume — not more scripts against this one unlicensed
+corpus.
+
 ### Marathi (out of scope)
 
 Genuine-only numbers exist as a byproduct of work done before the scope
