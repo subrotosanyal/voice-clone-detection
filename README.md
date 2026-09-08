@@ -125,17 +125,19 @@ kept and replayable, persisted across restarts via a SQLite-backed history
 store). Every detector name and risk band has an inline "?" tooltip
 explaining what it means.
 
-The **Indian-language dataset/eval pipeline** (`eval/indian_language/`) has
-genuinely started, not just been planned: real, license-verified (CC BY
-4.0) Hindi and Marathi genuine speech, real XTTS-v2-cloned Hindi spoof
-audio, and an actual fine-tune of AASIST's final layer on that data — first
-real number: 10% Equal Error Rate for Hindi, unchanged before and after
-fine-tuning (an honest "re-balanced, not improved" finding given only ~50
-examples, not a fabricated improvement). Still missing: a second, genuinely
-held-out synthesis system (needed to prove generalisation rather than
-recalibration), a synthetic/spoof Marathi corpus, and any Malvi data at
-all. See `eval/indian_language/README.md` for the full pipeline and
-results.
+The **Indian-language dataset/eval pipeline** (`eval/indian_language/`)
+targets **English and Hindi only, for now** — Marathi and Malvi are not
+required scope (a deliberate narrowing; see `eval/indian_language/README.md`
+for the reasoning). It has genuinely started, not just been planned: real,
+license-verified (CC BY 4.0) Hindi genuine speech, real XTTS-v2-cloned
+Hindi spoof audio, and an actual fine-tune of AASIST's final layer on that
+data — first real number: 10% Equal Error Rate for Hindi, unchanged before
+and after fine-tuning (an honest "re-balanced, not improved" finding given
+only ~50 examples, not a fabricated improvement). Still missing: an
+independently-measured English baseline EER against a public benchmark,
+and a second, genuinely held-out Hindi synthesis system (needed to prove
+generalisation rather than recalibration). See
+`eval/indian_language/README.md` for the full pipeline and results.
 
 Not built yet: the mock banking approval flow, and calibrated risk
 thresholds for the newer detectors. See `docs/architecture.md`, "What's

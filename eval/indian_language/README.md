@@ -6,13 +6,26 @@ touches the live-call runtime in `services/live-call-api/`. See
 `docs/architecture.md`'s second diagram ("Build-time — the Indian-language
 dataset & evaluation pipeline") for how this fits the overall project.
 
+## Scope: English and Hindi only, for now
+
+The blueprint's original brief named Hindi, Marathi and Malvi. The team has
+deliberately narrowed active scope to **English (the existing AASIST
+baseline) and Hindi** — Marathi and Malvi are no longer required
+deliverables. Reasoning: Malvi has no digital resources of any kind and
+would need a native-speaker volunteer to record from scratch (see
+`CONSENT_FORM.md`, still ready for exactly that if one ever joins), and no
+ungated open TTS/cloning system covering Marathi was found, so neither
+language could reach a real spoof-vs-bonafide measurement in the time
+available. A genuine-speech-only check for Marathi was already run *before*
+this decision (see "Marathi (out of scope)" below) and is kept for
+reference, not as tracked scope going forward.
+
 ## Status (honest, as of this write-up)
 
 **What this pipeline can do without any human volunteers**, using existing
 licensed public speech corpora instead of recruiting classmates:
 
-- Real, consented genuine speech in **Hindi** and **Marathi** — see
-  "Datasets" below.
+- Real, consented genuine speech in **Hindi** — see "Datasets" below.
 - Real synthetic (spoof) speech in **Hindi** via Coqui XTTS-v2.
 - A held-out-generator evaluation harness that runs the same
   `AasistAcousticDetector` the live service uses.
@@ -25,10 +38,6 @@ genuine Hindi utterances and 10 XTTS-v2-cloned Hindi utterances):
 |---|---|---|---|
 | **Before fine-tuning** | 85% | 100% | **10%** |
 | **After fine-tuning** (final layer only, 50 examples) | 100% | 80% | **10%** |
-
-**Marathi has genuine-only numbers so far** (no synthetic side yet — no
-viable ungated Marathi TTS system found): 95% bonafide accuracy before
-fine-tuning, 100% after.
 
 **Read this honestly, not optimistically:** fine-tuning did NOT reduce the
 EER — it moved AASIST's decision threshold, catching every genuine Hindi
@@ -45,21 +54,28 @@ never touched, instead of the same data it trained on (see
 `fine_tune_aasist.py`'s docstring on why only the last layer was
 fine-tuned at all, given this data volume).
 
-**What still needs a human, and hasn't happened yet:**
+**What's still pending for the English + Hindi scope:**
 
-- **Malvi** — no public dataset or open TTS/cloning system exists for this
-  dialect at all (it's a spoken Rajasthani/Hindi variant with no
-  standardised script). This genuinely needs a native-speaker volunteer to
-  record from scratch — see `CONSENT_FORM.md`, ready for exactly that.
-- **Marathi synthetic (spoof) speech** — no ungated open TTS/cloning system
-  covering Marathi turned up in a real search (see "Rejected options"
-  below). Until one is found, the held-out-generator design only fully runs
-  for Hindi; Marathi currently only has a genuine-speech "does AASIST over-
-  flag real Marathi as spoof" check, not a full spoof/bonafide comparison.
+- **An independently-measured English baseline EER** against a public
+  benchmark split — AASIST currently runs on its published checkpoint,
+  unvalidated by this team on English (see `docs/architecture.md`, "The
+  acoustic detector").
 - **A second, held-out synthesis system for Hindi** — the blueprint's design
   needs *two* systems, one held out entirely from anything the acoustic
-  detector is fine-tuned on. Only one (XTTS-v2) is wired in so far.
-- **Fine-tuning AASIST** on this data — scaffolding only; not yet run.
+  detector is fine-tuned on. Only one (XTTS-v2) is wired in so far, so
+  "after fine-tuning" is only measured on data the model already saw, not a
+  real generalisation test.
+- **More Hindi data** — the fine-tune ran on only 50 total examples; more
+  speakers and sentences from the same verified corpus (see "Datasets"
+  below) would make the EER number statistically meaningful rather than an
+  artifact of a 30-example test set.
+
+### Marathi (out of scope)
+
+Genuine-only numbers exist as a byproduct of work done before the scope
+decision above (no synthetic side — no viable ungated Marathi TTS system
+found): 95% bonafide accuracy before fine-tuning, 100% after. This isn't
+tracked as pending work; Marathi is not required scope.
 
 ## Datasets — verified before adopting (see `docs/risk-model.md`'s standing
 discipline: real license/fetchability verification before adoption)

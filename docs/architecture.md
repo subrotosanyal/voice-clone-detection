@@ -340,9 +340,12 @@ build time (or once locally before running tests without Docker).
 
 **What it does and doesn't prove:** the model was trained to tell English
 bonafide speech apart from the specific TTS/voice-conversion attacks in
-one 2019 dataset. It has no exposure to Hindi, Marathi, or a held-out
-generator — measuring that gap is exactly the work the project
-blueprint's §04 describes, and hasn't happened. It also has no exposure
+one 2019 dataset. It had no exposure to Hindi or a held-out generator at
+training time — measuring that gap is exactly the work the project
+blueprint's §04 describes, and it has partially happened: see
+`eval/indian_language/README.md` for a real first EER number on Hindi and
+what's still missing (scope there is English + Hindi only, for now). It
+also has no exposure
 to non-speech audio: our own synthetic test fixtures (a sine tone, white
 noise — see `scripts/gen_test_audio.py`) both score as ~99.99% "not
 bonafide", because neither one is real speech to begin with. That's the
@@ -393,16 +396,18 @@ repo that says so.
   start. Fine for one process; swap `SessionStore` for Redis when more
   than one API replica needs to share an *in-progress* call's state.
 - **A genuinely held-out second synthesis system for the Indian-language
-  eval (§04).** The pipeline itself is built and has run end to end
-  (`eval/indian_language/`): real, license-verified CC BY 4.0 Hindi/Marathi
-  genuine speech, real XTTS-v2-cloned Hindi spoof audio, and an actual
-  fine-tune of AASIST's final layer, giving a first real number — 10% EER
-  for Hindi, unchanged before/after fine-tuning (an honest finding, not an
-  improvement). What's still missing: a second synthesis system never used
-  in training (without it, "after fine-tuning" is only measured on data the
-  model already saw), a synthetic/spoof Marathi corpus (no ungated open TTS
-  system covering Marathi was found), and any Malvi data at all (no digital
-  resources exist for it). See `eval/indian_language/README.md`.
+  eval (§04).** Scope there is deliberately **English and Hindi only, for
+  now** — Marathi and Malvi were dropped as required deliverables (see the
+  scope note in `eval/indian_language/README.md`). The pipeline itself is
+  built and has run end to end (`eval/indian_language/`): real, license-
+  verified CC BY 4.0 Hindi genuine speech, real XTTS-v2-cloned Hindi spoof
+  audio, and an actual fine-tune of AASIST's final layer, giving a first
+  real number — 10% EER for Hindi, unchanged before/after fine-tuning (an
+  honest finding, not an improvement). What's still missing: a second
+  synthesis system never used in training (without it, "after fine-tuning"
+  is only measured on data the model already saw), and an independently-
+  measured English baseline EER against a public benchmark. See
+  `eval/indian_language/README.md`.
 - The mock banking approval flow (the dashboard UI itself is built —
   see above).
 - Calibrated risk thresholds for voiceprint consistency, diarization
