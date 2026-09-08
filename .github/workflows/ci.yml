@@ -30,7 +30,15 @@ jobs:
   test:
     name: Run tests
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Not a generous guess: the second real CI run hit the *previous* 20min
+    # limit and got cancelled at 16% of tests, having spent 1-4 real
+    # minutes on several individual integration tests (each one opens its
+    # own fresh TestClient(app), which reloads AASIST+ECAPA-TDNN+Whisper
+    # from scratch — 22 separate times across the suite — and every
+    # /v1/score/file call also runs a real Whisper decode regardless of
+    # whether that test cares about transcription). See docs/testing.md's
+    # "Continuous integration" section for the honest accounting.
+    timeout-minutes: 45
     defaults:
       run:
         working-directory: services/live-call-api

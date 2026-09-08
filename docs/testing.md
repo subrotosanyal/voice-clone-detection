@@ -85,6 +85,22 @@ manually, via workflow_dispatch), two jobs:
   docker-compose.yml combination still works end to end, not just that
   the test suite passes outside Docker.
 
+**Honest accounting of why `test` needs a generous timeout (45min, not a
+round number picked in advance)**: a real CI run hit an earlier 20min
+limit and got cancelled at 16% of tests, having spent 1-4 real minutes on
+several individual integration tests. Two compounding reasons, not a
+fluke: every one of the 22 `with TestClient(app) as client:` blocks across
+`tests/integration/` reloads AASIST + ECAPA-TDNN + Whisper from disk into
+memory from scratch (the app's lifespan runs fresh each time), and every
+`/v1/score/file` call also runs a real Whisper decode regardless of
+whether that particular test has anything to do with transcription — a
+GitHub-hosted CPU runner is slower than a dev machine for this. Sharing
+one long-lived app/TestClient across a test module (loading each model
+once for the whole run, not once per test) would meaningfully cut this,
+but touches all six integration test files and needs care around tests
+that share SQLite-backed state — not done yet; the honest workaround for
+now is enough timeout headroom to let the real work finish.
+
 ## The fastest way to debug a score
 
 ```bash
