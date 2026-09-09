@@ -139,16 +139,17 @@ config constant), not just a threshold edit to risk_formula.yaml.
 - [x] Honest calibration numbers for Prosodic — see README.md's
       "Prosodic detector calibration" section and `results/
       prosodic_calibration.json`.
-- [ ] Decide whether to update `config/risk_formula.yaml` based on the
-      real numbers, not before — **pending explicit user decision**:
-      - AASIST: the fine-tuned output layer (`results/
-        aasist_out_layer_finetuned.pth`) would need copying to
-        `services/live-call-api/app/adapters/detectors/vendor/
-        checkpoints/AASIST_hindi_finetuned_out_layer.pth` (same
-        mechanism already wired into `config/risk_formula.yaml`'s
-        `finetuned_out_layer_path` — this would just be refreshing that
-        existing artifact with the new, more broadly-trained weights).
-      - Prosodic: NOT a simple config edit — replacing
-        `ParselmouthProsodyDetector`'s hand-tuned formula with the
-        trained logistic regression is an architecture change (a
-        serialized model behind the same `DetectorPort`), not started.
+- [x] AASIST deployed (2026-09-09, user-approved): new fine-tuned
+      `out_layer` copied to `services/live-call-api/app/adapters/
+      detectors/vendor/checkpoints/AASIST_hindi_finetuned_out_layer.pth`
+      (same shape as the checkpoint it replaces, verified via a real
+      genuine + real spoof example through the production
+      `AasistAcousticDetector` code path before committing).
+- [x] Prosodic deployed (2026-09-09, user-approved): new
+      `ParselmouthProsodyMLDetector` class added to `prosody_parselmouth.py`
+      (shared Praat-extraction helper, `ParselmouthProsodyDetector` kept
+      unchanged as a historical baseline); `config/risk_formula.yaml`'s
+      `prosodic:` entry now points at it (`formula_version` bumped to
+      2026.09.13). 10 tests (6 new, including an exact hand-computed
+      regression test pinning the fitted coefficients). UI copy
+      (`app.js`) and `docs/risk-model.md` updated to match.
