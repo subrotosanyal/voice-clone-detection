@@ -112,8 +112,9 @@ before.
 
 ## The prosodic detector: Parselmouth (Praat), with real limits
 
-`prosody_parselmouth.py` (the default `prosodic` class as of
-`formula_version: "2026.09.7"`) computes jitter, shimmer, and harmonics-to-
+`prosody_parselmouth.py` (the current default `prosodic` class — see
+`services/live-call-api/config/risk_formula.yaml`'s `formula_version` for
+the config revision this doc reflects) computes jitter, shimmer, and harmonics-to-
 noise ratio via **Parselmouth** — the official Python binding for **Praat**,
 the long-standing reference tool in clinical voice-quality research.
 Attribution and licence:
