@@ -1,3 +1,15 @@
+# syntax=docker/dockerfile:1
+# ^ pinned explicitly (not left to the Docker Engine's own default
+# frontend version) so the `--mount=type=secret,...,env=` shorthand used
+# below is guaranteed available regardless of which Docker version
+# builds this — see the HF_TOKEN secret-mount note further down for
+# why. REAL BUG found 2026-09-11 verifying this: pinning the exact
+# `1.7` frontend (an earlier version of this same line) actually
+# FAILED with `unexpected key 'env' in 'env=HF_TOKEN'` — that shorthand
+# needs a newer 1.x frontend than 1.7. Using the untagged `1` (always
+# resolves to the latest 1.x release) rather than guessing/re-pinning
+# the exact minor version that introduced it.
+
 # praat-parselmouth ships prebuilt wheels on PyPI only for x86_64/i686
 # Linux (and macOS/Windows) — NOT for linux/aarch64, which is what this
 # Dockerfile builds on an Apple Silicon host (and on any arm64 server).
@@ -83,7 +95,26 @@ RUN python app/adapters/detectors/vendor/fetch_checkpoint.py
 # WORKDIR) on sys.path — `python -m` adds the cwd there; `python path.py`
 # only adds the script's own directory, which fails with
 # "ModuleNotFoundError: No module named 'app'".
-RUN python -m app.adapters.embeddings.fetch_ecapa_model
+#
+# HF_TOKEN — added 2026-09-11: this and the two other HuggingFace-Hub-
+# backed fetches below (intent classifier, Phi-3 GGUF; Whisper and
+# AASIST above are NOT HF Hub, they don't benefit) were logging
+# "You are sending unauthenticated requests to the HF Hub" during every
+# build. `--mount=type=secret,...,env=HF_TOKEN` injects an optional
+# token ONLY into this one RUN step's process environment — never
+# written to a file in the image, never an ARG/ENV (which WOULD leak
+# into the image's layer history, retrievable via `docker history` even
+# after a later layer unsets it — a real anti-pattern this deliberately
+# avoids). huggingface_hub reads HF_TOKEN from the environment
+# automatically; no code change needed. Safe with no token at all: an
+# unset or empty secret leaves HF_TOKEN empty, and huggingface_hub's own
+# `_get_token_from_environment()` treats an empty string as falsy and
+# falls through to today's exact anonymous-request behavior (confirmed
+# against its actual source, not assumed) — so this is a pure
+# opt-in speedup, not a new requirement. See docker-compose.yml's own
+# `secrets:` block for where the value actually comes from.
+RUN --mount=type=secret,id=hf_token,env=HF_TOKEN \
+    python -m app.adapters.embeddings.fetch_ecapa_model
 
 # Same reasoning for the Whisper "small" transcription model — see
 # app/adapters/transcription/fetch_whisper_model.py. No `app.*` imports in
@@ -96,12 +127,22 @@ RUN python app/adapters/transcription/fetch_whisper_model.py
 # script path works). Active by default since config/risk_formula.yaml's
 # `intent` detector is enabled — see that config's own comment for the
 # known calibration caveat this signal carries.
-RUN python app/adapters/intent/fetch_intent_model.py
+#
+# HF_TOKEN — see the ECAPA fetch step's own note above for the full
+# rationale (same secret, same opt-in, same safe-with-nothing-set
+# behavior).
+RUN --mount=type=secret,id=hf_token,env=HF_TOKEN \
+    python app/adapters/intent/fetch_intent_model.py
 
 # Same reasoning for the local semantic-risk LLM (Microsoft's Phi-3-mini
 # GGUF) — see app/adapters/semantic_risk/fetch_llm_model.py. No
 # `app.*` imports in that script, plain script path works.
-RUN python app/adapters/semantic_risk/fetch_llm_model.py
+#
+# HF_TOKEN — see the ECAPA fetch step's own note above for the full
+# rationale (same secret, same opt-in, same safe-with-nothing-set
+# behavior). Worth the most here: this is the ~2.4GB fetch.
+RUN --mount=type=secret,id=hf_token,env=HF_TOKEN \
+    python app/adapters/semantic_risk/fetch_llm_model.py
 
 ENV PYTHONUNBUFFERED=1
 EXPOSE 8000

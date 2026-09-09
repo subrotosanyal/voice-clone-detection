@@ -330,7 +330,16 @@ jobs:
       # plausible case (a full cache hit would still pay the ~14min
       # export/import tax alone). Simpler too: two fewer external
       # actions, no cache-mode trade-off left to keep re-litigating.
+      # HF_TOKEN — optional, see docker-compose.yml's own `secrets:`
+      # block and the Dockerfile's HF_TOKEN note for the full mechanism.
+      # Safe if the repo secret below is never created: GitHub Actions
+      # resolves an undefined `secrets.*` reference to an empty string,
+      # and huggingface_hub treats an empty HF_TOKEN as no-token
+      # (confirmed against its own source) — same anonymous-request
+      # behavior this job already had.
       - name: Build live-call-api image
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN_VOICE_CLONE_DETECT_CI }}
         run: docker compose build
 
       - name: docker compose up

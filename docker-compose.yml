@@ -20,6 +20,17 @@ services:
   live-call-api:
     build:
       context: ./services/live-call-api
+      # Optional: set HF_TOKEN in your shell before running
+      # `docker compose build`/`up --build` for faster, authenticated
+      # HuggingFace Hub downloads during the ECAPA/intent-classifier/
+      # Phi-3-GGUF fetch steps (see the Dockerfile's own HF_TOKEN note).
+      # `environment:` here means "read this secret's VALUE from the
+      # host env var of the same name at build time" — nothing is ever
+      # written to disk or baked into an image layer either way; safe
+      # to leave HF_TOKEN unset, same anonymous behavior as before this
+      # existed.
+      secrets:
+        - hf_token
     ports:
       - "8020:8000"
     environment:
@@ -55,3 +66,13 @@ services:
     ports:
       - "8888:8080"  # dozzle listens on 8080 inside the container
     restart: unless-stopped
+
+# Sourced from the HF_TOKEN env var (see live-call-api's own `build.
+# secrets:` note above) — a build-time-only BuildKit secret, mounted
+# into individual RUN steps in the Dockerfile via
+# `--mount=type=secret,id=hf_token,env=...`, never written into any
+# image layer. Compose's `environment:` form here means "read the VALUE
+# from this host env var", not "the secret's name is this env var".
+secrets:
+  hf_token:
+    environment: HF_TOKEN
