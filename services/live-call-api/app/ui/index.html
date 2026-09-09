@@ -48,6 +48,10 @@ html,body{height:100%;}
 body{
   margin:0; background:var(--paper); color:var(--ink);
   font-family:'Public Sans', -apple-system, 'Segoe UI', sans-serif; line-height:1.5;
+  overflow-x:hidden; /* belt-and-suspenders: the min-width:0/overflow-wrap fixes
+    above should already stop content from pushing past the viewport, but this
+    keeps a stray unbreakable string from producing a page-wide horizontal
+    scrollbar instead of just being clipped inside its own card. */
 }
 h1,h2,h3{font-family:'Public Sans',sans-serif; margin:0; text-wrap:balance;}
 .mono{font-family:'IBM Plex Mono', ui-monospace, monospace;}
@@ -73,10 +77,16 @@ header.top{display:flex; align-items:center; justify-content:space-between; gap:
 
 .grid{display:grid; grid-template-columns:minmax(320px,420px) 1fr; gap:22px; align-items:start;}
 @media (max-width:860px){ .grid{grid-template-columns:1fr;} }
+/* Grid items default to min-width:auto, sized to their widest UNBREAKABLE
+   content — a long space-less string (a garbled transcript, e.g.) would
+   otherwise force this column past the viewport and drag everything else
+   in it off-screen too. min-width:0 lets the column shrink to the grid
+   track instead, and overflow-wrap below then wraps that content within it. */
+.grid > *{min-width:0;}
 
 .card{
   background:var(--paper-raised); border:1px solid var(--line); border-radius:var(--radius);
-  padding:22px; box-shadow:var(--shadow);
+  padding:22px; box-shadow:var(--shadow); overflow-wrap:break-word;
 }
 .card + .card{margin-top:18px;}
 .card h2{font-size:15px; margin-bottom:4px;}
@@ -215,7 +225,7 @@ details.context[open] summary::before{content:"▾ ";}
 .intent-bar-fill{height:100%; border-radius:4px; background:var(--risk-high);}
 .intent-bar-fill.ordinary{background:var(--risk-low);}
 .intent-pct{font-size:11px; color:var(--slate); flex:0 0 32px; text-align:right;}
-.transcript-text{font-size:12.5px; color:var(--ink); font-style:italic; line-height:1.4;}
+.transcript-text{font-size:12.5px; color:var(--ink); font-style:italic; line-height:1.4; overflow-wrap:anywhere;}
 .transcript-tags{margin-top:6px; display:flex; flex-wrap:wrap; gap:5px;}
 
 /* help tooltip — small "?" icon, hover/focus reveals an explanation */
