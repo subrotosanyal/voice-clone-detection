@@ -1,5 +1,5 @@
 from app.adapters.history.sqlite_store import SqliteHistoryStore
-from app.domain.models import Band, ComponentContribution, FusedScore
+from app.domain.models import Band, ComponentContribution, FusedScore, SpeakerCallSummary
 
 
 def _fused(session_id: str, seq: int, score: float, band: Band = Band.LOW) -> FusedScore:
@@ -101,3 +101,54 @@ def test_store_persists_across_reopening_the_same_file(tmp_path):
 
     assert len(trace) == 1
     assert trace[0].raw_score_0_100 == 42.0
+
+
+def test_save_and_list_speaker_summaries_round_trip(tmp_path):
+    store = SqliteHistoryStore(str(tmp_path / "sessions.db"))
+    store.save_speaker_summary(
+        SpeakerCallSummary(
+            base_session_id="live-1",
+            speaker_label="speaker_1",
+            speaker_session_id="live-1::speaker_1",
+            segment_count=3,
+            total_duration_ms=4500,
+        )
+    )
+    store.save_speaker_summary(
+        SpeakerCallSummary(
+            base_session_id="live-1",
+            speaker_label="speaker_2",
+            speaker_session_id="live-1::speaker_2",
+            segment_count=2,
+            total_duration_ms=3000,
+        )
+    )
+
+    summaries = store.list_speaker_summaries("live-1")
+
+    assert [s.speaker_label for s in summaries] == ["speaker_1", "speaker_2"]  # first-seen order
+    assert summaries[0].segment_count == 3
+    assert summaries[0].total_duration_ms == 4500
+    assert summaries[0].speaker_session_id == "live-1::speaker_1"
+
+
+def test_list_speaker_summaries_empty_for_a_session_never_diarized(tmp_path):
+    store = SqliteHistoryStore(str(tmp_path / "sessions.db"))
+    store.save(_fused("s1", 0, 10.0))  # a normal session, never diarized
+
+    assert store.list_speaker_summaries("s1") == []
+
+
+def test_speaker_summaries_are_scoped_to_their_base_session(tmp_path):
+    store = SqliteHistoryStore(str(tmp_path / "sessions.db"))
+    store.save_speaker_summary(
+        SpeakerCallSummary(
+            base_session_id="live-1",
+            speaker_label="speaker_1",
+            speaker_session_id="live-1::speaker_1",
+            segment_count=1,
+            total_duration_ms=1000,
+        )
+    )
+
+    assert store.list_speaker_summaries("live-2") == []

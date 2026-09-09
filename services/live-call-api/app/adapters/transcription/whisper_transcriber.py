@@ -93,9 +93,28 @@ here) did not: catch ANY exception from the real model call and fall
 back to an empty transcript, same as "no speech found" — transcription
 failing is always recoverable (the rest of the pipeline still scores
 the call, just without transcript-derived signals), a crash never is.
+
+REAL BUG found and fixed 2026-09-10, while building "diarize on hangup"
+(app/api/ws_router.py): two overlapping calls into the SAME shared
+Whisper model instance (one from a live session's still-finishing
+LiveTranscriptionBuffer cycle, one from the hangup-time per-speaker
+re-transcription that starts as soon as the connection closes) produced
+`KeyError: Linear(...)` inside whisper/model.py's cross-attention
+kv_cache — Whisper's decode hooks are installed as attributes on the
+model's own submodules, shared process-wide, and were never documented
+or built as safe for concurrent decode() calls on one model instance.
+This project already has the identical lock-around-a-non-thread-safe-
+model pattern twice (app/adapters/praat_lock.py for Parselmouth,
+EcapaEmbeddingExtractor's own `self._lock` for ECAPA-TDNN) — this is the
+same fix, scoped as an instance lock since (like ECAPA-TDNN) each
+WhisperTranscriber owns exactly one shared model instance, built once at
+startup and reused by every caller (file-upload's one-shot transcribe,
+the live path's periodic LiveTranscriptionBuffer, and now diarize-on-
+hangup's per-speaker re-transcription) — see this class's own `_lock`.
 """
 from __future__ import annotations
 
+import threading
 from math import gcd
 
 import numpy as np
@@ -127,6 +146,10 @@ class WhisperTranscriber:
         self.model_size = model_size
         self.floor_rms = floor_rms
         self._model = whisper.load_model(model_size, download_root=_DOWNLOAD_ROOT)
+        # See this module's own REAL BUG note (2026-09-10): concurrent
+        # decode() calls into this one shared model instance corrupt its
+        # kv_cache hooks.
+        self._lock = threading.Lock()
 
     def transcribe(self, samples: np.ndarray, sample_rate: int) -> TranscriptResult:
         rms = float(np.sqrt(np.mean(np.square(samples)))) if samples.size else 0.0
@@ -149,7 +172,8 @@ class WhisperTranscriber:
         # REPRODUCIBILITY FIX docstring note for why the default is
         # genuinely non-deterministic on non-speech audio.
         try:
-            result = self._model.transcribe(samples.astype(np.float32), fp16=False, temperature=0.0)
+            with self._lock:
+                result = self._model.transcribe(samples.astype(np.float32), fp16=False, temperature=0.0)
         except Exception:  # noqa: BLE001 — see the second REAL BUG note above the
             # class docstring: Whisper's own internal segmentation can hit a
             # zero-length slice on real, long audio in a way _MIN_DURATION_S

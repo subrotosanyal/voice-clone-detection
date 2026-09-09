@@ -148,6 +148,43 @@ class SpeakerSegment:
 
 
 @dataclass(frozen=True)
+class SpeakerCallResult:
+    """One diarized speaker's own scoring breakdown for a single call —
+    the return shape of Engine.diarize_and_score() (app/pipeline/
+    engine.py), shared by both the file-upload path (POST /v1/score/
+    file?diarize=true) and the live WebSocket path's "diarize on hangup"
+    (see app/api/ws_router.py's own docstring on why a live call gets its
+    per-speaker breakdown only once it ends, not window-by-window — see
+    SpeakerCallSummary below and LiveSpeakerInfo above for the two OTHER,
+    narrower ways a live call's speakers show up before that point)."""
+
+    speaker_label: str
+    session_id: str  # derived: "{base_session_id}::{speaker_label}"
+    segment_count: int
+    total_duration_ms: int
+    fused_scores: list[FusedScore]
+
+
+@dataclass(frozen=True)
+class SpeakerCallSummary:
+    """The small, persisted part of a SpeakerCallResult — everything
+    EXCEPT the fused_scores trace itself, which is already recoverable
+    via HistoryStorePort.get_session(session_id) since
+    Engine.diarize_and_score() scores each speaker through the normal
+    score_call() path (same auto-persist-every-window behaviour as any
+    other session). This is the one bit that ISN'T re-derivable after the
+    fact (segment_count/total_duration_ms come from the diarizer's own
+    segments, not from FusedScore history) — see
+    HistoryStorePort.save_speaker_summary()/list_speaker_summaries()."""
+
+    base_session_id: str
+    speaker_label: str
+    speaker_session_id: str
+    segment_count: int
+    total_duration_ms: int
+
+
+@dataclass(frozen=True)
 class TranscriptResult:
     """What a transcriber returns for one call's audio — feeds the
     contextual third signal's urgency/financial-request keyword detection

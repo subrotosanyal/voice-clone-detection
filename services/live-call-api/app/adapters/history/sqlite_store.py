@@ -17,7 +17,7 @@ import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
-from app.domain.models import Band, ComponentContribution, FusedScore, SessionSummary
+from app.domain.models import Band, ComponentContribution, FusedScore, SessionSummary, SpeakerCallSummary
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS fused_scores (
@@ -35,6 +35,20 @@ CREATE TABLE IF NOT EXISTS fused_scores (
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_fused_scores_session ON fused_scores(session_id, seq);
+
+-- See HistoryStorePort.save_speaker_summary()'s own docstring: the one
+-- part of a diarized speaker's result (app/domain/models.py's
+-- SpeakerCallResult) that isn't re-derivable from fused_scores alone.
+CREATE TABLE IF NOT EXISTS speaker_call_summaries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    base_session_id TEXT NOT NULL,
+    speaker_label TEXT NOT NULL,
+    speaker_session_id TEXT NOT NULL,
+    segment_count INTEGER NOT NULL,
+    total_duration_ms INTEGER NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_speaker_summaries_base ON speaker_call_summaries(base_session_id, id);
 """
 
 
@@ -134,6 +148,42 @@ class SqliteHistoryStore:
             cur = self._conn.execute("DELETE FROM fused_scores WHERE session_id = ?", (session_id,))
             self._conn.commit()
             return cur.rowcount > 0
+
+    def save_speaker_summary(self, summary: SpeakerCallSummary) -> None:
+        with self._lock:
+            self._conn.execute(
+                """INSERT INTO speaker_call_summaries
+                   (base_session_id, speaker_label, speaker_session_id, segment_count,
+                    total_duration_ms, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (
+                    summary.base_session_id,
+                    summary.speaker_label,
+                    summary.speaker_session_id,
+                    summary.segment_count,
+                    summary.total_duration_ms,
+                    datetime.now(timezone.utc).isoformat(),
+                ),
+            )
+            self._conn.commit()
+
+    def list_speaker_summaries(self, base_session_id: str) -> list[SpeakerCallSummary]:
+        with self._lock:
+            rows = self._conn.execute(
+                """SELECT base_session_id, speaker_label, speaker_session_id, segment_count, total_duration_ms
+                   FROM speaker_call_summaries WHERE base_session_id = ? ORDER BY id ASC""",
+                (base_session_id,),
+            ).fetchall()
+        return [
+            SpeakerCallSummary(
+                base_session_id=r[0],
+                speaker_label=r[1],
+                speaker_session_id=r[2],
+                segment_count=r[3],
+                total_duration_ms=r[4],
+            )
+            for r in rows
+        ]
 
 
 def _row_to_fused_score(row: tuple) -> FusedScore:

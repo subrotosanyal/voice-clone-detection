@@ -64,9 +64,14 @@ class FusedScoreOut(BaseModel):
     components: list[ComponentContributionOut]
     recommended_action: str
     live_speaker: Optional[LiveSpeakerInfoOut] = None
+    # Live WebSocket path only, once 2+ speakers are detected — see
+    # app/api/ws_router.py's own docstring on "real-time per-speaker
+    # fusion". One level deep only (never itself carries a speaker_score);
+    # the whole-call score above always reflects the mixed/whole audio.
+    speaker_score: Optional["FusedScoreOut"] = None
 
     @classmethod
-    def from_domain(cls, fused: FusedScore) -> "FusedScoreOut":
+    def from_domain(cls, fused: FusedScore, speaker_score: Optional["FusedScoreOut"] = None) -> "FusedScoreOut":
         return cls(
             session_id=fused.session_id,
             seq=fused.seq,
@@ -90,6 +95,7 @@ class FusedScoreOut(BaseModel):
             ],
             recommended_action=fused.recommended_action,
             live_speaker=LiveSpeakerInfoOut.from_domain(fused.live_speaker) if fused.live_speaker else None,
+            speaker_score=speaker_score,
         )
 
 

@@ -164,6 +164,14 @@ class ContextualRulesDetector:
             detail["urgency_keywords_from_transcript"] = transcript_urgency_keywords
             detail["is_financial_request_from_transcript"] = transcript_is_financial
             detail["authority_keywords_from_transcript"] = transcript_authority_keywords
+            # Live-mic path only (app/pipeline/live_transcription.py) — the
+            # naive whole-session concatenation, for display/audit only.
+            # File-upload's `transcript` already covers the whole call, so
+            # this is simply absent there. See that module's own docstring
+            # for the honest overlap-duplication caveat.
+            full_session_transcript = context.get("full_session_transcript")
+            if full_session_transcript:
+                detail["full_session_transcript"] = full_session_transcript
         detail["explanation"] = _build_explanation(
             fired, urgency_keywords, transcript_authority_keywords, hour if isinstance(hour, int) else None
         )

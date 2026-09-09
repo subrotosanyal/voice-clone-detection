@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from app.domain.models import FusedScore, SessionSummary
+from app.domain.models import FusedScore, SessionSummary, SpeakerCallSummary
 
 
 class HistoryStorePort(Protocol):
@@ -34,4 +34,21 @@ class HistoryStorePort(Protocol):
 
     def delete_session(self, session_id: str) -> bool:
         """Returns True if the session existed and was deleted."""
+        ...
+
+    def save_speaker_summary(self, summary: SpeakerCallSummary) -> None:
+        """Persist one diarized speaker's segment_count/total_duration_ms
+        for a call — the one part of a SpeakerCallResult (see
+        Engine.diarize_and_score(), app/pipeline/engine.py) that isn't
+        re-derivable from FusedScore history alone. Called for every
+        speaker diarize_and_score() finds, on both the file-upload
+        (?diarize=true) and live "diarize on hangup" paths — see that
+        method's own docstring."""
+        ...
+
+    def list_speaker_summaries(self, base_session_id: str) -> list[SpeakerCallSummary]:
+        """Every speaker summary previously saved for one base
+        session_id, in first-seen order. Empty list if none exist (never
+        diarized, or diarization found no separable speakers) — powers
+        GET /v1/sessions/{id}/speakers."""
         ...

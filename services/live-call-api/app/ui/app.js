@@ -113,6 +113,11 @@ function renderTranscriptNote(detail) {
   const keywords = detail.urgency_keywords_from_transcript || [];
   const authorityKeywords = detail.authority_keywords_from_transcript || [];
   const financial = detail.is_financial_request_from_transcript;
+  // Live-mic path only — a naive whole-session concatenation (may repeat
+  // a phrase at cycle boundaries, see live_transcription.py's own honesty
+  // note), shown collapsed so the current rolling transcript above stays
+  // the primary thing a viewer reads.
+  const fullTranscript = detail.full_session_transcript;
   return `
     <div class="transcript-note">
       <div class="transcript-label">Transcript (auto-detected, feeds this signal)</div>
@@ -120,6 +125,12 @@ function renderTranscriptNote(detail) {
       ${keywords.length ? `<div class="transcript-tags">urgency: ${keywords.map((k) => `<span class="tag">${escapeHtml(k)}</span>`).join(" ")}</div>` : ""}
       ${authorityKeywords.length ? `<div class="transcript-tags">authority claim: ${authorityKeywords.map((k) => `<span class="tag">${escapeHtml(k)}</span>`).join(" ")}</div>` : ""}
       ${financial ? `<div class="transcript-tags"><span class="tag owner">financial request detected</span></div>` : ""}
+      ${fullTranscript && fullTranscript !== detail.transcript ? `
+        <details class="full-transcript-details">
+          <summary>Full call transcript so far (may repeat a phrase at boundaries)</summary>
+          <div class="transcript-text">"${escapeHtml(fullTranscript)}"</div>
+        </details>
+      ` : ""}
     </div>
   `;
 }

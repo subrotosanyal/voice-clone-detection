@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import threading
+import time
 
 import numpy as np
 import pytest
@@ -157,3 +159,59 @@ def test_repeated_calls_on_non_speech_audio_are_deterministic(transcriber):
     results = [transcriber.transcribe(samples, sr) for _ in range(5)]
     texts = {r.text for r in results}
     assert len(texts) == 1, f"expected identical transcript every call, got {texts}"
+
+
+class _SlowFakeModel:
+    """Stands in for the real whisper model — no network/model-download
+    dependency, fast, deterministic. Sleeps briefly inside transcribe()
+    (the same place the real REAL BUG's concurrent decode() calls
+    collided) so a concurrency test can reliably observe two calls
+    overlapping if they aren't actually serialized."""
+
+    def __init__(self) -> None:
+        self.max_concurrent = 0
+        self._current = 0
+        self._current_lock = threading.Lock()
+
+    def transcribe(self, samples, fp16, temperature):
+        with self._current_lock:
+            self._current += 1
+            self.max_concurrent = max(self.max_concurrent, self._current)
+        time.sleep(0.05)
+        with self._current_lock:
+            self._current -= 1
+        return {"text": "fake transcript", "language": "en"}
+
+
+def _transcriber_with_fake_model(model) -> WhisperTranscriber:
+    """Bypasses __init__ (no real model download) — sets up exactly what
+    transcribe() actually reads."""
+    t = WhisperTranscriber.__new__(WhisperTranscriber)
+    t.model_size = "small"
+    t.floor_rms = 1e-4
+    t._model = model
+    t._lock = threading.Lock()
+    return t
+
+
+def test_concurrent_transcribe_calls_are_serialized_not_overlapping():
+    """Regression test for a real bug found 2026-09-10 (building "diarize
+    on hangup"): two concurrent decode() calls into the SAME shared
+    Whisper model instance corrupted its kv_cache
+    (KeyError inside whisper/model.py's cross-attention) — the same class
+    of non-thread-safe-shared-model bug this project already guards
+    against for Parselmouth (app/adapters/praat_lock.py) and ECAPA-TDNN
+    (EcapaEmbeddingExtractor's own lock). Proves the fix: two threads
+    calling transcribe() at the same time never actually overlap inside
+    the model call."""
+    model = _SlowFakeModel()
+    transcriber = _transcriber_with_fake_model(model)
+    loud_samples = np.random.default_rng(0).uniform(-0.5, 0.5, size=SR).astype(np.float32)
+
+    threads = [threading.Thread(target=transcriber.transcribe, args=(loud_samples, SR)) for _ in range(4)]
+    for th in threads:
+        th.start()
+    for th in threads:
+        th.join()
+
+    assert model.max_concurrent == 1, "two transcribe() calls overlapped inside the model — not actually serialized"

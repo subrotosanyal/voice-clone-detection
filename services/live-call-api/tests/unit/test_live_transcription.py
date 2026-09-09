@@ -232,6 +232,82 @@ def test_slow_intent_classification_does_not_block_the_next_transcription_cycle(
     asyncio.run(_run())
 
 
+def test_window_start_ms_derives_elapsed_time_instead_of_assuming_hop_ms():
+    """Regression test for a real bug found 2026-09-10 (live-mic-parity
+    review): ingest() used to always assume exactly hop_ms of new audio
+    arrived per call, wrong whenever the client's actual send cadence
+    doesn't match config hop_ms (a slow tick, a backgrounded tab). Passing
+    window_start_ms derives the REAL elapsed time from consecutive deltas
+    instead — here, two calls 2x HOP_MS apart should count as 2 hops of
+    new audio, not 1."""
+    buf = LiveTranscriptionBuffer(transcriber=_FakeTranscriber(), intent_classifier=None, hop_ms=HOP_MS)
+    buf.ingest(_hop_samples(1), SR, window_start_ms=0)
+    assert buf._buffer_ms == HOP_MS  # first call: no prior reference, falls back to hop_ms
+    buf.ingest(_hop_samples(1), SR, window_start_ms=2 * HOP_MS)
+    assert buf._buffer_ms == HOP_MS + 2 * HOP_MS
+
+
+def test_window_start_ms_backward_compatible_when_omitted():
+    """Every existing caller (and every other test in this file) omits
+    window_start_ms — must reproduce the exact old fixed-hop-per-call
+    behaviour, not silently change."""
+    buf = LiveTranscriptionBuffer(transcriber=_FakeTranscriber(), intent_classifier=None, hop_ms=HOP_MS)
+    buf.ingest(_hop_samples(1), SR)
+    buf.ingest(_hop_samples(1), SR)
+    assert buf._buffer_ms == 2 * HOP_MS
+
+
+def test_window_start_ms_clamps_an_implausible_single_jump():
+    """A backgrounded tab / reconnect could report a huge single gap —
+    must not dump an unbounded amount of "new" audio into the buffer at
+    once (see _MAX_PLAUSIBLE_GAP_MULTIPLE). The clamped jump is still
+    large enough to cross _TRANSCRIBE_EVERY_MS, so this runs inside an
+    event loop like the other cycle-triggering tests."""
+
+    async def _run():
+        buf = LiveTranscriptionBuffer(transcriber=_FakeTranscriber(), intent_classifier=None, hop_ms=HOP_MS)
+        buf.ingest(_hop_samples(1), SR, window_start_ms=0)
+        buf.ingest(_hop_samples(1), SR, window_start_ms=1_000_000)  # a huge, implausible gap
+        assert buf._buffer_ms == HOP_MS + HOP_MS * 10  # clamped, not a ~1000s jump
+        if buf._transcribe_task is not None:
+            await buf._transcribe_task
+
+    asyncio.run(_run())
+
+
+def test_window_start_ms_clamps_a_negative_or_duplicate_delta_to_zero():
+    """An out-of-order or duplicate window_start_ms must not add negative
+    "new" audio or corrupt buffer accounting."""
+    buf = LiveTranscriptionBuffer(transcriber=_FakeTranscriber(), intent_classifier=None, hop_ms=HOP_MS)
+    buf.ingest(_hop_samples(1), SR, window_start_ms=1000)
+    buf.ingest(_hop_samples(1), SR, window_start_ms=500)  # goes backwards
+    assert buf._buffer_ms == HOP_MS  # the second call contributed nothing
+
+
+def test_full_session_transcript_accumulates_across_cycles():
+    """#2 Option A: a naive whole-session concatenation, for display/audit
+    only — proves it grows across cycles rather than only holding the
+    latest rolling chunk like `transcript` does."""
+
+    async def _run():
+        transcriber = _FakeTranscriber(text="first chunk")
+        buf = LiveTranscriptionBuffer(transcriber=transcriber, intent_classifier=None, hop_ms=HOP_MS)
+        hops_needed = _TRANSCRIBE_EVERY_MS // HOP_MS
+        for _ in range(hops_needed):
+            buf.ingest(_hop_samples(1), SR)
+        await buf._transcribe_task
+        assert buf.latest_context["full_session_transcript"] == "first chunk"
+
+        transcriber.text = "second chunk"
+        for _ in range(hops_needed):
+            buf.ingest(_hop_samples(1), SR)
+        await buf._transcribe_task
+        assert buf.latest_context["transcript"] == "second chunk"  # rolling: latest only
+        assert buf.latest_context["full_session_transcript"] == "first chunk second chunk"  # cumulative
+
+    asyncio.run(_run())
+
+
 def test_aclose_cancels_an_in_flight_transcription():
     async def _run():
         transcriber = _SlowFakeTranscriber()
