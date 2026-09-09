@@ -21,13 +21,14 @@
 # measured-optimal one — rebalance it once real per-shard CI timings are
 # available (see each shard's own comment for today's guess).
 #
-# `docker-compose-build`: builds the actual image `docker compose up
-# --build` would (via docker/build-push-action with GitHub Actions layer
-# caching — see that job's own comment for why plain `docker compose
-# build` couldn't use this directly without risking breaking local dev),
-# then starts the real stack and scores a real sample file through it —
-# proving the committed Dockerfile/docker-compose.yml combo still works
-# end to end, not just that `pytest` passes outside Docker.
+# `docker-compose-build`: builds the actual image `docker compose build`
+# would, then starts the real stack and scores a real sample file through
+# it — proving the committed Dockerfile/docker-compose.yml combo still
+# works end to end, not just that `pytest` passes outside Docker. See
+# that job's own 2026-09-11 REAL BUG note for why this is a PLAIN
+# `docker compose build` rather than a cached one via
+# docker/build-push-action — briefly tried, reverted with real CI
+# evidence in hand.
 name: CI
 
 on:
@@ -251,61 +252,86 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # REAL BUG found 2026-09-11: this job started failing with
-      # `buildx failed with: ... failed to copy to tar: rpc error: ...
-      # closed pipe` — a BuildKit/buildx I/O error during image export,
-      # not a Dockerfile problem. The multi-stage image here already
-      # bakes in ~2.4GB+ of models across 3 stages, and GitHub-hosted
-      # `ubuntu-latest` runners ship ~30GB of preinstalled toolchains
-      # (Android SDK, .NET, Haskell/GHC, CodeQL) this project never uses
-      # — removing them reclaims real disk before the build even starts,
-      # the standard fix for GitHub Actions runners running low on disk.
+      # REAL BUG found 2026-09-11 (first instance, same day): this job
+      # started failing with `buildx failed with: ... failed to copy to
+      # tar: rpc error: ... closed pipe` — a BuildKit/buildx I/O error
+      # during image export, not a Dockerfile problem. The multi-stage
+      # image here already bakes in ~2.4GB+ of models across 3 stages,
+      # and GitHub-hosted `ubuntu-latest` runners ship ~30GB of
+      # preinstalled toolchains (Android SDK, .NET, Haskell/GHC, CodeQL)
+      # this project never uses — removing them reclaims real disk
+      # before the build even starts, the standard fix for GitHub
+      # Actions runners running low on disk. Kept even after the
+      # buildx/GHA-cache approach below was reverted (see this job's
+      # OWN, second, 2026-09-11 REAL BUG note): cheap, still generically
+      # useful headroom for any Docker build.
       - name: Free disk space (unused preinstalled toolchains)
         run: |
           sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL || true
           df -h /
 
-      - uses: docker/setup-buildx-action@v3
-
-      # See #3 in the CI performance discussion this implements: plain
-      # `docker compose build` has NO caching at all today, rebuilding the
-      # whole multi-stage image (parselmouth's and llama-cpp-python's own
-      # from-source wheel builds, torch/torchaudio, requirements.txt, and
-      # all five model-fetch RUN steps) from scratch on every run.
-      # docker/build-push-action with GitHub Actions cache backend caches
-      # every one of those layers, keyed on their own inputs — an
-      # unchanged Dockerfile/requirements.txt run should reuse nearly all
-      # of them. Deliberately NOT done by adding `cache_from`/`cache_to:
-      # type=gha` directly to docker-compose.yml's `build:` section (the
-      # more "native" Compose way): that field requires Compose to build
-      # via `buildx bake` (COMPOSE_BAKE=true) to actually honour a `gha`
-      # backend, and the `type=gha` backend only authenticates inside a
-      # real GitHub Actions run (it needs ACTIONS_CACHE_URL/
-      # ACTIONS_RUNTIME_TOKEN) — untested locally, this risked silently
-      # changing or breaking `docker compose build`/`up --build` for every
-      # contributor, which docs/running-locally.md documents as the
-      # project's actual quickstart. Using build-push-action here instead
-      # keeps docker-compose.yml completely untouched — zero risk to local
-      # dev — at the cost of duplicating the image tag Compose would
-      # generate itself (`voice-clone-detection-live-call-api:latest`,
-      # confirmed by hand against a real local rebuild's own build log)
-      # so `docker compose up -d` below finds it already built and
-      # doesn't try to rebuild.
-      - name: Build live-call-api image (cached)
-        uses: docker/build-push-action@v6
-        with:
-          context: ./services/live-call-api
-          tags: voice-clone-detection-live-call-api:latest
-          load: true
-          cache-from: type=gha
-          # mode=max (exports every intermediate layer of all 3 build
-          # stages) was the other half of the same 2026-09-11 disk-space
-          # failure this job's "Free disk space" step above addresses —
-          # mode=min (final-image layers only) still caches the
-          # expensive parts (parselmouth/llama-cpp-python source builds,
-          # model-fetch RUN steps all land in the final stage) at a
-          # fraction of the export I/O.
-          cache-to: type=gha,mode=min
+      # REAL BUG found 2026-09-11 (second instance, same day, AFTER the
+      # disk-space fix above and a `cache-to: type=gha,mode=min` change
+      # both landed): this job started failing again — this time by
+      # exceeding its own 25-minute timeout, ONE STEP after a fully
+      # successful build + deploy + healthcheck (confirmed from a real
+      # run's log: "service is healthy" printed, then the job was
+      # cancelled before "Score a sample file" could even start).
+      #
+      # Real CI log evidence (run 34360116992) found TWO compounding,
+      # now-understood problems with the docker/build-push-action +
+      # `type=gha` cache approach this job used to use:
+      #
+      # 1. mode=min was the WRONG fix for the disk-space problem above:
+      #    it only exports layers that land in the FINAL image — but
+      #    this Dockerfile's two most expensive steps, the
+      #    parselmouth-builder and llm-builder stages' own from-source
+      #    wheel compiles, are BUILDER-STAGE-ONLY layers (their layers
+      #    are discarded; only the OUTPUT wheel files get
+      #    `COPY --from=`'d into the final stage). mode=min never cached
+      #    them, so EVERY run recompiled llama-cpp-python from source —
+      #    measured at 396s (6.6 minutes) in that log, right alongside
+      #    parselmouth's own from-source build. The comment this
+      #    replaced claimed those builds "land in the final stage" —
+      #    that was WRONG; only their output artifacts do, not the
+      #    compile steps' own cacheable layers.
+      # 2. Independent of caching mode entirely: `docker/build-push-
+      #    action` with `load: true` on the ISOLATED `docker-container`
+      #    buildx builder (the driver `docker/setup-buildx-action` sets
+      #    up) must export the ENTIRE built image — multi-GB, given the
+      #    5 baked-in models — to a tarball and re-import it into the
+      #    local Docker daemon before `docker compose up -d` can use it.
+      #    Measured at ~14 minutes (`exporting layers` + `sending
+      #    tarball` + `importing to docker`) in that same run,
+      #    REGARDLESS of whether anything else cache-hit. This tax is
+      #    structural to using a remote/isolated builder + `load: true`
+      #    — no cache-mode tweak fixes it.
+      #
+      # Combined: a from-scratch build (#1's lost ~7 minutes) plus the
+      # ~14-minute hand-off tax (#2), stacked on top of the rest of the
+      # build, landed at ~24.5 minutes total — just past the finish line
+      # of the 25-minute budget.
+      #
+      # FIX: dropped buildx/GHA-cache entirely for this job, back to a
+      # PLAIN `docker compose build`. Modern Docker still uses BuildKit
+      # under the hood by default even without an explicit `docker
+      # buildx` builder, so the multi-stage Dockerfile itself is
+      # unaffected — but the default driver builds directly into the
+      # local daemon's own image store, with no separate builder
+      # process and therefore no export/import hand-off to pay at all.
+      # Trade-off, accepted deliberately: every run now pays the FULL
+      # from-scratch build cost — no cross-run layer caching. Measured
+      # against that same log's own timestamps, that's ~10-11 minutes
+      # of build compute (including the llama-cpp-python/parselmouth
+      # compiles) + ~1 minute for the 5 model fetches + ~1-2 minutes for
+      # up/healthcheck/score — a consistent ~13-14 minutes EVERY run,
+      # comfortably under the 25-minute budget, and actually FASTER than
+      # the cached approach's own worst case (~24.5min) or even its best
+      # plausible case (a full cache hit would still pay the ~14min
+      # export/import tax alone). Simpler too: two fewer external
+      # actions, no cache-mode trade-off left to keep re-litigating.
+      - name: Build live-call-api image
+        run: docker compose build
 
       - name: docker compose up
         run: docker compose up -d
