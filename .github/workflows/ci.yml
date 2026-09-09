@@ -2,8 +2,9 @@
 # docs/running-locally.md for what these jobs mirror locally.
 #
 # `test-unit`: `pytest tests/unit -v` — the FAST job, gates every PR.
-# `test-integration`: `pytest tests/integration -v` — the SLOW job, split
-# out 2026-09-10 after a real CI run got CANCELLED at the previous
+# `test-integration`: `pytest tests/integration -v`, SHARDED across 4
+# matrix jobs (2026-09-10) — the SLOW job, split out from a single "test"
+# job on 2026-09-10 after a real CI run got CANCELLED at the previous
 # 45-minute timeout having completed only 8 of 187 tests (see
 # docs/testing.md's "Continuous integration" section for the full honest
 # accounting): every one of the 25+ `with TestClient(app) as client:`
@@ -14,13 +15,19 @@
 # tests mostly use fakes/mocks for exactly this reason, and the handful
 # that DO load a real model do so via a session-scoped fixture (loaded
 # once for the whole run, not once per test) — genuinely a different cost
-# class, which is why this split is drawn at the tests/unit vs.
-# tests/integration boundary rather than by individual test file.
+# class, which is why the fast/slow split is drawn at the tests/unit vs.
+# tests/integration boundary rather than by individual test file. The
+# shard grouping below is a reasonable first split by test COUNT, not a
+# measured-optimal one — rebalance it once real per-shard CI timings are
+# available (see each shard's own comment for today's guess).
 #
 # `docker-compose-build`: builds the actual image `docker compose up
-# --build` would, then starts the real stack and scores a real sample file
-# through it — proving the committed Dockerfile/docker-compose.yml combo
-# still works end to end, not just that `pytest` passes outside Docker.
+# --build` would (via docker/build-push-action with GitHub Actions layer
+# caching — see that job's own comment for why plain `docker compose
+# build` couldn't use this directly without risking breaking local dev),
+# then starts the real stack and scores a real sample file through it —
+# proving the committed Dockerfile/docker-compose.yml combo still works
+# end to end, not just that `pytest` passes outside Docker.
 name: CI
 
 on:
@@ -81,10 +88,11 @@ jobs:
       # ~2.4GB Phi-3-mini semantic-risk LLM: that one's own real-model
       # tests (test_local_llm_semantic_classifier.py's `real_classifier`
       # fixture) are the only unit tests that need it, and this job
-      # deliberately doesn't pay that ~10min llama-cpp-python build +
-      # ~2.4GB download cost — those specific tests skip here and run for
-      # real in test-integration below, which already needs the full
-      # model set anyway.
+      # deliberately doesn't pay that ~6min llama-cpp-python build + ~6min
+      # download cost — those specific tests skip here (see that
+      # fixture's own REAL BUG note — it used to error instead of
+      # skipping cleanly, fixed 2026-09-10) and run for real in
+      # test-integration below, which already needs the full model set.
       - name: Cache pretrained models
         uses: actions/cache@v4
         with:
@@ -99,14 +107,27 @@ jobs:
         run: pytest tests/unit -v
 
   test-integration:
+    # Sharded 2026-09-10 (see this file's own top-of-file note for why,
+    # and #5 in the CI performance discussion this implements). GitHub
+    # auto-suffixes the job name with the matrix value, e.g. "Run
+    # integration tests (slow) (api-and-ui)".
     name: Run integration tests (slow)
     runs-on: ubuntu-latest
-    # NOT a tight bound: observed ~3-4 real minutes PER TEST on a
-    # GitHub-hosted runner (see this file's own top-of-file note and
-    # docs/testing.md's "Continuous integration" section) across 25+
-    # tests that each reload five real models via a fresh TestClient(app).
-    # Generous headroom over that, not a guess.
-    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        # Grouped by test COUNT for a roughly even first split (27 tests
+        # / 4 shards), not by measured per-file timing — rebalance once
+        # real shard durations are visible in the Actions UI. Add a new
+        # test file's name to whichever shard's `case` arm below it
+        # semantically belongs with, or start a new shard if one group
+        # gets consistently slow.
+        shard: [api-and-ui, diarization-and-enrollment, history-and-live-transcription, live-diarization]
+    # Scaled down from the old single-job 150min (sized for all 27 tests
+    # sequentially) now that each shard only runs ~7 tests — generous
+    # headroom over the ~3-4 real min/test previously observed, not a
+    # tight bound.
+    timeout-minutes: 60
     defaults:
       run:
         working-directory: services/live-call-api
@@ -125,8 +146,31 @@ jobs:
       - name: Install CPU-only torch/torchaudio
         run: pip install torch==2.11.0+cpu torchaudio==2.11.0+cpu --index-url https://download.pytorch.org/whl/cpu
 
+      # See #2 in the CI performance discussion this implements: plain
+      # `pip install` for llama-cpp-python (part of requirements-dev.txt
+      # below) BUILDS IT FROM SOURCE — measured at 6m18s in a real CI run
+      # (no prebuilt wheel resolves for this Python/OS combo). Building it
+      # ONCE into a wheelhouse dir, cached by a hash of the requirement
+      # files, means `pip install --find-links wheelhouse` below reuses
+      # the cached wheel instead of recompiling whenever requirements
+      # haven't changed. Shared across all 4 shards via the same cache
+      # key — on a cold cache (a real dependency bump) all 4 will each
+      # independently pay the build cost once in parallel, a real but
+      # rare and accepted trade-off against the complexity of a separate
+      # coordinating "prepare" job just to avoid that.
+      - name: Cache built wheels (llama-cpp-python)
+        id: wheel-cache
+        uses: actions/cache@v4
+        with:
+          path: services/live-call-api/wheelhouse
+          key: satya-vani-wheelhouse-${{ runner.os }}-py3.12-${{ hashFiles('services/live-call-api/requirements-dev.txt', 'services/live-call-api/requirements.txt') }}
+
+      - name: Build llama-cpp-python wheel (cache miss only)
+        if: steps.wheel-cache.outputs.cache-hit != 'true'
+        run: pip wheel --no-cache-dir --wheel-dir wheelhouse llama-cpp-python==0.3.35
+
       - name: Install Python dependencies
-        run: pip install -r requirements-dev.txt
+        run: pip install --find-links wheelhouse -r requirements-dev.txt
 
       # AASIST checkpoint, ECAPA-TDNN, Whisper "small", and the intent
       # classifier — the same real, checksum-or-source-verified,
@@ -134,7 +178,8 @@ jobs:
       # fixtures fetching on first run. Cached here so only the first CI
       # run after this workflow is added (or a model version bump) pays
       # the download cost; bump the cache key below if a model URL/
-      # version ever changes.
+      # version ever changes. Shared across all 4 shards, same reasoning
+      # as the wheel cache above.
       - name: Cache pretrained models
         uses: actions/cache@v4
         with:
@@ -156,18 +201,34 @@ jobs:
       # classification:` section means EVERY test that spins up a real
       # TestClient(app) and produces a transcript unconditionally tries
       # to load this model via Engine.score_call() -- with no test
-      # explicitly fetching it first. tests/integration/ sorts before
-      # tests/unit/ alphabetically, so integration tests hit the missing
-      # file before test_local_llm_semantic_classifier.py's own fixture
-      # ever got a chance to download it -- 9 failed with "ValueError:
-      # Model path does not exist" in the CI run that surfaced this.
-      # Fetching explicitly here, before any test runs, same as the
-      # Dockerfile's own build-time fetch step.
+      # explicitly fetching it first. Fetching explicitly here, before any
+      # test runs, same as the Dockerfile's own build-time fetch step.
       - name: Fetch local LLM model (Phi-3-mini)
         run: python app/adapters/semantic_risk/fetch_llm_model.py
 
-      - name: Run integration tests
-        run: pytest tests/integration -v
+      # Explicit case arms rather than a lookup table — keeps the file ->
+      # shard mapping visible in one place without a second config file.
+      # Each `tests/integration/*.py` file must appear in EXACTLY one arm
+      # below; a file added to the suite but missing here silently never
+      # runs in CI — there's no automated check for that yet.
+      - name: Run integration tests (shard ${{ matrix.shard }})
+        run: |
+          case "${{ matrix.shard }}" in
+            api-and-ui)
+              FILES="test_api_score_file.py test_transcription_api.py" ;;
+            diarization-and-enrollment)
+              FILES="test_diarization_api.py test_enrollment_api.py" ;;
+            history-and-live-transcription)
+              FILES="test_history_api.py test_ui_served.py test_live_transcription_ws.py" ;;
+            live-diarization)
+              FILES="test_live_diarization_ws.py test_live_diarize_on_hangup_ws.py test_live_per_speaker_fusion_ws.py" ;;
+            *)
+              echo "unknown shard: ${{ matrix.shard }}" >&2
+              exit 1 ;;
+          esac
+          ARGS=""
+          for f in $FILES; do ARGS="$ARGS tests/integration/$f"; done
+          pytest $ARGS -v
 
   docker-compose-build:
     name: Verify docker compose build
@@ -176,8 +237,40 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: docker compose build
-        run: docker compose build
+      - uses: docker/setup-buildx-action@v3
+
+      # See #3 in the CI performance discussion this implements: plain
+      # `docker compose build` has NO caching at all today, rebuilding the
+      # whole multi-stage image (parselmouth's and llama-cpp-python's own
+      # from-source wheel builds, torch/torchaudio, requirements.txt, and
+      # all five model-fetch RUN steps) from scratch on every run.
+      # docker/build-push-action with GitHub Actions cache backend caches
+      # every one of those layers, keyed on their own inputs — an
+      # unchanged Dockerfile/requirements.txt run should reuse nearly all
+      # of them. Deliberately NOT done by adding `cache_from`/`cache_to:
+      # type=gha` directly to docker-compose.yml's `build:` section (the
+      # more "native" Compose way): that field requires Compose to build
+      # via `buildx bake` (COMPOSE_BAKE=true) to actually honour a `gha`
+      # backend, and the `type=gha` backend only authenticates inside a
+      # real GitHub Actions run (it needs ACTIONS_CACHE_URL/
+      # ACTIONS_RUNTIME_TOKEN) — untested locally, this risked silently
+      # changing or breaking `docker compose build`/`up --build` for every
+      # contributor, which docs/running-locally.md documents as the
+      # project's actual quickstart. Using build-push-action here instead
+      # keeps docker-compose.yml completely untouched — zero risk to local
+      # dev — at the cost of duplicating the image tag Compose would
+      # generate itself (`voice-clone-detection-live-call-api:latest`,
+      # confirmed by hand against a real local rebuild's own build log)
+      # so `docker compose up -d` below finds it already built and
+      # doesn't try to rebuild.
+      - name: Build live-call-api image (cached)
+        uses: docker/build-push-action@v6
+        with:
+          context: ./services/live-call-api
+          tags: voice-clone-detection-live-call-api:latest
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       - name: docker compose up
         run: docker compose up -d
