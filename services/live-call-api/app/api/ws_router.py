@@ -69,6 +69,27 @@ immediately would need to send a graceful "done" message and wait before
 actually closing its end, not implemented here). Best-effort: any failure
 here is logged, never raised — a live call's real-time scoring must never
 be retroactively "broken" by a hangup-time failure.
+
+REAL BUG found 2026-09-11 (CI): the detached task from the note above
+solved the CancelledError problem but introduced a resource-boundedness
+one — it's genuinely fire-and-forget, with no cap on how many can run
+their (expensive: AASIST + ECAPA + Whisper + Perth, per speaker) real
+model inference at once. A GitHub Actions run doing many WS hangups in
+quick succession (this project's own live-diarization integration test
+shard) piled several of these up concurrently, exhausting the runner's
+disk (observed: "Free space left: 91 MB") and ending in a native abort
+(SIGABRT, exit 134) roughly 3 minutes after pytest's own visible tests
+had already finished and reported results — the background tasks were
+still running behind pytest's back. Two fixes, both below:
+`_HANGUP_DIARIZE_SEMAPHORE` bounds how many run their heavy work at
+once (real concurrency control, not just a timeout — a Python thread
+handed to run_in_threadpool can't be forcibly cancelled once started,
+so a timeout alone only stops US from waiting on it, not the thread
+itself from continuing to consume resources); `drain_pending_hangup_
+diarizations()` is awaited (bounded) by app/main.py's lifespan shutdown
+so tasks from one test's WS session are actually finished (or given up
+on) before the NEXT test's `with TestClient(app)` block starts, instead
+of silently continuing to compete for CPU/disk with it.
 """
 from __future__ import annotations
 
@@ -203,6 +224,25 @@ async def stream(websocket: WebSocket, session_id: str) -> None:
 # above for why this can't just be awaited inline in the WS handler.
 _pending_hangup_diarizations: set = set()
 
+# See this module's 2026-09-11 REAL BUG note above. A conservative
+# default, not a measured-optimal one — each permit covers one full
+# diarize_and_score() call (AASIST + ECAPA + Whisper + Perth per
+# speaker), so even 2 concurrent ones is real CPU/memory/disk pressure;
+# rebalance only with real production concurrency numbers in hand.
+_HANGUP_DIARIZE_MAX_CONCURRENT = 2
+_hangup_diarize_semaphore = asyncio.Semaphore(_HANGUP_DIARIZE_MAX_CONCURRENT)
+
+# Bounds how long a single hangup diarization is WAITED on before its
+# semaphore permit is released to unblock others queued behind it — see
+# the REAL BUG note above for why this can't actually stop the
+# underlying thread, only stop us from holding a permit for it forever.
+_HANGUP_DIARIZE_TIMEOUT_S = 120.0
+
+# How long app shutdown (app/main.py's lifespan) waits for in-flight
+# hangup diarizations to finish before giving up and returning anyway —
+# see drain_pending_hangup_diarizations() below.
+_HANGUP_DRAIN_TIMEOUT_S = 30.0
+
 
 def _schedule_diarize_on_hangup(
     engine, session_id: str, session_recorder: "LiveSessionRecorder", context: dict
@@ -210,6 +250,31 @@ def _schedule_diarize_on_hangup(
     task = asyncio.create_task(_diarize_on_hangup(engine, session_id, session_recorder, context))
     _pending_hangup_diarizations.add(task)
     task.add_done_callback(_pending_hangup_diarizations.discard)
+
+
+async def drain_pending_hangup_diarizations(timeout_s: float = _HANGUP_DRAIN_TIMEOUT_S) -> None:
+    """Awaited by app/main.py's lifespan on shutdown. Bounded, not
+    indefinite: a genuinely stuck task must not hang shutdown forever
+    (a real production concern, not just a test one) — any task still
+    running past the timeout is left to finish on its own (its thread
+    can't be forcibly cancelled anyway, see this module's own REAL BUG
+    note) and just logged, not waited on further. Without this, these
+    fire-and-forget tasks silently outlive the "app" they were scheduled
+    under — in this project's own integration test suite, where many
+    `with TestClient(app) as client:` blocks reuse the SAME process
+    (and therefore the same module-level state here) across tests, that
+    let hangup work from an EARLIER test keep running concurrently with
+    a LATER one, competing for the same limited CI runner resources."""
+    if not _pending_hangup_diarizations:
+        return
+    pending = list(_pending_hangup_diarizations)
+    _, still_pending = await asyncio.wait(pending, timeout=timeout_s)
+    if still_pending:
+        logger.warning(
+            "hangup_diarizations_still_pending_at_shutdown",
+            count=len(still_pending),
+            timeout_s=timeout_s,
+        )
 
 
 def _build_hangup_context(latest_context: dict) -> dict:
@@ -241,19 +306,36 @@ async def _diarize_on_hangup(
     full_audio = session_recorder.get_full_audio()
     if full_audio is None or session_recorder.sample_rate is None:
         return
-    try:
-        speaker_results = await run_in_threadpool(
-            engine.diarize_and_score,
-            diarizer=diarizer,
-            base_session_id=session_id,
-            samples=full_audio,
-            sample_rate=session_recorder.sample_rate,
-            context=context,
-        )
-        logger.info(
-            "live_diarize_on_hangup_complete",
-            session_id=session_id,
-            speaker_count=len(speaker_results),
-        )
-    except Exception:  # noqa: BLE001 — best-effort, see this function's own docstring
-        logger.exception("live_diarize_on_hangup_failed", session_id=session_id)
+    # See this module's 2026-09-11 REAL BUG note: bounds how many of
+    # these run their real model inference at once, regardless of how
+    # many WS sessions hang up close together.
+    async with _hangup_diarize_semaphore:
+        try:
+            speaker_results = await asyncio.wait_for(
+                run_in_threadpool(
+                    engine.diarize_and_score,
+                    diarizer=diarizer,
+                    base_session_id=session_id,
+                    samples=full_audio,
+                    sample_rate=session_recorder.sample_rate,
+                    context=context,
+                ),
+                timeout=_HANGUP_DIARIZE_TIMEOUT_S,
+            )
+            logger.info(
+                "live_diarize_on_hangup_complete",
+                session_id=session_id,
+                speaker_count=len(speaker_results),
+            )
+        except TimeoutError:
+            # The permit is released here even though the underlying
+            # threadpool thread may still be running to completion in
+            # the background — Python threads can't be forcibly killed.
+            # This only bounds how long OTHER queued hangups wait on us.
+            logger.error(
+                "live_diarize_on_hangup_timed_out",
+                session_id=session_id,
+                timeout_s=_HANGUP_DIARIZE_TIMEOUT_S,
+            )
+        except Exception:  # noqa: BLE001 — best-effort, see this function's own docstring
+            logger.exception("live_diarize_on_hangup_failed", session_id=session_id)

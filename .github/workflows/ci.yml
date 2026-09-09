@@ -134,6 +134,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # See docker-compose-build's own "Free disk space" step for the
+      # full rationale — added here too because the live-diarization
+      # shard is the one that actually hit it: a real CI run (2026-09-11)
+      # SIGABRT'd (exit 134) ~3 minutes after pytest's own tests had
+      # already finished, coinciding with a runner disk-space warning
+      # ("Free space left: 91 MB"). See app/api/ws_router.py's own
+      # 2026-09-11 REAL BUG note for the other, complementary half of
+      # this fix (bounding the background hangup-diarization work
+      # itself, not just freeing more disk for it to spend).
+      - name: Free disk space (unused preinstalled toolchains)
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          df -h /
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -237,6 +251,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # REAL BUG found 2026-09-11: this job started failing with
+      # `buildx failed with: ... failed to copy to tar: rpc error: ...
+      # closed pipe` — a BuildKit/buildx I/O error during image export,
+      # not a Dockerfile problem. The multi-stage image here already
+      # bakes in ~2.4GB+ of models across 3 stages, and GitHub-hosted
+      # `ubuntu-latest` runners ship ~30GB of preinstalled toolchains
+      # (Android SDK, .NET, Haskell/GHC, CodeQL) this project never uses
+      # — removing them reclaims real disk before the build even starts,
+      # the standard fix for GitHub Actions runners running low on disk.
+      - name: Free disk space (unused preinstalled toolchains)
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          df -h /
+
       - uses: docker/setup-buildx-action@v3
 
       # See #3 in the CI performance discussion this implements: plain
@@ -270,7 +298,14 @@ jobs:
           tags: voice-clone-detection-live-call-api:latest
           load: true
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # mode=max (exports every intermediate layer of all 3 build
+          # stages) was the other half of the same 2026-09-11 disk-space
+          # failure this job's "Free disk space" step above addresses —
+          # mode=min (final-image layers only) still caches the
+          # expensive parts (parselmouth/llama-cpp-python source builds,
+          # model-fetch RUN steps all land in the final stage) at a
+          # fraction of the export I/O.
+          cache-to: type=gha,mode=min
 
       - name: docker compose up
         run: docker compose up -d
