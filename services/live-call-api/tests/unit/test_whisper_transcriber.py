@@ -88,6 +88,33 @@ def test_result_carries_detector_identity(transcriber):
     assert result.detector_version == "whisper-small"
 
 
+def test_abstains_instead_of_crashing_on_a_very_short_window(transcriber):
+    """Regression test for a real bug found 2026-09-09 (via dogfooding real
+    external audio — IndieFake Dataset's public demo clips — through the
+    deployed service): a very short window crashed the WHOLE request with an
+    uncaught `RuntimeError: cannot reshape tensor of 0 elements into shape
+    [1, 0, 12, -1] because the unspecified dimension size -1 can be any
+    value and is ambiguous` inside whisper/model.py's
+    MultiHeadAttention.qkv_attention — an actual HTTP 500, not a graceful
+    abstain. A window this short is not a contrived edge case: windowing.py's
+    own docstring documents that the final window of any file "is still
+    yielded" even when shorter than the configured window length, which
+    happens for ANY file whose duration isn't an exact multiple of the hop
+    length. Loud (not silent) so this exercises the NEW length guard
+    specifically, not the existing near-silence one above. Same pattern as
+    test_perth_watermark.py's counterpart regression test for the same class
+    of bug in PerthWatermarkDetector."""
+    # 600 samples at 16kHz = 37.5ms — within the 300-900 sample range
+    # observed to trigger the crash, and below this module's own
+    # _MIN_DURATION_S (100ms) guard.
+    short_loud = np.random.default_rng(0).uniform(-0.5, 0.5, size=600).astype(np.float32)
+
+    result = transcriber.transcribe(short_loud, SR)
+
+    assert result.text == ""
+    assert result.language is None
+
+
 def test_repeated_calls_on_non_speech_audio_are_deterministic(transcriber):
     """Regression test for a real intermittent bug found 2026-09-08: without
     a fixed temperature, Whisper's default fallback-to-sampling behaviour on

@@ -49,6 +49,28 @@ low-confidence greedy pass on real difficult audio (it will no longer
 retry at higher temperature), but reproducibility is the higher-priority
 guarantee for a system whose whole design point is explainable, replay-
 identical scoring — see docs/risk-model.md's "Reproducibility" section.
+
+REAL BUG found and fixed 2026-09-09, via dogfooding real external audio
+(IndieFake Dataset's public demo clips) through the deployed service:
+a very short window crashed the WHOLE request with an uncaught
+`RuntimeError: cannot reshape tensor of 0 elements into shape
+[1, 0, 12, -1] because the unspecified dimension size -1 can be any
+value and is ambiguous` inside whisper/model.py's
+MultiHeadAttention.qkv_attention — not abstained, an actual HTTP 500.
+The "12" in that shape is this project's "small" model's attention head
+count, and the "0" is a zero-length context dimension: some internal
+Whisper framing step (mel/STFT windowing, or a segment slice inside its
+own `transcribe()` seek loop) produced a zero-frame sequence for a
+too-short input, which cascades into that ambiguous reshape once it
+reaches attention. Same class of bug as the one already fixed in
+app/adapters/detectors/perth_watermark.py (see its own "REAL BUG found
+and fixed 2026-09-09" docstring note) — a real trailing partial window
+from windowing.py "is still yielded" even when much shorter than the
+configured window length, which is a normal occurrence whenever a
+file's duration isn't an exact multiple of the hop length, not a
+contrived edge case. Fixed the same way: abstain instead of crashing,
+with a conservative safety margin above the ~20-60ms window lengths
+observed to trigger it.
 """
 from __future__ import annotations
 
@@ -60,6 +82,14 @@ from app.domain.models import TranscriptResult
 
 _MODEL_SAMPLE_RATE = 16_000
 _DOWNLOAD_ROOT = "app/adapters/transcription/.cache"
+
+# See the REAL BUG docstring note above: a window this short can hit a
+# zero-frame sequence somewhere inside Whisper's own framing, which
+# crashes attention's reshape rather than producing an empty transcript.
+# 100ms is a conservative safety margin above the ~20-60ms window
+# lengths observed to trigger it — comfortably below any window length
+# that could carry a recognisable word, so nothing usable is lost.
+_MIN_DURATION_S = 0.1
 
 
 class WhisperTranscriber:
@@ -76,6 +106,14 @@ class WhisperTranscriber:
     def transcribe(self, samples: np.ndarray, sample_rate: int) -> TranscriptResult:
         rms = float(np.sqrt(np.mean(np.square(samples)))) if samples.size else 0.0
         if rms < self.floor_rms:
+            return TranscriptResult(text="", language=None, detector_name=self.name, detector_version=self.version)
+
+        duration_s = samples.size / sample_rate if sample_rate else 0.0
+        if duration_s < _MIN_DURATION_S:
+            # See the REAL BUG note above the class docstring: Whisper's own
+            # framing crashes (uncaught RuntimeError, an actual HTTP 500) on
+            # a window this short — this is not hypothetical, a real
+            # trailing partial window from windowing.py triggered it.
             return TranscriptResult(text="", language=None, detector_name=self.name, detector_version=self.version)
 
         if sample_rate != _MODEL_SAMPLE_RATE:
