@@ -64,6 +64,7 @@ from fastapi.concurrency import run_in_threadpool
 
 from app.logging_setup import get_logger
 from app.ports.intent_classifier import IntentClassifierPort
+from app.ports.semantic_risk_classifier import SemanticRiskClassifierPort
 from app.ports.transcriber import TranscriberPort
 
 logger = get_logger(component="live_transcription")
@@ -85,21 +86,26 @@ class LiveTranscriptionBuffer:
         transcriber: Optional[TranscriberPort],
         intent_classifier: Optional[IntentClassifierPort],
         hop_ms: int,
+        semantic_risk_classifier: Optional[SemanticRiskClassifierPort] = None,
     ) -> None:
         self._transcriber = transcriber
         self._intent_classifier = intent_classifier
+        self._semantic_risk_classifier = semantic_risk_classifier
         self._hop_ms = hop_ms
         self._buffer: list[np.ndarray] = []
         self._buffer_ms = 0
         self._new_ms_since_transcription = 0
-        # Two INDEPENDENT tasks, not one — see the REAL BUG note above the
-        # class docstring for why: intent classification (~5s measured
-        # inside the real container) used to run inside the same task as
-        # transcription, so a slow intent classification blocked the next
-        # transcription cycle from starting. Now each has its own
-        # already-running guard.
+        # THREE independent tasks, not one — see the REAL BUG note above
+        # the class docstring for why: intent classification (~5s
+        # measured inside the real container) used to run inside the
+        # same task as transcription, so a slow intent classification
+        # blocked the next transcription cycle from starting. Same
+        # reasoning extends to semantic risk classification (~1-1.5s CPU,
+        # see local_llm_semantic_classifier.py) — each has its own
+        # already-running guard, so a slow one never blocks the others.
         self._transcribe_task: Optional[asyncio.Task] = None
         self._intent_task: Optional[asyncio.Task] = None
+        self._semantic_task: Optional[asyncio.Task] = None
         self.latest_context: dict[str, Any] = {}
 
     def ingest(self, samples: np.ndarray, sample_rate: int) -> None:
@@ -158,6 +164,11 @@ class LiveTranscriptionBuffer:
             if not intent_already_running:
                 self._intent_task = asyncio.create_task(self._classify_intent(result.text))
 
+        if self._semantic_risk_classifier is not None:
+            semantic_already_running = self._semantic_task is not None and not self._semantic_task.done()
+            if not semantic_already_running:
+                self._semantic_task = asyncio.create_task(self._analyze_semantic_risk(result.text))
+
     async def _classify_intent(self, text: str) -> None:
         try:
             intent_result = await run_in_threadpool(self._intent_classifier.classify, text)
@@ -178,12 +189,36 @@ class LiveTranscriptionBuffer:
             "intent_label_scores": intent_result.label_scores,
         }
 
+    async def _analyze_semantic_risk(self, text: str) -> None:
+        try:
+            semantic_result = await run_in_threadpool(self._semantic_risk_classifier.analyze, text)
+        except Exception:  # noqa: BLE001 — best-effort, must never break live scoring
+            logger.exception("live_semantic_risk_analysis_failed")
+            return
+
+        logger.info(
+            "live_semantic_risk_analyzed",
+            detector_name=semantic_result.detector_name,
+            urgency_level=semantic_result.urgency_level,
+            financial_solicitation=semantic_result.financial_solicitation,
+            authority_claim=semantic_result.authority_claim,
+            isolation_request=semantic_result.isolation_request,
+        )
+        self.latest_context = {
+            **self.latest_context,
+            "semantic_urgency_level": semantic_result.urgency_level,
+            "semantic_financial_solicitation": semantic_result.financial_solicitation,
+            "semantic_authority_claim": semantic_result.authority_claim,
+            "semantic_isolation_request": semantic_result.isolation_request,
+            "semantic_reasoning": semantic_result.reasoning,
+        }
+
     async def aclose(self) -> None:
         """Call when the WebSocket session ends, so an in-flight
-        transcription/intent classification doesn't keep running (and
-        logging) after the client that would have used its result is
-        already gone."""
-        for task in (self._transcribe_task, self._intent_task):
+        transcription/intent classification/semantic analysis doesn't
+        keep running (and logging) after the client that would have used
+        its result is already gone."""
+        for task in (self._transcribe_task, self._intent_task, self._semantic_task):
             if task is not None and not task.done():
                 task.cancel()
                 try:

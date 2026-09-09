@@ -14,6 +14,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 RUN pip wheel --no-cache-dir --wheel-dir /wheels praat-parselmouth==0.4.7
 
+# llama-cpp-python (app/adapters/semantic_risk/local_llm_semantic_classifier.py)
+# compiles llama.cpp's C++ core at install time — same "no prebuilt wheel
+# for this arch" situation as Parselmouth above, same fix: a dedicated
+# builder stage with the compiler toolchain, so the final image below
+# still never installs one. Reuses build-essential/cmake/ninja-build
+# already installed in the stage above.
+FROM parselmouth-builder AS llm-builder
+RUN pip wheel --no-cache-dir --wheel-dir /llm-wheels llama-cpp-python==0.3.35
+
 
 FROM python:3.12-slim
 
@@ -32,6 +41,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends libsndfile1 \
 # torch/torchaudio pre-install right after this.
 COPY --from=parselmouth-builder /wheels /wheels
 RUN pip install --no-cache-dir /wheels/praat_parselmouth-*.whl
+
+# Same reasoning, for llama-cpp-python's wheel (see the llm-builder stage
+# above).
+COPY --from=llm-builder /llm-wheels /llm-wheels
+RUN pip install --no-cache-dir /llm-wheels/llama_cpp_python-*.whl
 
 # torch + torchaudio next, from PyTorch's own CPU-only wheel index — plain
 # `pip install torch` on linux resolves the CUDA-bundled build, which drags
@@ -83,6 +97,11 @@ RUN python app/adapters/transcription/fetch_whisper_model.py
 # `intent` detector is enabled — see that config's own comment for the
 # known calibration caveat this signal carries.
 RUN python app/adapters/intent/fetch_intent_model.py
+
+# Same reasoning for the local semantic-risk LLM (Microsoft's Phi-3-mini
+# GGUF) — see app/adapters/semantic_risk/fetch_llm_model.py. No
+# `app.*` imports in that script, plain script path works.
+RUN python app/adapters/semantic_risk/fetch_llm_model.py
 
 ENV PYTHONUNBUFFERED=1
 EXPOSE 8000

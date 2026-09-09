@@ -13,6 +13,7 @@ const COMPONENT_LABEL = {
   intent: "Intent (zero-shot)",
   perth_watermark: "Watermark check",
   phase_incoherence: "Phase coherence",
+  semantic_risk: "Semantic risk (local LLM)",
 };
 const GAUGE_CIRCUMFERENCE = 2 * Math.PI * 62;
 
@@ -24,6 +25,7 @@ const COMPONENT_HELP = {
   intent: "Scores the TRANSCRIPT (not the audio) against fraud-relevant candidate labels — 'requesting a money transfer', 'requesting an OTP/PIN', 'impersonating a bank or government official', 'creating urgency', or 'ordinary conversation' — using a zero-shot language model, not exact keyword matching like Third signal. KNOWN LIMITATION: testing found it sometimes misjudges completely ordinary conversation as suspicious — the breakdown below shows every candidate's own score, not just the winner, specifically so you can sanity-check it rather than trust one number blindly. Weighted low in the overall score for that reason. Abstains with no transcript.",
   perth_watermark: "Checks for a specific neural fingerprint (the 'Perth' watermark) that Chatterbox and other Resemble AI-based voice-cloning tools embed in every clip they generate — a narrow but high-confidence check, not a general spoof detector. Higher % = this specific fingerprint was found. NARROW SCOPE: it only catches tools that use this watermark — a low score here does NOT mean the audio is genuine, it just means this one fingerprint wasn't found; see Acoustic for general-purpose spoof detection. Known false-positive on non-speech audio like a pure tone.",
   phase_incoherence: "Checks how consistent the audio's frequency PHASE is from one instant to the next — AI voice generators tend to reconstruct a cleaner, more mathematically 'tidy' phase than a real human voice, which is a noisier physical process. Higher % = unusually phase-coherent for genuine speech. KNOWN LIMITATION: this is a moderate signal against XTTS-v2-style cloning but a much stronger one against Chatterbox-style cloning — testing found it genuinely weaker against some cloning tools than others, so treat a low score here as 'no strong phase evidence', not 'definitely genuine'. Weighted lowest of the acoustic checks for that reason. A real, deterministic measurement (like Prosodic), not a trained classifier like Acoustic.",
+  semantic_risk: "Reads the TRANSCRIPT through a small language model running locally (no cloud call) — asked to directly judge the conversation for manufactured urgency, financial requests, claimed authority, or a request not to hang up/tell anyone, rather than scoring fixed labels like Intent does. Runs ALONGSIDE Intent, not in place of it: testing found it correctly handles an ordinary sentence Intent misjudges as suspicious, and correctly flags real scam scripts including the 'don't hang up' tactic neither Intent nor Third signal's keyword rules currently catch. Still only verified on a handful of examples, not a large held-out evaluation. Abstains with no transcript.",
 };
 const BAND_HELP = {
   low: "LOW risk (score 0–34): nothing here looks suspicious across the signals that ran. Recommended action: no special handling needed.",
@@ -88,6 +90,15 @@ const HIW_DETECTOR_INFO = {
       "Unusually phase-coherent audio raises the score.",
     ],
     caveat: "Meaningfully weaker against some cloning tools (XTTS-v2) than others (Chatterbox) — weighted lowest of the acoustic-family signals for that reason.",
+  },
+  semantic_risk: {
+    kind: "🧠 Local generative language model — Phi-3-mini (runs on-device, no cloud call)",
+    steps: [
+      "The call transcript is read by a small, local LLM asked to judge it directly against explicit criteria, rather than scoring fixed candidate labels.",
+      "Returns a manufactured-urgency level, plus whether it found a financial request, a claimed authority, or a request not to hang up / tell anyone.",
+      "The risk score is the strongest of those signals — any one on its own can raise it, not just a combination.",
+    ],
+    caveat: "Runs alongside the intent detector above, not in place of it — verified by hand on a handful of examples (including the exact ordinary sentence the intent detector misjudges), not yet a large held-out evaluation.",
   },
 };
 

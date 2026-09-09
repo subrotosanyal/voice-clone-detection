@@ -12,7 +12,7 @@ import asyncio
 import numpy as np
 import pytest
 
-from app.domain.models import IntentClassificationResult, TranscriptResult
+from app.domain.models import IntentClassificationResult, SemanticRiskAssessment, TranscriptResult
 from app.pipeline.live_transcription import (
     _TRANSCRIBE_EVERY_MS,
     LiveTranscriptionBuffer,
@@ -75,6 +75,24 @@ class _SlowFakeIntentClassifier(_FakeIntentClassifier):
         return super().classify(text)
 
 
+class _FakeSemanticRiskClassifier:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def analyze(self, text: str) -> SemanticRiskAssessment:
+        self.calls += 1
+        return SemanticRiskAssessment(
+            text=text,
+            urgency_level=0.8,
+            financial_solicitation=True,
+            authority_claim=False,
+            isolation_request=False,
+            reasoning="fake reasoning",
+            detector_name="fake_semantic_risk",
+            detector_version="0.0",
+        )
+
+
 def _hop_samples(n_hops: int) -> np.ndarray:
     return np.random.default_rng(0).uniform(-1, 1, size=round(SR * HOP_MS / 1000) * n_hops).astype(np.float32)
 
@@ -117,6 +135,31 @@ def test_intent_classifier_is_also_invoked_when_configured():
         assert buf.latest_context["intent_top_score"] == pytest.approx(0.9)
         assert intent_classifier.calls == 1
         # transcript fields must survive the intent update (merge, not replace)
+        assert buf.latest_context["transcript"] == transcriber.text
+
+    asyncio.run(_run())
+
+
+def test_semantic_risk_classifier_is_also_invoked_when_configured():
+    async def _run():
+        transcriber = _FakeTranscriber()
+        semantic_risk_classifier = _FakeSemanticRiskClassifier()
+        buf = LiveTranscriptionBuffer(
+            transcriber=transcriber,
+            intent_classifier=None,
+            hop_ms=HOP_MS,
+            semantic_risk_classifier=semantic_risk_classifier,
+        )
+        hops_needed = _TRANSCRIBE_EVERY_MS // HOP_MS
+        for _ in range(hops_needed):
+            buf.ingest(_hop_samples(1), SR)
+        await buf._transcribe_task
+        assert buf._semantic_task is not None
+        await buf._semantic_task
+        assert buf.latest_context["semantic_urgency_level"] == pytest.approx(0.8)
+        assert buf.latest_context["semantic_financial_solicitation"] is True
+        assert semantic_risk_classifier.calls == 1
+        # transcript fields must survive the semantic update (merge, not replace)
         assert buf.latest_context["transcript"] == transcriber.text
 
     asyncio.run(_run())

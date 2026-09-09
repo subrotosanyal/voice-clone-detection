@@ -180,3 +180,39 @@ class IntentClassificationResult:
     label_scores: dict[str, float]
     detector_name: str
     detector_version: str
+
+
+@dataclass(frozen=True)
+class SemanticRiskAssessment:
+    """What a SemanticRiskClassifierPort returns for one call's transcript
+    — see app/ports/semantic_risk_classifier.py and
+    app/adapters/semantic_risk/. Distinct from IntentClassificationResult
+    above (a zero-shot NLI classifier scoring FIXED candidate labels):
+    this is a generative LLM reading the transcript and producing a
+    richer, more nuanced structured judgment — including
+    `isolation_request` ("don't hang up", "don't tell anyone"), a signal
+    neither the zero-shot classifier nor the keyword-based contextual
+    rules (app/adapters/detectors/contextual_rules.py) currently capture.
+
+    STATUS as of 2026-09-09: wired into the active risk formula
+    (config/risk_formula.yaml's `semantic_risk` entry, weight 0.15,
+    running alongside — not replacing — `intent`) after a real, measured
+    comparison against the existing zero-shot classifier's known false-
+    positive problem (see zero_shot_intent_classifier.py's HONESTY NOTE
+    and app/adapters/semantic_risk/local_llm_semantic_classifier.py's
+    own HONESTY NOTE for the exact evaluation). `reasoning` is a human-readable
+    explanation ONLY — never itself trusted as a score override (see the
+    HONESTY NOTE in local_llm_semantic_classifier.py for why: unlike
+    every number in this dataclass, free-form reasoning text can't be
+    traced back to a specific computation the way a raw feature can, and
+    letting an LLM's own narrative override other signals would break
+    this project's reproducibility guarantee)."""
+
+    text: str
+    urgency_level: float  # 0.0-1.0
+    financial_solicitation: bool
+    authority_claim: bool
+    isolation_request: bool
+    reasoning: str
+    detector_name: str
+    detector_version: str

@@ -9,7 +9,7 @@ pip install -r requirements-dev.txt                   # first time only
 pytest tests/ -v
 ```
 
-167 tests, no Docker needed — unit tests for each detector (including
+184 tests, no Docker needed — unit tests for each detector (including
 `test_acoustic_aasist.py`'s coverage of the optional Hindi-recalibrated
 `finetuned_out_layer_path`, verifying it actually changes the score, not
 just that the parameter is accepted; `test_perth_watermark.py`,
@@ -39,12 +39,17 @@ right; see app/pipeline/live_diarization.py), the
 Whisper transcriber and its urgency/financial/authority-claim keyword
 detection, the zero-shot intent classifier (`test_zero_shot_
 intent_classifier.py` — includes a KNOWN LIMITATION test that documents,
-rather than hides, the real calibration problem keeping it out of the
-active formula) and its detector (`test_intent_risk.py`), the live
+rather than hides, the real calibration problem that keeps it weighted
+low) and its detector (`test_intent_risk.py`), the local semantic-risk
+LLM classifier (`test_local_llm_semantic_classifier.py` — fast, offline
+tests of the JSON-extraction/abstain logic via a fake model, plus real-
+model tests reproducing the exact sentence the zero-shot classifier
+misjudges, the evaluation that justified enabling this alongside
+`intent`) and its detector (`test_semantic_risk_detector.py`), the live
 WebSocket path's periodic transcription buffer (`test_live_transcription.py`
-— fake transcriber/intent-classifier objects, no real model load, async
-internals driven via plain `asyncio.run()`), plus integration tests that
-drive the real FastAPI app with `TestClient`
+— fake transcriber/intent/semantic-risk-classifier objects, no real
+model load, async internals driven via plain `asyncio.run()`), plus
+integration tests that drive the real FastAPI app with `TestClient`
 (`tests/integration/test_api_score_file.py`, `test_ui_served.py`,
 `test_history_api.py`, `test_enrollment_api.py`, `test_diarization_api.py`,
 `test_transcription_api.py`, `test_live_transcription_ws.py`,
@@ -80,20 +85,22 @@ gitignored, and nothing asserts on the *total* row count), but if it
 bothers you, delete `services/live-call-api/data/sessions.db` any time.
 
 **One caveat, not fully offline any more:** the app's default config loads
-the real AASIST checkpoint, the ECAPA-TDNN speaker-embedding model, AND
-the Whisper transcription model at startup. `tests/conftest.py`'s
+the real AASIST checkpoint, the ECAPA-TDNN speaker-embedding model, the
+Whisper transcription model, the zero-shot intent classifier, AND the
+local semantic-risk LLM (Phi-3-mini) at startup. `tests/conftest.py`'s
 `aasist_checkpoint` fixture fetches AASIST automatically on first run if
 it's missing (needs internet once; cached afterward, checksum-verified
 every time); the `ecapa_extractor` fixture does the analogous thing for
 the speechbrain model; `test_whisper_transcriber.py`'s own `transcriber`
-fixture does the same for Whisper (all cached after the first download —
-not checksum-verified for the latter two, only the confirmed-ungated
-download itself). Any test that doesn't request one of these fixtures
-(windowing, fusion math, the contextual/spectral-flatness detectors, the
-transcript-merging tests in `test_contextual_rules.py`, which pass a
-literal `transcript` string and never touch Whisper itself) stays fully
-offline and unaffected. If a fetch fails, only the tests that need that
-model skip; nothing else breaks.
+fixture does the same for Whisper; `phi3_llm_model_path` does the same
+for the LLM (checksum-verified, same as AASIST — real Microsoft-official
+GGUF, ~2.4GB the first time, the heaviest of these fixtures by far, but
+cached afterward like the others). Any test that doesn't request one of
+these fixtures (windowing, fusion math, the contextual/spectral-flatness
+detectors, the transcript-merging tests in `test_contextual_rules.py`,
+which pass a literal `transcript` string and never touch Whisper itself)
+stays fully offline and unaffected. If a fetch fails, only the tests
+that need that model skip; nothing else breaks.
 
 Run just one file while iterating: `pytest tests/unit/test_fusion_weighted_sum.py -v`.
 
@@ -120,7 +127,7 @@ manually, via workflow_dispatch), two jobs:
 **Honest accounting of why `test` needs a generous timeout (45min, not a
 round number picked in advance)**: a real CI run hit an earlier 20min
 limit and got cancelled at 16% of tests, having spent 1-4 real minutes on
-several individual integration tests. Two compounding reasons, not a
+several individual integration tests. Compounding reasons, not a
 fluke: every one of the 25 `with TestClient(app) as client:` blocks across
 `tests/integration/` (8 files) reloads AASIST + Whisper + ECAPA-TDNN from
 disk into memory from scratch (the app's lifespan runs fresh each time —
@@ -130,12 +137,17 @@ startup, one per feature — see app/pipeline/live_diarization.py's own
 docstring for why that's a deliberate, not accidental, trade-off), and
 every `/v1/score/file` call also runs a real Whisper decode regardless of
 whether that particular test has anything to do with transcription — a
-GitHub-hosted CPU runner is slower than a dev machine for this. Sharing
-one long-lived app/TestClient across a test module (loading each model
-once for the whole run, not once per test) would meaningfully cut this,
-but touches every integration test file and needs care around tests
-that share SQLite-backed state — not done yet; the honest workaround for
-now is enough timeout headroom to let the real work finish.
+GitHub-hosted CPU runner is slower than a dev machine for this. As of
+`semantic_risk_classification:` being enabled by default too, every
+startup now ALSO loads a ~2.4GB local LLM (Phi-3-mini) into memory, and
+every `/v1/score/file` call with a transcript runs a real ~1-1.5s CPU LLM
+forward pass on top of everything else — the single heaviest addition to
+integration-test startup cost so far. Sharing one long-lived
+app/TestClient across a test module (loading each model once for the
+whole run, not once per test) would meaningfully cut this, but touches
+every integration test file and needs care around tests that share
+SQLite-backed state — not done yet; the honest workaround for now is
+enough timeout headroom to let the real work finish.
 
 ## The fastest way to debug a score
 

@@ -148,6 +148,16 @@ implementations, not hand-rolled heuristics alone:
   against XTTS-v2, strong effect against held-out Chatterbox. Weighted
   lowest (0.10) since it's honestly weaker against some cloning tools
   than others (see `docs/risk-model.md`).
+- **Semantic risk classification** — a small, local, CPU-only LLM
+  (Microsoft's **Phi-3-mini-4k-instruct**, MIT, confirmed ungated, runs
+  entirely on-device via `llama-cpp-python`, no cloud call) that reads
+  the transcript for manufactured urgency, financial solicitation,
+  authority claims, AND isolation tactics ("don't hang up", "don't tell
+  anyone") — a signal neither intent classification nor the keyword
+  rules capture. Runs alongside intent classification, not in place of
+  it: verified by hand it correctly handles the exact ordinary sentence
+  intent classification misjudges, and correctly flags real scam
+  scripts (see `docs/risk-model.md`).
 
 Every model/checkpoint is fetched and cached at `docker compose up --build`
 time — see `docs/running-locally.md` for running without Docker. See

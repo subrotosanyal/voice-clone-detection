@@ -62,6 +62,7 @@ async def stream(websocket: WebSocket, session_id: str) -> None:
     live_transcription = LiveTranscriptionBuffer(
         transcriber=engine.transcriber,
         intent_classifier=engine.intent_classifier,
+        semantic_risk_classifier=engine.semantic_risk_classifier,
         hop_ms=engine.pipeline.config["windowing"]["hop_ms"],
     )
     live_diarization_params = engine.pipeline.config.get("live_diarization", {}).get("params", {})

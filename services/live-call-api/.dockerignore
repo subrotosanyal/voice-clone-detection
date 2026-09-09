@@ -4,3 +4,16 @@ __pycache__/
 .pytest_cache/
 tests/
 .git/
+
+# REAL BUG found and fixed 2026-09-09: these model caches are fetched
+# INSIDE the Docker build itself (see the Dockerfile's fetch_*.py RUN
+# steps) — but without this, whatever's already cached on the HOST from
+# running tests locally gets needlessly copied into the build context
+# too. Normally a few hundred MB (harmless, if wasteful); made this
+# genuinely painful to ignore when the new local semantic-risk LLM cache
+# (app/adapters/semantic_risk/.cache/) added ~2.4GB to every build's
+# context transfer. Excluding all of them, not just the new one.
+app/adapters/embeddings/.cache/
+app/adapters/transcription/.cache/
+app/adapters/intent/.cache/
+app/adapters/semantic_risk/.cache/

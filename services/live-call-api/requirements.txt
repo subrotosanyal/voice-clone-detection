@@ -49,3 +49,14 @@ resemble-perth==1.0.1
 # installed as a side effect of earlier, unrelated work, masking the gap
 # until a clean Docker build surfaced it.
 librosa==1.0.0
+
+# Local LLM inference (app/adapters/semantic_risk/local_llm_semantic_classifier.py)
+# — a CPU-only llama.cpp binding, no GPU, no external API call at
+# runtime. Runs Microsoft's own MIT-licensed, ungated Phi-3-mini-4k-
+# instruct GGUF (fetched separately — see fetch_llm_model.py). Active in
+# config/risk_formula.yaml's `semantic_risk` detector (weight 0.15) — see
+# that entry's own comment for the real evaluation behind enabling it.
+# Builds from source (needs cmake + a C/C++ compiler) — see the
+# Dockerfile's own builder stage for this, same pattern as
+# praat-parselmouth's.
+llama-cpp-python==0.3.35

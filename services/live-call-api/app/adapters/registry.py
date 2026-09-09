@@ -19,6 +19,7 @@ from app.ports.detector import DetectorPort
 from app.ports.diarizer import DiarizerPort
 from app.ports.fusion import FusionPort
 from app.ports.intent_classifier import IntentClassifierPort
+from app.ports.semantic_risk_classifier import SemanticRiskClassifierPort
 from app.ports.transcriber import TranscriberPort
 
 
@@ -100,6 +101,23 @@ def _build_intent_classifier(config: dict[str, Any]) -> IntentClassifierPort | N
     return cls(**intent_cfg.get("params", {}))
 
 
+def _build_semantic_risk_classifier(config: dict[str, Any]) -> SemanticRiskClassifierPort | None:
+    """Semantic risk classification (app/adapters/semantic_risk/) is
+    optional, same "omit the section to disable" reasoning as
+    transcription/intent_classification above — no
+    `semantic_risk_classification:` section means Engine.score_call()
+    never sets context["semantic_urgency_level"], and SemanticRiskDetector
+    (if it's in `detectors:` — see that entry's own comment for the
+    current weight/status) simply abstains. See
+    app/adapters/semantic_risk/local_llm_semantic_classifier.py's own
+    HONESTY NOTE before changing the weight here."""
+    semantic_cfg = config.get("semantic_risk_classification")
+    if semantic_cfg is None:
+        return None
+    cls = _load_class(semantic_cfg["class"])
+    return cls(**semantic_cfg.get("params", {}))
+
+
 def _build_live_speaker_embedder(config: dict[str, Any]):
     """Live diarization (app/pipeline/live_diarization.py) is optional,
     same "omit the section to disable" convention as transcription/
@@ -142,6 +160,7 @@ class Pipeline:
     diarizer: DiarizerPort | None = None
     transcriber: TranscriberPort | None = None
     intent_classifier: IntentClassifierPort | None = None
+    semantic_risk_classifier: SemanticRiskClassifierPort | None = None
     live_speaker_embedder: Any = None  # Optional[EcapaEmbeddingExtractor], lazily typed to avoid an eager speechbrain import
 
 
@@ -152,6 +171,7 @@ def build_pipeline(config_path: str | Path) -> Pipeline:
     diarizer = _build_diarizer(config)
     transcriber = _build_transcriber(config)
     intent_classifier = _build_intent_classifier(config)
+    semantic_risk_classifier = _build_semantic_risk_classifier(config)
     live_speaker_embedder = _build_live_speaker_embedder(config)
     return Pipeline(
         config=config,
@@ -160,5 +180,6 @@ def build_pipeline(config_path: str | Path) -> Pipeline:
         diarizer=diarizer,
         transcriber=transcriber,
         intent_classifier=intent_classifier,
+        semantic_risk_classifier=semantic_risk_classifier,
         live_speaker_embedder=live_speaker_embedder,
     )

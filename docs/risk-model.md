@@ -354,6 +354,82 @@ To disable it again, comment out the `intent_classification:` section
 and the `intent` entry under `detectors:` in `config/risk_formula.yaml` —
 the detector then simply abstains on every window, on either path.
 
+## Semantic risk classification (local LLM) — built, verified, active alongside intent
+
+`app/adapters/semantic_risk/local_llm_semantic_classifier.py` reads the
+same transcript through a small, local, CPU-only generative LLM instead
+of a zero-shot NLI classifier — asked to directly judge the
+conversation against explicit criteria and return structured JSON,
+rather than distributing probability across a fixed candidate-label
+set. Produces four signals: `urgency_level` (0-1), `financial_
+solicitation`, `authority_claim`, and `isolation_request` — the last one
+("don't hang up the phone", "don't tell anyone") a real social-
+engineering tactic neither this model's own predecessor (the zero-shot
+classifier above) nor the keyword-based contextual rules currently
+capture at all.
+
+**Model — verified before adoption**:
+- Source: `microsoft/Phi-3-mini-4k-instruct-gguf`, the
+  `Phi-3-mini-4k-instruct-q4.gguf` file — Microsoft's own official
+  4-bit-quantized GGUF release, not a third-party requantization.
+- Licence: MIT — confirmed via the HF API (`license: "mit"`).
+- Confirmed ungated on HuggingFace (`gated: false`), plain
+  unauthenticated download.
+- Runs entirely locally via `llama-cpp-python` (a llama.cpp binding) —
+  CPU-only, no external API call at runtime, same "self-contained, no
+  auth" bar every other model in this project clears.
+
+**Real, measured evidence before enabling this, not an assumed
+improvement (2026-09-09)**: run by hand against the exact sentence the
+zero-shot classifier above is documented to misjudge ("are we still on
+for dinner tonight? I was thinking Italian.") — this classifier
+correctly scored it `urgency_level=0.0`, every flag `false`, with the
+reasoning "Conversation is a dinner plan, not suspicious." Also
+correctly identified two real scam scripts: an OTP-phishing
+impersonation script (`urgency_level=0.9`, `authority_claim=true`), and
+a bank-impersonation script that explicitly includes an isolation
+tactic (`financial_solicitation=true`, `authority_claim=true`,
+`isolation_request=true` — all three correctly flagged). Still only a
+handful of hand-run examples, not a held-out labeled evaluation — see
+`tests/unit/test_local_llm_semantic_classifier.py`'s real-model tests
+for the exact reproducible cases.
+
+**Enabled alongside `intent`, not as a replacement for it**: weighted
+the same conservative `0.15` as `intent`/`perth_watermark` in
+`config/risk_formula.yaml`'s `semantic_risk` entry — deliberately
+non-destructive (this project's own "verify before adopting, don't
+remove what's working" discipline) until more evidence accumulates in
+real production use. `raw_score = max(urgency_level, flags_present /
+3)` — a starting mapping, not validated against a labeled corpus (same
+honesty standard as every other heuristic mapping in this project); see
+`semantic_risk_detector.py`'s own docstring for the exact reasoning.
+
+**HONESTY NOTE on `reasoning`**: it's a plain-language explanation for a
+human to read, not itself a verifiable computation the way a raw
+feature (jitter, a cosine similarity, a keyword match) is — and it must
+NEVER be used to override another detector's score. Doing that (an
+"LLM reads the other signals and arbitrates the final risk band" design
+explicitly discussed and rejected) would let an attacker influence
+their own risk assessment just by how they phrase things, and would
+break this project's reproducibility guarantee — a free-form LLM
+narrative isn't "reproducibly derived from raw feature values" the way
+`FusedScore`'s own docstring requires. This detector's `raw_score` is
+one more weighted input into the same formula everything else feeds,
+never the final word.
+
+**Both call paths**: `Engine.score_call()`/`http_router.py` populate
+`context["semantic_urgency_level"]` (and siblings) once per whole-call
+upload, same "compute once, expensive model" pattern as intent/
+transcription; `app/pipeline/live_transcription.py`/`ws_router.py`
+populate the same keys periodically in the background on the live
+WebSocket path, as an independent third task alongside transcription
+and intent classification (a slow one never blocks the others — same
+fix already applied for intent classification, see "Live transcription"
+in `docs/architecture.md`). To disable it again, comment out the
+`semantic_risk_classification:` section and the `semantic_risk` entry
+under `detectors:` — the detector then simply abstains on every window,
+on either path.
+
 ## Watermark check (Perth) — built, verified, active, narrow by design
 
 `app/adapters/detectors/perth_watermark.py` checks for Resemble AI's

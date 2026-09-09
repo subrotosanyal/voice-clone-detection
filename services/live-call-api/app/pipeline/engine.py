@@ -24,6 +24,7 @@ from app.logging_setup import get_logger
 from app.pipeline.windowing import make_windows
 from app.ports.history_store import HistoryStorePort
 from app.ports.intent_classifier import IntentClassifierPort
+from app.ports.semantic_risk_classifier import SemanticRiskClassifierPort
 from app.ports.transcriber import TranscriberPort
 
 logger = get_logger(component="pipeline_engine")
@@ -60,6 +61,7 @@ class Engine:
         history: Optional[HistoryStorePort] = None,
         transcriber: Optional[TranscriberPort] = None,
         intent_classifier: Optional[IntentClassifierPort] = None,
+        semantic_risk_classifier: Optional[SemanticRiskClassifierPort] = None,
         live_speaker_embedder: Optional[Any] = None,
     ) -> None:
         self.pipeline = pipeline
@@ -67,6 +69,7 @@ class Engine:
         self.history = history
         self.transcriber = transcriber
         self.intent_classifier = intent_classifier
+        self.semantic_risk_classifier = semantic_risk_classifier
         # Optional[EcapaEmbeddingExtractor] — read by ws_router.py to build
         # a per-session LiveSpeakerTracker (app/pipeline/live_diarization.py).
         # Untyped (Any) here for the same reason Pipeline.live_speaker_embedder
@@ -155,6 +158,17 @@ class Engine:
         list (weighted low, 0.15) despite a known calibration problem; see
         app/adapters/intent/zero_shot_intent_classifier.py's HONESTY NOTE
         for what mitigates that risk and what doesn't.
+
+        If a semantic_risk_classifier is ALSO configured, the same
+        transcript is analysed once here too (same "expensive, run once"
+        reasoning — a local LLM forward pass takes ~1-1.5s, see
+        local_llm_semantic_classifier.py). SemanticRiskDetector only ever
+        reads the precomputed `semantic_urgency_level`/
+        `semantic_financial_solicitation`/`semantic_authority_claim`/
+        `semantic_isolation_request`/`semantic_reasoning` this merges
+        into `context` — see that detector's own docstring. See
+        config/risk_formula.yaml's `semantic_risk` entry for whether and
+        at what weight this is currently active.
         """
         self.sessions.reset(session_id)
 
@@ -192,6 +206,30 @@ class Engine:
                 "intent_label": intent_result.top_label,
                 "intent_top_score": intent_result.top_score,
                 "intent_label_scores": intent_result.label_scores,
+            }
+
+        if (
+            self.semantic_risk_classifier is not None
+            and context.get("transcript")
+            and "semantic_urgency_level" not in context
+        ):
+            semantic_result = self.semantic_risk_classifier.analyze(context["transcript"])
+            logger.info(
+                "semantic_risk_analyzed",
+                session_id=session_id,
+                detector_name=semantic_result.detector_name,
+                urgency_level=semantic_result.urgency_level,
+                financial_solicitation=semantic_result.financial_solicitation,
+                authority_claim=semantic_result.authority_claim,
+                isolation_request=semantic_result.isolation_request,
+            )
+            context = {
+                **context,
+                "semantic_urgency_level": semantic_result.urgency_level,
+                "semantic_financial_solicitation": semantic_result.financial_solicitation,
+                "semantic_authority_claim": semantic_result.authority_claim,
+                "semantic_isolation_request": semantic_result.isolation_request,
+                "semantic_reasoning": semantic_result.reasoning,
             }
 
         windowing_cfg = self.pipeline.config["windowing"]

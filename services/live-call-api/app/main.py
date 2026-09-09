@@ -54,6 +54,7 @@ async def lifespan(app: FastAPI):
         history=history,
         transcriber=pipeline.transcriber,
         intent_classifier=pipeline.intent_classifier,
+        semantic_risk_classifier=pipeline.semantic_risk_classifier,
         live_speaker_embedder=pipeline.live_speaker_embedder,
     )
 
@@ -76,6 +77,7 @@ async def lifespan(app: FastAPI):
         diarization_available=pipeline.diarizer is not None,
         transcription_available=pipeline.transcriber is not None,
         intent_classification_available=pipeline.intent_classifier is not None,
+        semantic_risk_classification_available=pipeline.semantic_risk_classifier is not None,
         live_diarization_available=pipeline.live_speaker_embedder is not None,
     )
     yield

@@ -228,6 +228,18 @@ def test_known_limitation_degrading_a_real_deepfake_lowers_its_spoof_score(
     Flip this assertion once AASIST's real-world robustness genuinely
     improves (a better fine-tune, a newer checkpoint, or an ensemble with
     a detector that doesn't share this failure mode) — don't delete it."""
+    if shutil.which("ffmpeg") is None:
+        # REAL BUG found 2026-09-09 via a real CI run: every OTHER
+        # ffmpeg-dependent test in this file is downstream of the
+        # `genuine_speech` fixture's own `shutil.which("say") is None`
+        # skip (macOS-only, so it always skips first on Linux CI
+        # runners) — meaning ffmpeg's presence was never actually
+        # independently verified there. This test's fixture
+        # (known_deepfake_speech) doesn't depend on `say` at all, so it
+        # was the first to reach a bare ffmpeg call on a runner that,
+        # it turns out, doesn't have ffmpeg installed either. Skip
+        # explicitly instead of a confusing FileNotFoundError.
+        pytest.skip("ffmpeg not available — needed for the reverb+AAC degradation")
     samples, sr = known_deepfake_speech
     window_samples = samples[: sr * 2] if samples.size > sr * 2 else samples
 

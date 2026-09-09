@@ -467,6 +467,46 @@ single-handedly push a genuine call into High, and full UI transparency
 positive here is visible and inspectable, not hidden inside one number).
 See `docs/risk-model.md`, "Intent detection" for the full writeup.
 
+## Semantic risk classification — a local LLM alongside intent detection
+
+`app/ports/semantic_risk_classifier.py` (`SemanticRiskClassifierPort`) +
+`app/adapters/semantic_risk/local_llm_semantic_classifier.py`
+(`LocalLLMSemanticClassifier`) read the same transcript through a small,
+local, CPU-only generative LLM (Microsoft's `Phi-3-mini-4k-instruct`
+GGUF, MIT, confirmed ungated — runs via `llama-cpp-python`, no external
+API call at runtime) instead of scoring fixed candidate labels. Asked to
+directly judge the conversation against explicit criteria and return
+structured JSON: `urgency_level`, `financial_solicitation`,
+`authority_claim`, and `isolation_request` — the last one ("don't hang
+up the phone", "don't tell anyone") a real social-engineering tactic
+neither the zero-shot classifier above nor the keyword-based contextual
+rules currently capture at all.
+
+Wired the same way as intent classification: `Engine.score_call()`
+computes the assessment ONCE per call and merges
+`semantic_urgency_level` (and siblings) into `context`;
+`app/adapters/detectors/semantic_risk_detector.py`
+(`SemanticRiskDetector`) only ever reads those precomputed fields, same
+"expensive model, compute once" reasoning as every other transcript-fed
+signal. On the live WebSocket path, `app/pipeline/live_transcription.py`
+runs it as a THIRD independent background task alongside transcription
+and intent classification (a slow one never blocks the others — same
+fix already applied for intent classification, see "Live transcription"
+above).
+
+**Why this exists, with real evidence before enabling it**: the intent
+classifier's own HONESTY NOTE documents a real false positive — "are we
+still on for dinner tonight?" scoring 38.9% "creating urgency". Run by
+hand against that exact sentence, this classifier correctly scored it
+`urgency_level=0.0`, every flag false — and correctly flagged two real
+scam scripts, including the isolation tactic in one of them. Still only
+a handful of hand-run examples, not a held-out labeled evaluation —
+enabled ALONGSIDE `intent` (not replacing it) at the same conservative
+weight (0.15), deliberately non-destructive until more evidence
+accumulates. See `docs/risk-model.md`, "Semantic risk classification"
+for the full writeup, including the HONESTY NOTE on why `reasoning`
+must never be used to override another detector's score.
+
 ## Watermark check — a narrow, high-precision complement to AASIST
 
 `app/adapters/detectors/perth_watermark.py` (`PerthWatermarkDetector`)
@@ -637,10 +677,11 @@ repo that says so.
 - The mock banking approval flow (the dashboard UI itself is built —
   see above).
 - Calibrated risk thresholds for voiceprint consistency, diarization
-  clustering (both file-upload and live), and the Parselmouth prosodic
-  mapping — all real signal-processing/model pipelines with honestly-
-  documented placeholder heuristic score mappings, not yet tuned against
-  a labeled dataset.
+  clustering (both file-upload and live), the Parselmouth prosodic
+  mapping, and the semantic-risk LLM's own risk mapping (`max(urgency_
+  level, flags_present / 3)`) — all real signal-processing/model
+  pipelines with honestly-documented placeholder heuristic score
+  mappings, not yet tuned against a labeled dataset.
 
 None of this changes the shape of `services/live-call-api/app/` — each
 item above is a new adapter (or a new service) behind an existing or new

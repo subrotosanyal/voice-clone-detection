@@ -12,7 +12,7 @@
 # every log line so a score can always be tied back to the exact config
 # that produced it (see docs/risk-model.md, "Reproducibility").
 
-formula_version: "2026.09.11"
+formula_version: "2026.09.12"
 
 detectors:
   # Real pretrained countermeasure (AASIST, ASVspoof2019 LA, MIT licensed —
@@ -128,6 +128,32 @@ detectors:
     params:
       floor_rms: 0.0001
 
+  - name: semantic_risk
+    # A local, CPU-only LLM (Microsoft's Phi-3-mini-4k-instruct, MIT
+    # licensed, confirmed ungated — see app/adapters/semantic_risk/
+    # local_llm_semantic_classifier.py) reading the transcript for
+    # social-engineering tactics: manufactured urgency, financial
+    # solicitation, authority claims, AND isolation requests ("don't hang
+    # up", "don't tell anyone") — a signal neither `intent` above nor
+    # the keyword-based contextual rules currently capture at all.
+    #
+    # REAL, MEASURED evidence before enabling (2026-09-09), not an
+    # assumed improvement: run by hand against the exact sentence
+    # `intent`'s own zero-shot classifier is documented to misjudge
+    # ("are we still on for dinner tonight?" -> 38.9% "creating urgency"
+    # there) — this classifier correctly scored it urgency_level=0.0,
+    # every flag false. Also correctly identified two real scam scripts
+    # (an OTP-phishing script, a bank-impersonation + isolation script),
+    # including the isolation tactic in the second one. Still only a
+    # handful of examples, not a held-out labeled evaluation — weighted
+    # the same conservative 0.15 as `intent` and `perth_watermark` for
+    # that reason, running ALONGSIDE `intent` rather than replacing it
+    # (deliberately non-destructive — see this project's own "verify
+    # before adopting, don't remove what's working" discipline).
+    class: app.adapters.detectors.semantic_risk_detector:SemanticRiskDetector
+    weight: 0.15
+    params: {}
+
 fusion:
   class: app.adapters.fusion.weighted_sum:WeightedSumFusion
   # EMA smoothing across a session's windows: higher = more reactive to the
@@ -216,3 +242,21 @@ live_diarization:
     similarity_threshold: 0.75
     ema_alpha: 0.1
     max_speakers: 8
+
+# Feeds the `semantic_risk` detector above once per call, same "compute
+# once, read many times" pattern as transcription/intent_classification
+# — see Engine.score_call()'s docstring. Real MIT-licensed model
+# (Microsoft's Phi-3-mini-4k-instruct GGUF), confirmed ungated, runs
+# entirely locally (CPU-only, no external API call at runtime) via
+# llama-cpp-python. See app/adapters/semantic_risk/
+# local_llm_semantic_classifier.py's own HONESTY NOTE for what's
+# verified and what isn't before changing model_path/n_ctx/max_tokens.
+# Omit this whole section to disable semantic risk classification
+# entirely; the `semantic_risk` detector then simply abstains on every
+# window, same as `intent` does when intent_classification is omitted.
+semantic_risk_classification:
+  class: app.adapters.semantic_risk.local_llm_semantic_classifier:LocalLLMSemanticClassifier
+  params:
+    model_path: app/adapters/semantic_risk/.cache/Phi-3-mini-4k-instruct-q4.gguf
+    n_ctx: 1024
+    max_tokens: 150

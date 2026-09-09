@@ -37,3 +37,19 @@ def ecapa_extractor():
         return EcapaEmbeddingExtractor()
     except Exception as exc:  # noqa: BLE001 — any load failure just skips
         pytest.skip(f"ECAPA-TDNN model unavailable (no network?): {exc}")
+
+
+@pytest.fixture(scope="session")
+def phi3_llm_model_path() -> str:
+    """Same idempotent fetch-on-first-use pattern as aasist_checkpoint
+    above — see app/adapters/semantic_risk/fetch_llm_model.py. This one
+    is a real, ~2.4GB download the first time (Microsoft's official
+    Phi-3-mini-4k-instruct GGUF) — heavier than every other model fixture
+    here, cached afterward like the others."""
+    try:
+        from app.adapters.semantic_risk.fetch_llm_model import ensure_model
+
+        path = ensure_model()
+    except Exception as exc:  # noqa: BLE001 — any fetch failure just skips
+        pytest.skip(f"Phi-3-mini GGUF unavailable (no network?): {exc}")
+    return str(path)

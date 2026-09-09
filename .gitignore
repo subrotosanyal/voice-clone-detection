@@ -35,6 +35,10 @@ services/live-call-api/app/adapters/transcription/.cache/
 # app/adapters/intent/fetch_intent_model.py.
 services/live-call-api/app/adapters/intent/.cache/
 
+# Local LLM (Phi-3-mini GGUF) model cache — fetched at build/setup time,
+# not committed. See app/adapters/semantic_risk/fetch_llm_model.py.
+services/live-call-api/app/adapters/semantic_risk/.cache/
+
 # session history — local runtime data, not committed. See
 # app/adapters/history/sqlite_store.py and docker-compose.yml's volume for it.
 services/live-call-api/data/
