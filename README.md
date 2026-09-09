@@ -50,7 +50,10 @@ human-readable breakdown of exactly which signal contributed what, plus a
 one-sentence plain-language explanation of *why* under each component. On
 file uploads, an optional **diarizer** can also split a multi-speaker
 recording and score each voice separately. Nothing here is a black box —
-see `docs/risk-model.md`.
+see `docs/risk-model.md`, or the dashboard's own **"How this score is
+calculated"** page (header button / footer link) for a full pictorial
+walkthrough of every signal and the fusion formula, rendered live from
+today's actual running config.
 
 A fifth, **zero-shot intent classifier** (real model, real MIT license,
 real Hindi coverage) scores the transcript against fraud-relevant

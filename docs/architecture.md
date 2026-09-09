@@ -126,6 +126,19 @@ Every component name and risk band in the results panel has a small "?"
 icon (hover/focus) with a plain-language explanation — see `COMPONENT_HELP`
 / `BAND_HELP` in `app/ui/app.js` if you need to update the wording.
 
+**"How this score is calculated"** (header button, footer link, or any
+result's help icon) opens a full pictorial explainer: an SVG pipeline
+diagram (audio → windowing → detectors → fusion → smoothing → banded
+score, each box itself hover/focus-tooltipped via a native SVG `<title>`
+naming what it does) followed by a card per detector (its real live
+weight, whether it's a trained model or a deterministic formula, the
+exact steps it computes, and its honest caveats) and the fusion/smoothing/
+banding formulas spelled out with today's real numbers. Everything on
+this page is rendered live from `GET /v1/config` (`renderHowItWorks()` in
+`app/ui/app.js`) rather than hardcoded, so it can't drift from the actual
+running formula — the per-detector step lists themselves live in
+`HIW_DETECTOR_INFO` in that same file.
+
 Mount order matters: `app.mount("/", StaticFiles(...))` is registered
 **after** the API routers in `app/main.py`, specifically so `/healthz`,
 `/v1/*`, and FastAPI's own `/docs`/`/redoc` all resolve first — the
