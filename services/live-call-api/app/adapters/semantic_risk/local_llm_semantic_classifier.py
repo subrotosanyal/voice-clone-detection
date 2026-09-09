@@ -94,6 +94,7 @@ from __future__ import annotations
 import json
 import re
 import threading
+from pathlib import Path
 from typing import Any, Optional
 
 from app.domain.models import SemanticRiskAssessment
@@ -135,11 +136,28 @@ class LocalLLMSemanticClassifier:
 
     def __init__(
         self,
-        model_path: str = "app/adapters/semantic_risk/.cache/Phi-3-mini-4k-instruct-q4.gguf",
+        model_path: Optional[str] = None,
         n_ctx: int = 4096,
         n_threads: Optional[int] = None,
         max_tokens: int = 150,
     ) -> None:
+        # `model_path` is an explicit override (tests pin a specific file via
+        # this). Left unset by default rather than hardcoding the old flat
+        # "app/adapters/semantic_risk/.cache/Phi-3-mini-4k-instruct-q4.gguf"
+        # path here — REAL BUG, found via a real user upload crashing every
+        # /v1/score/file call with `ValueError: Model path does not exist`:
+        # fetch_llm_model.py's migration to huggingface_hub's own cache
+        # (see that module's MIGRATION NOTE) nests the downloaded file under
+        # models--.../snapshots/<rev>/<filename> instead of that flat path,
+        # but config/risk_formula.yaml's `model_path:` param — and this
+        # class's old default — were never updated to match, so a fresh
+        # Docker build (no pre-existing flat-layout file) always pointed at
+        # a path that no longer existed. tests/conftest.py's
+        # phi3_llm_model_path fixture already resolved the real path
+        # correctly via fetch_llm_model.ensure_model(), which is exactly why
+        # this regression passed CI while breaking every real deployment.
+        # _ensure_loaded() below now does the same resolution the fixture
+        # does, so the two can't drift apart again.
         self.model_path = model_path
         self.n_ctx = n_ctx
         self.n_threads = n_threads
@@ -151,8 +169,20 @@ class LocalLLMSemanticClassifier:
         if self._llm is None:
             from llama_cpp import Llama  # local import: heavy, only needed if actually used
 
+            model_path = self.model_path
+            if not model_path or not Path(model_path).exists():
+                # No explicit override, or an override that's gone stale
+                # (e.g. the pre-migration flat path — see __init__'s note
+                # above) — resolve the real, current path the same way
+                # tests/conftest.py's phi3_llm_model_path fixture does.
+                # Idempotent and cheap when already cached: see
+                # fetch_llm_model.ensure_model()'s own docstring.
+                from app.adapters.semantic_risk.fetch_llm_model import ensure_model
+
+                model_path = str(ensure_model())
+
             self._llm = Llama(
-                model_path=self.model_path,
+                model_path=model_path,
                 n_ctx=self.n_ctx,
                 n_threads=self.n_threads,
                 verbose=False,
@@ -162,7 +192,17 @@ class LocalLLMSemanticClassifier:
         if not text or not text.strip():
             return self._neutral_assessment(text, reason="empty transcript — nothing to analyse")
 
-        self._ensure_loaded()
+        try:
+            self._ensure_loaded()
+        except Exception as exc:  # noqa: BLE001 — same "never let an infra
+            # failure crash the whole request instead of abstaining"
+            # discipline as the inference-call except below (and every other
+            # detector in this pipeline): a missing/corrupted model file
+            # must not take down every OTHER detector's result along with
+            # this one. See __init__'s REAL BUG note for the actual failure
+            # this was written for.
+            return self._neutral_assessment(text, reason=f"model load failed: {exc}")
+
         # See the REAL BUG note above the class docstring: a real, long
         # transcript can overflow the context window on its own — this
         # truncates the PROMPT input, not the `text` field recorded on
