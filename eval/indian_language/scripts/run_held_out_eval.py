@@ -34,9 +34,11 @@ import soundfile as sf
 _EVAL_DIR = Path(__file__).resolve().parent.parent
 _LIVE_CALL_API_DIR = _EVAL_DIR.parent.parent / "services" / "live-call-api"
 sys.path.insert(0, str(_LIVE_CALL_API_DIR))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from app.adapters.detectors.acoustic_aasist import AasistAcousticDetector  # noqa: E402
 from app.domain.models import AudioWindow  # noqa: E402
+from _corpus_utils import local_speaker_entries  # noqa: E402
 
 CHECKPOINT_PATH = _LIVE_CALL_API_DIR / "app/adapters/detectors/vendor/checkpoints/AASIST.pth"
 # Manifests store wav_path relative to eval/indian_language/ (see
@@ -117,10 +119,31 @@ def _score_all_languages(detector: AasistAcousticDetector, genuine: list[dict], 
     return result
 
 
+def _local_speaker_genuine(split_dir: Path) -> list[dict]:
+    """local_speaker_entries() returns bare {utterance_id, wav_path} —
+    _score_all_languages groups by "language", so tag each entry "hi"
+    (confirmed via a real Whisper transcription check, see
+    generate_local_speaker_clones.py's own docstring)."""
+    return [{**e, "language": "hi"} for e in local_speaker_entries(split_dir, _EVAL_DIR)]
+
+
 def main() -> None:
-    genuine = _load_manifest(_EVAL_DIR / "data" / "genuine" / "manifest.json")
-    synthetic = _load_manifest(_EVAL_DIR / "data" / "synthetic" / "manifest.json")
+    # Expanded 2026-09-09 to match fine_tune_aasist.py's build_dataset():
+    # same four genuine + two spoof TRAIN sources, so "before/after
+    # fine-tuning" here measures the same data the fine-tune actually ran
+    # on. data/local_speakers/test/ is NEVER included here — see
+    # held_out_local_speakers below, the whole point of keeping it separate.
+    genuine = (
+        _load_manifest(_EVAL_DIR / "data" / "genuine" / "manifest.json")
+        + _load_manifest(_EVAL_DIR / "data" / "genuine" / "hi_kathbath" / "manifest.json")
+        + _load_manifest(_EVAL_DIR / "data" / "genuine" / "hi_movie_musnomix" / "manifest.json")
+        + _local_speaker_genuine(_EVAL_DIR / "data" / "local_speakers" / "train")
+    )
+    synthetic = _load_manifest(_EVAL_DIR / "data" / "synthetic" / "manifest.json") + _load_manifest(
+        _EVAL_DIR / "data" / "synthetic_local_speakers" / "manifest.json"
+    )
     synthetic_chatterbox = _load_manifest(_EVAL_DIR / "data" / "synthetic_chatterbox" / "manifest.json")
+    genuine_heldout_local_speakers = _local_speaker_genuine(_EVAL_DIR / "data" / "local_speakers" / "test")
 
     if not genuine:
         print("No genuine corpus found — run scripts/fetch_genuine_corpus.py first.")
@@ -176,6 +199,24 @@ def main() -> None:
                 "generate_synthetic_corpus_chatterbox.py's own docstring for "
                 "how it was generated and verified."
             )
+
+            if genuine_heldout_local_speakers:
+                print(
+                    "\n--- AFTER fine-tuning, HELD-OUT on BOTH dimensions "
+                    "(local speakers' own reserved test clips x Chatterbox) ---"
+                )
+                summary["held_out_local_speakers"] = _score_all_languages(
+                    finetuned_detector, genuine_heldout_local_speakers, synthetic_chatterbox
+                )
+                summary["notes"].append(
+                    "held_out_local_speakers is the MOST rigorous held-out "
+                    "check available: genuine side is each local speaker's "
+                    "own RESERVED test utterance (never in build_dataset()'s "
+                    "training data — only that speaker's other 5 clips were), "
+                    "spoof side is Chatterbox (never in training either). "
+                    "Neither the specific utterance nor the synthesis system "
+                    "was seen during fine-tuning."
+                )
         else:
             summary["notes"].append(
                 "No held-out Chatterbox corpus found — run "
