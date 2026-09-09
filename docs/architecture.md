@@ -471,6 +471,24 @@ check" for the full writeup, including a real false-positive edge case
 on non-speech audio (a pure tone reads 0.92) found and documented while
 verifying this.
 
+## Phase incoherence check — a CPU-cheap complement to AASIST
+
+`app/adapters/detectors/acoustic_phase_incoherence.py`
+(`PhaseIncoherenceDetector`) measures STFT phase coherence — real
+neural vocoders tend to reconstruct cleaner, more internally-consistent
+phase than a real human vocal tract. Pure scipy/numpy, no model to load,
+effectively instant on CPU. Verified by hand against
+`eval/indian_language/data/`: moderate effect against XTTS-v2 (Cohen's
+d=0.70, AUC=0.68), strong effect against HELD-OUT Chatterbox (d=2.56,
+AUC=0.96, never used to calibrate this). A real bug (a sample-rate
+mismatch between the genuine and synthetic corpora inflating unrelated
+features) was found and fixed during that validation — see
+`docs/risk-model.md`, "Phase incoherence check" for the full writeup.
+Weighted lowest of the acoustic-family detectors (0.10, auto-renormalised)
+because it's honestly weaker against XTTS-v2 than Chatterbox — same
+"real but narrow, don't let it dominate" reasoning as `perth_watermark`
+and `intent` above.
+
 ## Concurrency: keeping the event loop free during a long score
 
 `Engine.score_call()`/`score_window()` are plain synchronous, CPU-bound

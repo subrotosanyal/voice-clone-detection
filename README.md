@@ -138,6 +138,13 @@ implementations, not hand-rolled heuristics alone:
   high-precision complement to Acoustic — verified by hand that genuine
   speech and a different, non-Perth TTS system both read near-zero, while
   Perth-watermarked audio reads 1.0 (see `docs/risk-model.md`).
+- **Phase incoherence check** — a CPU-cheap, deterministic DSP signal
+  (STFT phase coherence, no model to load) that catches neural vocoders'
+  tendency to reconstruct cleaner phase than a real human voice.
+  Verified by hand against `eval/indian_language/data/`: moderate effect
+  against XTTS-v2, strong effect against held-out Chatterbox. Weighted
+  lowest (0.10) since it's honestly weaker against some cloning tools
+  than others (see `docs/risk-model.md`).
 
 Every model/checkpoint is fetched and cached at `docker compose up --build`
 time — see `docs/running-locally.md` for running without Docker. See
