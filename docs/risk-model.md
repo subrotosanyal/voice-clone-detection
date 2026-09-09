@@ -395,6 +395,27 @@ handful of hand-run examples, not a held-out labeled evaluation — see
 `tests/unit/test_local_llm_semantic_classifier.py`'s real-model tests
 for the exact reproducible cases.
 
+**Hindi/Hinglish claim, actually verified (2026-09-XX)**: `_SYSTEM_PROMPT`
+itself tells the model the transcript "may be in Hindi, English, or
+Hinglish code-switched text" — but until now nothing in this file or in
+the test suite had ever run a non-English transcript through this
+classifier; the multilingual handling was an assumption riding on
+Phi-3-mini's own pretraining, not a checked capability the way the
+acoustic detector's Hindi fine-tune is (see that section above). Run by
+hand against a Hinglish (romanized, code-switched) bank/OTP scam script
+and a benign PURE Hindi (Devanagari script) conversation: both scored
+correctly — the scam script `urgency_level=0.9` with all three flags
+`true` ("Claims authority and urgency to solicit OTP"), the benign
+Devanagari conversation `urgency_level=0.0` with every flag `false`
+("Conversation is casual and unrelated to scam tactics"). Two
+permanent regression tests now cover this (one positive, one negative,
+so a degenerate "always flag non-English as suspicious" model
+couldn't pass by accident) — still only two hand-run examples in two
+scripts, not a held-out multilingual evaluation; a real Hindi/Hinglish
+scam-call dataset (mirroring `eval/indian_language`'s approach for the
+acoustic detector) would be needed before trusting this claim the way
+the acoustic detector's Hindi recalibration is trusted.
+
 **Enabled alongside `intent`, not as a replacement for it**: weighted
 the same conservative `0.15` as `intent`/`perth_watermark` in
 `config/risk_formula.yaml`'s `semantic_risk` entry — deliberately

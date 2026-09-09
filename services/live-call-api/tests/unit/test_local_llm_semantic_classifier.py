@@ -266,3 +266,47 @@ def test_real_model_correctly_flags_a_bank_scam_with_isolation_tactic(real_class
     assert result.financial_solicitation is True
     assert result.authority_claim is True
     assert result.isolation_request is True
+
+
+def test_real_model_correctly_flags_a_hinglish_bank_otp_scam(real_classifier):
+    """Verifies the claim in _SYSTEM_PROMPT itself — "which may be in
+    Hindi, English, or Hinglish code-switched text" — against a REAL
+    model call, not an assumption: nothing in this file or in
+    docs/risk-model.md's own "real, measured evidence" section had ever
+    actually run a non-English transcript through this classifier before
+    this test. Hand-verified once (2026-09-XX) via the exact transcript
+    below: urgency_level=0.9, all three flags True, reasoning "Claims
+    authority and urgency to solicit OTP." — same OTP-phishing/bank-
+    impersonation pattern as the English tests above, in Hinglish."""
+    result = real_classifier.analyze(
+        "Sir main aapke bank se bol raha hoon. Aapka account block ho jayega "
+        "agar aap abhi OTP nahi bataoge. Please jaldi kijiye, yeh bahut urgent hai. "
+        "Aap phone mat kaatiye, main aapko step by step batata hoon."
+    )
+    assert result.urgency_level > 0.5
+    assert result.financial_solicitation is True
+    assert result.authority_claim is True
+    assert result.isolation_request is True
+
+
+def test_real_model_handles_ordinary_hindi_conversation_in_devanagari_script(real_classifier):
+    """The other half of the Hinglish test above: a benign conversation
+    in PURE Hindi (Devanagari script, not romanized) must not be
+    misjudged as suspicious just because it isn't English — the same
+    false-positive check test_real_model_correctly_handles_the_exact_
+    sentence_mdeberta_gets_wrong does for English. Also guards against a
+    model that just predicts "suspicious" for any non-English input it
+    doesn't parse well. Hand-verified once (2026-09-XX): urgency_level=
+    0.0, every flag False, reasoning "Conversation is casual and
+    unrelated to scam tactics." — note this is a genuinely different
+    script than whisper_transcriber.py's own documented real bug (a
+    smaller Whisper model mis-transcribing real Hindi speech into Urdu
+    script — see docs/risk-model.md's "Transcription" section); this
+    test is downstream of transcription and only covers this
+    classifier's OWN handling of correctly-transcribed Hindi text."""
+    result = real_classifier.analyze(
+        "अरे यार कल छुट्टी है, चलो कहीं घूमने चलते हैं। मौसम भी बहुत अच्छा है आजकल।"
+    )
+    assert result.urgency_level < 0.3
+    assert result.financial_solicitation is False
+    assert result.authority_claim is False
