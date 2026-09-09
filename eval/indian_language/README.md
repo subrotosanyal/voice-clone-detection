@@ -185,6 +185,44 @@ decision above (no synthetic side — no viable ungated Marathi TTS system
 found): 95% bonafide accuracy before fine-tuning, 100% after. This isn't
 tracked as pending work; Marathi is not required scope.
 
+## Prosodic detector calibration (2026-09-09): a real, concerning finding
+
+`scripts/calibrate_prosodic_thresholds.py` ran Praat's real jitter/
+shimmer/HNR extraction (the exact function `ParselmouthProsodyDetector`
+calls in production) across every genuine and spoof file collected so
+far — 1423 genuine train, 340 spoof train, 100 genuine held-out (local
+speakers' own reserved test utterances), 40 spoof held-out (Chatterbox,
+never used anywhere above). Full numbers: `results/
+prosodic_calibration.json`.
+
+**The currently-deployed thresholds score exactly 50% balanced
+accuracy — chance level**, on both train and held-out data: 100%
+genuine accuracy, 0% spoof accuracy. They never flag anything as spoof
+against real data. This isn't a threshold-placement problem: genuine and
+spoof jitter/shimmer/HNR distributions are nearly IDENTICAL in this
+corpus (mean jitter 0.0203 genuine vs. 0.0226 spoof; shimmer 0.096 vs.
+0.093; HNR 13.4dB vs. 13.7dB) — a percentile-based recalibration of the
+same three independent floors/ceiling barely moves the needle (still
+~50% balanced accuracy).
+
+**A logistic regression combining all three features (standardized,
+class-weighted) does meaningfully better: 82.5% balanced accuracy on
+the held-out set** (70% genuine / 95% spoof) — a real, substantial
+improvement over chance, using the same three Praat-derived numbers, just
+combined and weighted rather than thresholded independently. Read this
+honestly too: 140 held-out examples is still a calibration-scale sample,
+and the learned coefficients (jitter +0.30, shimmer -0.32, HNR +0.037 on
+standardized features) don't all point the direction the current
+heuristic assumes — notably shimmer's sign is reversed from
+`_SHIMMER_FLOOR`'s "low shimmer is suspicious" hypothesis on this
+specific cloning system's artifacts.
+
+**Not yet decided**: whether to replace `ParselmouthProsodyDetector`'s
+hand-tuned formula with this trained classifier in production. That's an
+architecture change (a serialized model behind the same `DetectorPort`),
+not a config-constant edit — tracked in `TODO.md`'s Phase 5, pending an
+explicit decision, not done unilaterally here.
+
 ## Datasets — verified before adopting (see `docs/risk-model.md`'s standing
 discipline: real license/fetchability verification before adoption)
 
@@ -192,6 +230,8 @@ discipline: real license/fetchability verification before adoption)
 |---|---|---|---|
 | [SPRINGLab/IndicTTS-Hindi](https://huggingface.co/datasets/SPRINGLab/IndicTTS-Hindi) | Hindi | **CC BY 4.0** | Dataset card cites the original Indic TTS license; cross-checked against the [IndicTTS23 paper](https://arxiv.org/html/2410.14197v1), which states explicitly: "License: CC BY 4.0" and documents informed consent ("A consent form is obtained from the voice talents by confirming their acceptance to... release it under CC BY 4.0 license"). Confirmed ungated via the HF API. |
 | [SPRINGLab/IndicTTS_Marathi](https://huggingface.co/datasets/SPRINGLab/IndicTTS_Marathi) | Marathi | Same source project (Indic TTS Database, IIT Madras) | Confirmed ungated. **Caveat, not yet resolved:** this dataset's own README card contains a copy-pasted line saying "This HuggingFace dataset specifically contains the Hindi monolingual portion" — almost certainly a template artifact from reusing the Hindi card, but `fetch_genuine_corpus.py` verifies actual language content (see below) before trusting it, rather than taking the README at face value. |
+| [ai4bharat/Kathbath](https://huggingface.co/datasets/ai4bharat/Kathbath) | Hindi | **CC BY 4.0** | Confirmed via the HF dataset card's own `cardData.license`/`tags` (`license:cc-by-4.0`) — but the HF-hosted copy is `gated: auto`, which this project's "no auth needed" discipline treats as a hard blocker regardless of license (see the "Rejected options" note below on Mann-ki-Baat/Spoken-Tutorial for the same rule). Fetched instead via AI4Bharat's own [`IndicSUPERB`](https://github.com/AI4Bharat/indicSUPERB) GitHub repo, which links the exact same audio, ungated, direct-download via E2E Networks object storage. `scripts/fetch_kathbath_hindi.py` streams the (12-language-bundled) clean/valid tar and keeps only the Hindi members — 500 utterances fetched (2026-09-09). |
+| [mrinmoy-iitg/Movie-MUSNOMIX](https://github.com/mrinmoy-iitg/Movie-MUSNOMIX) | Hindi | **CC0 1.0 for the annotations only** — the repo's own README states the underlying movie audio (extracted from 4 YouTube-hosted Bollywood films, credited to their official channels) is restricted to **academic/non-commercial use only** ("According to the Copyright Act, 1957 of the Govt. of India, the content in this data corpus may only be used for academic research. No one is permitted to use this dataset commercially.") | Read the repo's own LICENSE (CC0) and README disclaimer directly (not just a dataset-card tag). This project is non-commercial, and the user explicitly confirmed (2026-09-09) that qualifies. Only the "speech" class (203 of 1161 total annotated segments; the rest are music/noise/mixed) was fetched via `scripts/fetch_movie_musnomix.py` — real Bollywood dialogue from 4 films (1966-2011), a genuinely different acoustic domain (dramatic delivery, background music bleed) from both IndicTTS-Hindi and Kathbath. **This data must never be used for anything commercial** — track that if this project's status ever changes. |
 
 ### Rejected options (and why)
 
