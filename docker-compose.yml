@@ -81,6 +81,17 @@ services:
   # then cached in the container's own filesystem until it's recreated).
   whisper-live:
     image: ghcr.io/collabora/whisperlive-cpu:latest
+    # REAL ISSUE found 2026-09-09 deploying on Apple Silicon: this image
+    # is only published for linux/amd64 (verified via `docker manifest
+    # inspect` — no arm64 entry at all, not just an unbuilt one this repo
+    # controls). Forcing the platform lets Docker Desktop pull the amd64
+    # image and run it under Rosetta/QEMU emulation instead of failing
+    # outright with "no matching manifest". Slower than native arm64
+    # would be — acceptable here since this sidecar's whole point is to
+    # get Whisper's CPU cost OUT of live-call-api's own process, not to
+    # be the fastest possible transcription path; re-measure once
+    # collabora publishes a native arm64 build.
+    platform: linux/amd64
     ports:
       - "9090:9090"
     restart: unless-stopped
