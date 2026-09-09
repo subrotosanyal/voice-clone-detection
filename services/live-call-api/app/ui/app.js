@@ -12,6 +12,7 @@ const COMPONENT_LABEL = {
   third_signal: "Third signal",
   intent: "Intent (zero-shot)",
   perth_watermark: "Watermark check",
+  phase_incoherence: "Phase coherence",
 };
 const GAUGE_CIRCUMFERENCE = 2 * Math.PI * 62;
 
@@ -22,11 +23,72 @@ const COMPONENT_HELP = {
   third_signal: "A third, swappable check — NOT about the audio itself. Either (a) red flags about the CALL: an unknown number, an odd hour, urgent/pressuring language, an authority claim (bank/police/government) — especially combined with a financial request, the classic fraud script — or (b) a direct voice match check against a caller's enrolled voiceprint (Voiceprints tab), when one exists. Whichever ran is named in 'view raw JSON'.",
   intent: "Scores the TRANSCRIPT (not the audio) against fraud-relevant candidate labels — 'requesting a money transfer', 'requesting an OTP/PIN', 'impersonating a bank or government official', 'creating urgency', or 'ordinary conversation' — using a zero-shot language model, not exact keyword matching like Third signal. KNOWN LIMITATION: testing found it sometimes misjudges completely ordinary conversation as suspicious — the breakdown below shows every candidate's own score, not just the winner, specifically so you can sanity-check it rather than trust one number blindly. Weighted low in the overall score for that reason. Abstains with no transcript.",
   perth_watermark: "Checks for a specific neural fingerprint (the 'Perth' watermark) that Chatterbox and other Resemble AI-based voice-cloning tools embed in every clip they generate — a narrow but high-confidence check, not a general spoof detector. Higher % = this specific fingerprint was found. NARROW SCOPE: it only catches tools that use this watermark — a low score here does NOT mean the audio is genuine, it just means this one fingerprint wasn't found; see Acoustic for general-purpose spoof detection. Known false-positive on non-speech audio like a pure tone.",
+  phase_incoherence: "Checks how consistent the audio's frequency PHASE is from one instant to the next — AI voice generators tend to reconstruct a cleaner, more mathematically 'tidy' phase than a real human voice, which is a noisier physical process. Higher % = unusually phase-coherent for genuine speech. KNOWN LIMITATION: this is a moderate signal against XTTS-v2-style cloning but a much stronger one against Chatterbox-style cloning — testing found it genuinely weaker against some cloning tools than others, so treat a low score here as 'no strong phase evidence', not 'definitely genuine'. Weighted lowest of the acoustic checks for that reason. A real, deterministic measurement (like Prosodic), not a trained classifier like Acoustic.",
 };
 const BAND_HELP = {
   low: "LOW risk (score 0–34): nothing here looks suspicious across the signals that ran. Recommended action: no special handling needed.",
   elevated: "ELEVATED risk (score 35–69): at least one signal flagged something worth a closer look. Recommended action: verify the caller further before acting on a sensitive request.",
   high: "HIGH risk (score 70–100): multiple signals agree something is off, or one signal is very confident. Recommended action: block or escalate the sensitive request for manual review.",
+};
+
+// ---------- "How this score is calculated" — full pictorial breakdown ----------
+// Kind + step-by-step mechanics for each detector, shown in the How It Works
+// modal alongside its LIVE weight (pulled from /v1/config, never hardcoded
+// here, so this page can't drift from the real running formula).
+const HIW_DETECTOR_INFO = {
+  acoustic: {
+    kind: "🧠 Trained neural network — AASIST (ASVspoof2019 LA)",
+    steps: [
+      "The raw waveform is fed directly into AASIST, a graph-attention network trained specifically to spot text-to-speech/voice-cloning artifacts.",
+      "Output is a single spoof-probability between 0 and 1 — no hand-built features in between.",
+      "A small, separately fine-tuned final layer improves accuracy on Hindi speech specifically.",
+    ],
+    caveat: "Only independently validated on English so far — Hindi relies on the fine-tuned layer above.",
+  },
+  prosodic: {
+    kind: "📐 Deterministic formula — Praat/Parselmouth",
+    steps: [
+      "Praat extracts jitter (pitch-period variability), shimmer (amplitude variability), and HNR (harmonics-to-noise ratio) — validated clinical voice-quality measures.",
+      "Each is compared against a natural-voice reference range.",
+      "Unusually low jitter/shimmer or unusually high HNR (a voice that's 'too smooth') raises the score.",
+    ],
+    caveat: "The three features are real and validated; the risk-mapping thresholds on top are a documented heuristic, not a trained classifier.",
+  },
+  third_signal: {
+    kind: "🔀 Rule-based OR 🧠 trained model, depending on mode",
+    steps: [
+      "Contextual mode: checks call metadata (unknown number, odd hour) and transcript keywords (urgency, authority claims, financial requests) against a transparent rule list.",
+      "Consistency mode: compares the live voice's ECAPA-TDNN embedding against an enrolled voiceprint via cosine similarity.",
+      "'auto' mode (the default) uses consistency once a voiceprint is enrolled, contextual otherwise.",
+    ],
+    caveat: null,
+  },
+  intent: {
+    kind: "🧠 Trained language model — zero-shot NLI",
+    steps: [
+      "The call transcript is scored against fraud-relevant candidate labels ('requesting a money transfer', 'impersonating a bank', etc.) using a zero-shot classifier — not keyword matching.",
+      "The highest-scoring fraud-relevant label (excluding 'ordinary conversation') sets the risk score.",
+      "Abstains entirely when no transcript is available.",
+    ],
+    caveat: "Testing found this model can misjudge ordinary conversation as fraud-relevant — weighted low for that reason, and every candidate label's own score is shown, not just the winner.",
+  },
+  perth_watermark: {
+    kind: "📐 Deterministic fingerprint check",
+    steps: [
+      "Checks the audio for Resemble AI's Perth neural watermark — a specific fingerprint Chatterbox and other Perth-integrated cloning tools embed in every clip they generate.",
+      "Returns how strongly that exact fingerprint is present, not a general 'sounds synthetic' judgment.",
+    ],
+    caveat: "A low score only means this ONE fingerprint wasn't found — never that the audio is genuine. Known false-positive on non-speech audio like a pure tone.",
+  },
+  phase_incoherence: {
+    kind: "📐 Deterministic formula — STFT phase analysis",
+    steps: [
+      "Measures how consistent the audio's frequency phase is from one instant to the next (circular variance of frame-to-frame phase, weighted by which frequencies actually carry energy).",
+      "Neural vocoders tend to reconstruct cleaner, more mathematically 'tidy' phase than a real human voice.",
+      "Unusually phase-coherent audio raises the score.",
+    ],
+    caveat: "Meaningfully weaker against some cloning tools (XTTS-v2) than others (Chatterbox) — weighted lowest of the acoustic-family signals for that reason.",
+  },
 };
 
 function escapeHtml(s) {
@@ -95,6 +157,89 @@ function helpIcon(text) {
 
 let traceScores = []; // rolling [0-100] scores for the current session/analysis, drives the chart
 
+// ---------- "How this score is calculated" modal ----------
+// Renders live from whatever /v1/config actually returns — if
+// risk_formula.yaml changes (a weight, an added/removed detector, a
+// smoothing alpha, a band threshold), this page updates automatically
+// with it, rather than being a second, driftable copy of the numbers.
+function renderHowItWorks(cfg) {
+  const detectors = cfg.detectors || [];
+  const weightSum = detectors.reduce((sum, d) => sum + d.weight, 0) || 1;
+
+  const winMeta = document.getElementById("hiwWindowMeta");
+  if (winMeta && cfg.windowing) {
+    winMeta.textContent = `${cfg.windowing.window_ms / 1000}s / ${cfg.windowing.hop_ms / 1000}s hop`;
+  }
+  const countMeta = document.getElementById("hiwDetectorCount");
+  if (countMeta) countMeta.textContent = `${detectors.length} pluggable signals`;
+
+  const alpha = cfg.fusion && cfg.fusion.smoothing_alpha;
+  const alphaMeta = document.getElementById("hiwAlphaMeta");
+  if (alphaMeta && alpha != null) alphaMeta.textContent = `EMA, α=${alpha}`;
+
+  const cardsEl = document.getElementById("hiwDetectors");
+  if (cardsEl) {
+    cardsEl.innerHTML = detectors
+      .map((d) => {
+        const info = HIW_DETECTOR_INFO[d.name] || { kind: "", steps: [], caveat: null };
+        const pct = Math.round((d.weight / weightSum) * 100);
+        const label = COMPONENT_LABEL[d.name] || d.name;
+        return `
+          <div class="hiw-card">
+            <div class="hiw-card-top">
+              <span class="hiw-card-name">${escapeHtml(label)}</span>
+              <span class="hiw-card-weight">${pct}% weight</span>
+            </div>
+            <div class="hiw-kind">${escapeHtml(info.kind)}</div>
+            <ol class="hiw-steps">${info.steps.map((s) => `<li>${escapeHtml(s)}</li>`).join("")}</ol>
+            ${info.caveat ? `<div class="hiw-caveat">⚠ ${escapeHtml(info.caveat)}</div>` : ""}
+          </div>
+        `;
+      })
+      .join("");
+  }
+
+  const eqEl = document.getElementById("hiwFormulaEq");
+  if (eqEl) {
+    const terms = detectors
+      .map((d) => `${((d.weight / weightSum) * 100).toFixed(0)}%×${COMPONENT_LABEL[d.name] || d.name}`)
+      .join(" + ");
+    eqEl.textContent = `fused = ${terms}  (renormalized to 100% over signals that didn't abstain)`;
+  }
+
+  const smoothEl = document.getElementById("hiwSmoothingEq");
+  if (smoothEl && alpha != null) {
+    smoothEl.textContent = `smoothed = ${alpha} × raw_this_window + ${(1 - alpha).toFixed(2)} × smoothed_previous_window`;
+  }
+
+  const bandsEl = document.getElementById("hiwBands");
+  if (bandsEl && cfg.bands) {
+    const { low_max: lowMax, elevated_max: elevatedMax } = cfg.bands;
+    const helpText = (s) => s.substring(s.indexOf(": ") + 2);
+    bandsEl.innerHTML = `
+      <div class="hiw-band-track">
+        <div class="hiw-band-seg" style="width:${lowMax}%; background:var(--risk-low);">0–${lowMax}</div>
+        <div class="hiw-band-seg" style="width:${elevatedMax - lowMax}%; background:var(--risk-med);">${lowMax + 1}–${elevatedMax}</div>
+        <div class="hiw-band-seg" style="width:${100 - elevatedMax}%; background:var(--risk-high);">${elevatedMax + 1}–100</div>
+      </div>
+      <div class="hiw-band-legend">
+        <div class="hiw-band-legend-row"><span class="dot" style="background:var(--risk-low);"></span><span class="range mono">0–${lowMax}</span><span>${escapeHtml(helpText(BAND_HELP.low))}</span></div>
+        <div class="hiw-band-legend-row"><span class="dot" style="background:var(--risk-med);"></span><span class="range mono">${lowMax + 1}–${elevatedMax}</span><span>${escapeHtml(helpText(BAND_HELP.elevated))}</span></div>
+        <div class="hiw-band-legend-row"><span class="dot" style="background:var(--risk-high);"></span><span class="range mono">${elevatedMax + 1}–100</span><span>${escapeHtml(helpText(BAND_HELP.high))}</span></div>
+      </div>
+    `;
+  }
+}
+
+const hiwOverlay = document.getElementById("hiwOverlay");
+function openHowItWorks() { hiwOverlay.classList.add("show"); }
+function closeHowItWorks() { hiwOverlay.classList.remove("show"); }
+document.getElementById("howItWorksBtn").addEventListener("click", openHowItWorks);
+document.getElementById("howItWorksFootLink").addEventListener("click", (e) => { e.preventDefault(); openHowItWorks(); });
+document.getElementById("hiwClose").addEventListener("click", closeHowItWorks);
+hiwOverlay.addEventListener("click", (e) => { if (e.target === hiwOverlay) closeHowItWorks(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeHowItWorks(); });
+
 // ---------- health chip ----------
 async function checkHealth() {
   const chip = document.getElementById("healthChip");
@@ -106,6 +251,7 @@ async function checkHealth() {
     text.textContent = "service healthy";
     const cfg = await (await fetch("/v1/config")).json();
     document.getElementById("formulaVersion").textContent = cfg.formula_version;
+    renderHowItWorks(cfg);
   } catch {
     chip.classList.remove("ok");
     text.textContent = "service unreachable";

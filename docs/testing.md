@@ -9,16 +9,18 @@ pip install -r requirements-dev.txt                   # first time only
 pytest tests/ -v
 ```
 
-157 tests, no Docker needed — unit tests for each detector (including
+167 tests, no Docker needed — unit tests for each detector (including
 `test_acoustic_aasist.py`'s coverage of the optional Hindi-recalibrated
 `finetuned_out_layer_path`, verifying it actually changes the score, not
-just that the parameter is accepted; and `test_perth_watermark.py`,
+just that the parameter is accepted; `test_perth_watermark.py`,
 which watermarks a real spoken clip via Perth's own `apply_watermark()`
 and confirms the detector actually distinguishes it from the
 unwatermarked original, not just that it runs — plus a regression test
 for a real bug found 2026-09-09 via dogfooding external audio: a very
 short trailing window used to crash the whole request instead of
-abstaining), degraded-audio
+abstaining; and `test_acoustic_phase_incoherence.py`, which locks in the
+sample-rate-resampling fix found while validating that detector — see
+docs/risk-model.md, "Phase incoherence check"), degraded-audio
 robustness checks against AASIST and the prosodic detector
 (`test_degraded_audio_robustness.py` — noise at two SNR levels, a
 telephone-bandwidth filter, and a real low-bitrate Opus re-encode,

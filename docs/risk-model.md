@@ -390,6 +390,58 @@ a low score here means "this specific fingerprint wasn't found", never
 renormalised) for exactly that reason; it complements AASIST's
 general-purpose judgment rather than replacing it.
 
+## Phase incoherence check — a real, moderate signal, weighted accordingly
+
+`app/adapters/detectors/acoustic_phase_incoherence.py`
+(`PhaseIncoherenceDetector`) measures the circular variance of
+frame-to-frame STFT phase deltas, magnitude-weighted per frequency bin —
+a real, deterministic DSP computation, not a trained classifier. The
+underlying idea: neural vocoders (HiFi-GAN and similar, underlying both
+XTTS-v2 and Chatterbox) typically reconstruct a magnitude spectrogram and
+discard or crudely estimate phase, producing more internally-consistent
+(coherent) phase than a real human vocal tract, which is a noisier
+physical process.
+
+**Verified by hand, not assumed (2026-09-09)** — measured against this
+project's own `eval/indian_language/data/` corpus (200 genuine Hindi
+utterances, 40 XTTS-v2-cloned, 40 held-out Chatterbox-cloned never used to
+calibrate this detector):
+
+- **A real bug was found and fixed during this validation**: the genuine
+  corpus is 48kHz PCM16; both synthetic corpora are 24kHz. Comparing
+  spectral/cepstral features straight off each file's native sample rate
+  measured the RECORDING CHAIN, not genuine-vs-synthetic content — a
+  classic anti-spoofing shortcut-learning pitfall. That naive comparison
+  produced absurd effect sizes (Cohen's d up to 8.0, AUC of 1.000/0.000);
+  every one of those numbers vanished once every file was resampled to a
+  common 16kHz first, matching what `acoustic_aasist.py` already does.
+  This is why the detector resamples internally rather than trusting the
+  incoming window's sample rate.
+- With that fixed, phase incoherence itself holds up: genuine speech
+  mean=0.644 (std=0.033, n=200) vs. XTTS-v2 mean=0.620 (Cohen's d=+0.70,
+  AUC=0.68) and vs. HELD-OUT Chatterbox mean=0.559 (Cohen's d=+2.56,
+  AUC=0.96) — genuine speech is reliably more phase-incoherent than
+  either synthesis system, moderately against XTTS-v2, strongly against a
+  system never used to tune this detector.
+- Two other features considered alongside this one (spectral flux
+  variance, a cepstral quefrency ratio) were measured the same way and
+  did NOT hold up once the sample-rate bug was fixed — deliberately left
+  out of the shipped detector rather than included on the strength of the
+  pre-fix numbers.
+
+**Honestly weaker in one direction**: this is meaningfully weaker
+evidence against XTTS-v2 (AUC 0.68 — not reliable standalone) than
+against Chatterbox (AUC 0.96). Weighted lowest of the acoustic-family
+detectors (0.10, auto-renormalised) for exactly that reason — a real,
+additive signal, not a strong standalone one. There is also a residual,
+not-fully-ruled-out confound: Chatterbox's corpus files are FLOAT-encoded
+versus genuine/XTTS-v2's PCM16, which could inflate quantization-
+sensitive features (this is exactly why the cepstral feature was
+dropped) — less likely to explain the phase result specifically, since
+the XTTS-v2 effect (same PCM16 encoding as genuine) already replicates
+the same direction independently, but not independently verified with a
+matched-encoding re-render.
+
 ## The pluggable third signal, pros/cons
 
 | Mode | Pros | Cons |

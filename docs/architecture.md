@@ -126,6 +126,19 @@ Every component name and risk band in the results panel has a small "?"
 icon (hover/focus) with a plain-language explanation — see `COMPONENT_HELP`
 / `BAND_HELP` in `app/ui/app.js` if you need to update the wording.
 
+**"How this score is calculated"** (header button, footer link, or any
+result's help icon) opens a full pictorial explainer: an SVG pipeline
+diagram (audio → windowing → detectors → fusion → smoothing → banded
+score, each box itself hover/focus-tooltipped via a native SVG `<title>`
+naming what it does) followed by a card per detector (its real live
+weight, whether it's a trained model or a deterministic formula, the
+exact steps it computes, and its honest caveats) and the fusion/smoothing/
+banding formulas spelled out with today's real numbers. Everything on
+this page is rendered live from `GET /v1/config` (`renderHowItWorks()` in
+`app/ui/app.js`) rather than hardcoded, so it can't drift from the actual
+running formula — the per-detector step lists themselves live in
+`HIW_DETECTOR_INFO` in that same file.
+
 Mount order matters: `app.mount("/", StaticFiles(...))` is registered
 **after** the API routers in `app/main.py`, specifically so `/healthz`,
 `/v1/*`, and FastAPI's own `/docs`/`/redoc` all resolve first — the
@@ -470,6 +483,24 @@ single-handedly dominate the score. See `docs/risk-model.md`, "Watermark
 check" for the full writeup, including a real false-positive edge case
 on non-speech audio (a pure tone reads 0.92) found and documented while
 verifying this.
+
+## Phase incoherence check — a CPU-cheap complement to AASIST
+
+`app/adapters/detectors/acoustic_phase_incoherence.py`
+(`PhaseIncoherenceDetector`) measures STFT phase coherence — real
+neural vocoders tend to reconstruct cleaner, more internally-consistent
+phase than a real human vocal tract. Pure scipy/numpy, no model to load,
+effectively instant on CPU. Verified by hand against
+`eval/indian_language/data/`: moderate effect against XTTS-v2 (Cohen's
+d=0.70, AUC=0.68), strong effect against HELD-OUT Chatterbox (d=2.56,
+AUC=0.96, never used to calibrate this). A real bug (a sample-rate
+mismatch between the genuine and synthetic corpora inflating unrelated
+features) was found and fixed during that validation — see
+`docs/risk-model.md`, "Phase incoherence check" for the full writeup.
+Weighted lowest of the acoustic-family detectors (0.10, auto-renormalised)
+because it's honestly weaker against XTTS-v2 than Chatterbox — same
+"real but narrow, don't let it dominate" reasoning as `perth_watermark`
+and `intent` above.
 
 ## Concurrency: keeping the event loop free during a long score
 

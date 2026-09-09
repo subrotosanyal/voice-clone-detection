@@ -50,7 +50,10 @@ human-readable breakdown of exactly which signal contributed what, plus a
 one-sentence plain-language explanation of *why* under each component. On
 file uploads, an optional **diarizer** can also split a multi-speaker
 recording and score each voice separately. Nothing here is a black box —
-see `docs/risk-model.md`.
+see `docs/risk-model.md`, or the dashboard's own **"How this score is
+calculated"** page (header button / footer link) for a full pictorial
+walkthrough of every signal and the fusion formula, rendered live from
+today's actual running config.
 
 A fifth, **zero-shot intent classifier** (real model, real MIT license,
 real Hindi coverage) scores the transcript against fraud-relevant
@@ -138,6 +141,13 @@ implementations, not hand-rolled heuristics alone:
   high-precision complement to Acoustic — verified by hand that genuine
   speech and a different, non-Perth TTS system both read near-zero, while
   Perth-watermarked audio reads 1.0 (see `docs/risk-model.md`).
+- **Phase incoherence check** — a CPU-cheap, deterministic DSP signal
+  (STFT phase coherence, no model to load) that catches neural vocoders'
+  tendency to reconstruct cleaner phase than a real human voice.
+  Verified by hand against `eval/indian_language/data/`: moderate effect
+  against XTTS-v2, strong effect against held-out Chatterbox. Weighted
+  lowest (0.10) since it's honestly weaker against some cloning tools
+  than others (see `docs/risk-model.md`).
 
 Every model/checkpoint is fetched and cached at `docker compose up --build`
 time — see `docs/running-locally.md` for running without Docker. See

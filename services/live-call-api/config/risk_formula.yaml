@@ -12,7 +12,7 @@
 # every log line so a score can always be tied back to the exact config
 # that produced it (see docs/risk-model.md, "Reproducibility").
 
-formula_version: "2026.09.10"
+formula_version: "2026.09.11"
 
 detectors:
   # Real pretrained countermeasure (AASIST, ASVspoof2019 LA, MIT licensed —
@@ -104,6 +104,27 @@ detectors:
     # audio (a pure tone) — see that module's own HONESTY NOTE.
     class: app.adapters.detectors.perth_watermark:PerthWatermarkDetector
     weight: 0.15
+    params:
+      floor_rms: 0.0001
+
+  - name: phase_incoherence
+    # STFT phase-coherence — a CPU-cheap complement to AASIST, added
+    # 2026-09-09 (see app/adapters/detectors/acoustic_phase_incoherence.py
+    # for the full VERIFIED BY HAND writeup and docs/risk-model.md,
+    # "Phase incoherence check" for the summary). Real, measured effect
+    # against this project's own eval/indian_language/ corpus (resampled
+    # to a common 16kHz — an earlier sample-rate mismatch produced
+    # spurious huge numbers, since fixed and documented in that module):
+    # moderate against XTTS-v2 (Cohen's d=0.70, AUC=0.68), strong against
+    # HELD-OUT Chatterbox (d=2.56, AUC=0.96, never used to calibrate this).
+    #
+    # Weighted lower than perth_watermark/intent (0.10 vs. 0.15) precisely
+    # because it's weaker against XTTS-v2 specifically and newer/less
+    # cross-checked than either — a real, additive, but modest signal, not
+    # a strong standalone one. See that module's HONESTY NOTE before
+    # raising this weight.
+    class: app.adapters.detectors.acoustic_phase_incoherence:PhaseIncoherenceDetector
+    weight: 0.10
     params:
       floor_rms: 0.0001
 
