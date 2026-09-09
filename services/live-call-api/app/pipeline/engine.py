@@ -16,6 +16,7 @@ DetectorPort — nothing else here needs to change.
 """
 from __future__ import annotations
 
+import concurrent.futures
 from typing import Any, Iterable, Optional
 
 import numpy as np
@@ -49,6 +50,15 @@ _STICKY_BOOL_FIELDS = (
     "semantic_isolation_request",
 )
 _STICKY_MAX_FIELDS = ("semantic_urgency_level",)
+
+# See Engine.diarize_and_score()'s own REAL BUG note. Capped rather than
+# one-worker-per-speaker: app/main.py's own _limit_cpu_threads() already
+# tells torch to use only 2 threads per model call specifically to avoid
+# oversubscribing a small CI/production runner — an unbounded worker
+# count for a pathological diarization result (this project's own
+# CALIBRATION HISTORY once saw 100+ over-counted speakers from a single
+# call) would defeat that entirely.
+_MAX_DIARIZE_SCORE_WORKERS = 4
 
 
 class SessionStore:
@@ -384,6 +394,39 @@ class Engine:
         isn't re-derivable from FusedScore history alone, and what powers
         GET /v1/sessions/{id}/speakers for discovering which derived
         sessions exist for a given call.
+
+        REAL BUG found 2026-09-11 (CI): each speaker's score_call() used
+        to run sequentially here. That was fine while a separate config
+        bug (see risk_formula.yaml's own REAL BUG note on
+        semantic_risk_classification's model_path) made the semantic-risk
+        LLM step crash immediately on every call — once THAT bug was
+        fixed, this path started doing its full real work (Whisper +
+        intent + a ~1-1.5s local-LLM forward pass + AASIST/ECAPA/Perth
+        per window) for every speaker, and the WS "diarize on hangup"
+        path's own 45-second poll (app/api/ws_router.py's docstring) and
+        the live-diarization integration test's own poll started missing
+        it — the fix that made this code path correct also made it
+        slower. score_call() calls for DIFFERENT speakers never share
+        mutable state (own derived session_id, own SessionStore entry,
+        own history rows) — safe to run concurrently. A thread pool, not
+        asyncio: this whole method is synchronous CPU-bound work, already
+        invoked via run_in_threadpool by both of ITS OWN callers
+        (http_router.py, ws_router.py) — torch/numpy's native forward
+        passes release the GIL during actual computation, so multiple
+        speakers' inference can genuinely overlap here, not just look
+        concurrent. See _MAX_DIARIZE_SCORE_WORKERS' own comment for why
+        this is capped, not one-worker-per-speaker.
+
+        TRADE-OFF, honestly noted: previously, if one speaker's
+        score_call() raised, EARLIER speakers in the sequential loop had
+        already had their results persisted before the exception
+        propagated. Now all speakers' score_call()s run before any
+        persistence happens, so one speaker's hard failure means NONE of
+        this call's speakers get a saved summary, not just the later
+        ones. Accepted: score_call() is designed not to raise for normal
+        audio (only for infrastructure bugs, like the model_path one this
+        very change was prompted by), and speaker summaries were already
+        documented as best-effort, not a durability guarantee.
         """
         segments = diarizer.diarize(samples, sample_rate)
         if not segments:
@@ -402,16 +445,26 @@ class Engine:
             speaker_chunks[seg.speaker_label].append(samples[start_sample:end_sample])
             speaker_duration_ms[seg.speaker_label] += seg.end_ms - seg.start_ms
 
-        results: list[SpeakerCallResult] = []
-        for speaker_label in speaker_order:
+        def _score_one(speaker_label: str) -> Optional[list[FusedScore]]:
             speaker_samples = np.concatenate(speaker_chunks[speaker_label])
-            speaker_session_id = f"{base_session_id}::{speaker_label}"
-            speaker_fused = self.score_call(
-                session_id=speaker_session_id,
+            return self.score_call(
+                session_id=f"{base_session_id}::{speaker_label}",
                 samples=speaker_samples,
                 sample_rate=sample_rate,
                 context=context,
             )
+
+        # map() (not as_completed()) deliberately preserves speaker_order's
+        # first-seen ordering in the results, matching this method's
+        # existing, tested contract — even though workers may FINISH out
+        # of that order internally.
+        max_workers = min(len(speaker_order), _MAX_DIARIZE_SCORE_WORKERS)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
+            fused_by_speaker = dict(zip(speaker_order, pool.map(_score_one, speaker_order)))
+
+        results: list[SpeakerCallResult] = []
+        for speaker_label in speaker_order:
+            speaker_fused = fused_by_speaker[speaker_label]
             if not speaker_fused:
                 continue  # this speaker's total voiced audio was too short to window
             segment_count = len(speaker_chunks[speaker_label])
@@ -419,7 +472,7 @@ class Engine:
             results.append(
                 SpeakerCallResult(
                     speaker_label=speaker_label,
-                    session_id=speaker_session_id,
+                    session_id=f"{base_session_id}::{speaker_label}",
                     segment_count=segment_count,
                     total_duration_ms=total_duration_ms,
                     fused_scores=speaker_fused,
@@ -431,7 +484,7 @@ class Engine:
                         SpeakerCallSummary(
                             base_session_id=base_session_id,
                             speaker_label=speaker_label,
-                            speaker_session_id=speaker_session_id,
+                            speaker_session_id=f"{base_session_id}::{speaker_label}",
                             segment_count=segment_count,
                             total_duration_ms=total_duration_ms,
                         )

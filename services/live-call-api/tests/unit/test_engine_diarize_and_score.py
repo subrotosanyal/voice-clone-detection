@@ -7,6 +7,9 @@ style as test_live_transcription.py.
 """
 from __future__ import annotations
 
+import threading
+import time
+
 import numpy as np
 
 from app.adapters.detectors.acoustic_spectral_flatness import SpectralFlatnessDetector
@@ -99,6 +102,47 @@ def test_persists_a_speaker_summary_per_speaker(tmp_path):
     # And the speaker's own trace is separately retrievable, same as any
     # other session — proves score_call() really did persist it.
     assert history.get_session("base2::speaker_1") != []
+
+
+def test_different_speakers_are_scored_concurrently_not_sequentially(monkeypatch):
+    """Regression test for the 2026-09-11 REAL BUG: sequential per-speaker
+    scoring was fast enough while a separate config bug made every real
+    score_call() crash immediately (see risk_formula.yaml's own REAL BUG
+    note) — once that was fixed, this path started doing its full real
+    work per speaker, and app/api/ws_router.py's "diarize on hangup" path
+    started missing its own poll timeout. Proves diarize_and_score() now
+    actually overlaps different speakers' score_call() calls, using a
+    real threading.Lock-tracked sleep the same way
+    test_ws_hangup_diarization_bounds.py's _SlowFakeEngine does — not
+    just "looks concurrent" on paper."""
+    engine = Engine(pipeline=_pipeline())
+    diarizer = _FakeDiarizer(
+        segments=[
+            SpeakerSegment(speaker_label="speaker_1", start_ms=0, end_ms=1000),
+            SpeakerSegment(speaker_label="speaker_2", start_ms=1000, end_ms=2000),
+            SpeakerSegment(speaker_label="speaker_3", start_ms=2000, end_ms=3000),
+        ]
+    )
+    max_concurrent = 0
+    current = 0
+    lock = threading.Lock()
+
+    def _slow_score_call(*args, **kwargs):
+        nonlocal max_concurrent, current
+        with lock:
+            current += 1
+            max_concurrent = max(max_concurrent, current)
+        time.sleep(0.2)
+        with lock:
+            current -= 1
+        return [object()]  # falsy-check in diarize_and_score just needs a non-empty list
+
+    monkeypatch.setattr(engine, "score_call", _slow_score_call)
+
+    results = engine.diarize_and_score(diarizer, "base-concurrent", _loud_audio(3.0), SR, {})
+
+    assert len(results) == 3
+    assert max_concurrent > 1, "speakers were scored one at a time — not actually concurrent"
 
 
 def test_a_speaker_with_zero_audio_is_skipped():
