@@ -20,7 +20,7 @@ const GAUGE_CIRCUMFERENCE = 2 * Math.PI * 62;
 // ---------- help tooltips — plain-language explanations for jargon in the UI ----------
 const COMPONENT_HELP = {
   acoustic: "Detects whether the VOICE ITSELF was AI-generated or cloned, as opposed to a real person speaking — using AASIST, a neural network trained specifically to spot the audio artifacts text-to-speech and voice-cloning tools leave behind that a real human voice doesn't have. Higher % = more likely synthetic/cloned. The base model is only independently validated on English speech; a separately fine-tuned final layer improves accuracy on Hindi specifically (see 'view raw JSON' for whether it was active).",
-  prosodic: "Detects whether the voice's pitch and loudness are suspiciously steady — a real human voice naturally wavers a little from breath to breath (jitter, shimmer); a voice that's unusually 'too smooth' can be a sign of synthesis. Higher % = less natural variation than typical speech. This is a heuristic rule of thumb, not a trained classifier like Acoustic.",
+  prosodic: "Detects whether the voice's pitch and loudness variation (jitter, shimmer) and harmonics-to-noise ratio look natural — using a logistic regression trained on 1423 genuine + 340 spoof Hindi examples, not a hand-picked threshold. Higher % = more spoof-like on these three measures. Reaches 82.5% balanced accuracy on genuinely held-out data (2026-09-09) — a real, substantial improvement over an earlier hand-tuned version of this detector, which turned out to score at chance level against real audio once actually measured.",
   third_signal: "A third, swappable check — NOT about the audio itself. Either (a) red flags about the CALL: an unknown number, an odd hour, urgent/pressuring language, an authority claim (bank/police/government) — especially combined with a financial request, the classic fraud script — or (b) a direct voice match check against a caller's enrolled voiceprint (Voiceprints tab), when one exists. Whichever ran is named in 'view raw JSON'.",
   intent: "Scores the TRANSCRIPT (not the audio) against fraud-relevant candidate labels — 'requesting a money transfer', 'requesting an OTP/PIN', 'impersonating a bank or government official', 'creating urgency', or 'ordinary conversation' — using a zero-shot language model, not exact keyword matching like Third signal. KNOWN LIMITATION: testing found it sometimes misjudges completely ordinary conversation as suspicious — the breakdown below shows every candidate's own score, not just the winner, specifically so you can sanity-check it rather than trust one number blindly. Weighted low in the overall score for that reason. Abstains with no transcript.",
   perth_watermark: "Checks for a specific neural fingerprint (the 'Perth' watermark) that Chatterbox and other Resemble AI-based voice-cloning tools embed in every clip they generate — a narrow but high-confidence check, not a general spoof detector. Higher % = this specific fingerprint was found. NARROW SCOPE: it only catches tools that use this watermark — a low score here does NOT mean the audio is genuine, it just means this one fingerprint wasn't found; see Acoustic for general-purpose spoof detection. Known false-positive on non-speech audio like a pure tone.",
@@ -48,13 +48,13 @@ const HIW_DETECTOR_INFO = {
     caveat: "Only independently validated on English so far — Hindi relies on the fine-tuned layer above.",
   },
   prosodic: {
-    kind: "📐 Deterministic formula — Praat/Parselmouth",
+    kind: "🧠 Trained classifier — logistic regression over Praat/Parselmouth features",
     steps: [
       "Praat extracts jitter (pitch-period variability), shimmer (amplitude variability), and HNR (harmonics-to-noise ratio) — validated clinical voice-quality measures.",
-      "Each is compared against a natural-voice reference range.",
-      "Unusually low jitter/shimmer or unusually high HNR (a voice that's 'too smooth') raises the score.",
+      "The three numbers are standardized and combined by a logistic regression trained on 1423 genuine + 340 spoof Hindi examples (2026-09-09), not three independent hand-picked thresholds.",
+      "Output is a single spoof probability between 0 and 1.",
     ],
-    caveat: "The three features are real and validated; the risk-mapping thresholds on top are a documented heuristic, not a trained classifier.",
+    caveat: "82.5% balanced accuracy on genuinely held-out data (never used in training) — a real, substantial improvement over an earlier hand-tuned version, which scored at exactly chance level (50%) once actually measured against real audio. Still a 3-feature classifier on a calibration-scale (140-example) held-out set, not a large validated benchmark.",
   },
   third_signal: {
     kind: "🔀 Rule-based OR 🧠 trained model, depending on mode",

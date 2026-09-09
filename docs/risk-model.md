@@ -97,25 +97,30 @@ swaps in a small (~3KB), in-house-produced recalibration of just AASIST's
 final classification layer — the base model, architecture, and training
 data are all unchanged; only `out_layer`'s weights differ. Produced by
 `eval/indian_language`'s fine-tuning pipeline (see that directory's
-README.md for the full reproducible process, including two real bugs
+README.md for the full reproducible process, including several real bugs
 found and fixed along the way: a class-imbalance issue that let an
-earlier attempt collapse toward always predicting "bonafide", and a
+earlier attempt collapse toward always predicting "bonafide", a
 BatchNorm/Dropout statistics-drift bug that made an even earlier attempt
-non-reproducible between training time and a fresh reload). Honest
-numbers: EER on the in-house eval corpus dropped 17.75% -> 3.0%; more
-meaningfully, false-positive rate on an independent, more varied real
-Hindi speech sample (never used in training) dropped 75% -> 20%. Every
-score's `detail.hindi_finetuned_out_layer` flag says whether this
-recalibration was active, so nothing here is hidden. Not "solved" —
-20% is still a real, material false-positive rate, just far better than
-before.
+non-reproducible between training time and a fresh reload, and — in the
+2026-09-09 retrain on a much larger, more diverse corpus — a silent
+OOM-suspected crash from an unchunked validation batch). Honest numbers,
+updated 2026-09-09 on the expanded 1423-genuine/340-spoof corpus: EER
+36.1% (before fine-tuning) -> 12.0% (after, trained-on) -> **19.5% held
+out on BOTH the speaker/utterance and synthesis-system dimensions at
+once** — the number that actually matters, since neither the specific
+held-out utterance nor the held-out synthesis system was seen during
+training. The much lower "before" number vs. an earlier, smaller-corpus
+measurement (82% accuracy / 17.75% EER) is not a regression — it reflects
+a harder, more honest, more diverse test set (see `eval/indian_language/
+README.md`'s "2026-09-09 update" for the full account). Every score's
+`detail.hindi_finetuned_out_layer` flag says whether this recalibration
+was active, so nothing here is hidden. Not "solved" — 19.5% EER is still
+a real, material gap, just far better than the un-recalibrated baseline.
 
-## The prosodic detector: Parselmouth (Praat), with real limits
+## The prosodic detector: Parselmouth (Praat) features, trained classifier on top
 
-`prosody_parselmouth.py` (the current default `prosodic` class — see
-`services/live-call-api/config/risk_formula.yaml`'s `formula_version` for
-the config revision this doc reflects) computes jitter, shimmer, and harmonics-to-
-noise ratio via **Parselmouth** — the official Python binding for **Praat**,
+`prosody_parselmouth.py` computes jitter, shimmer, and harmonics-to-noise
+ratio via **Parselmouth** — the official Python binding for **Praat**,
 the long-standing reference tool in clinical voice-quality research.
 Attribution and licence:
 
@@ -126,17 +131,30 @@ Attribution and licence:
   pitch-variance heuristic (`prosody_pitch_variance.py`, still available
   via a one-line config swap for a Praat-free run).
 
-**What's still a placeholder**: the risk-score MAPPING built on top of
-those Praat measurements (`_JITTER_FLOOR`/`_SHIMMER_FLOOR`/`_HNR_CEILING`
-in the module) is an unvalidated heuristic — "an unnaturally smooth voice
-is synthetic-suspicious" — not a trained classifier, and not yet tuned
-against a labeled genuine-vs-synthetic corpus. The lightweight acoustic
-fallback (`acoustic_spectral_flatness.py`) has the same class of caveat.
-Treat any score that includes either as partly proof-of-pipeline, not a
-fully validated fraud signal — the acoustic-via-AASIST component remains
-the one part of today's score backed by a real, published, trained
-*classifier* (as opposed to a validated feature extractor with a heuristic
-threshold on top).
+**2026-09-09 update — the risk mapping is no longer a heuristic**: the
+module always had two classes. `ParselmouthProsodyDetector`'s three
+independent hand-tuned thresholds (`_JITTER_FLOOR`/`_SHIMMER_FLOOR`/
+`_HNR_CEILING`) were finally validated against 1423 genuine + 340 spoof
+Hindi examples (`eval/indian_language/scripts/
+calibrate_prosodic_thresholds.py`) and scored **exactly 50% balanced
+accuracy — chance level** — they never fire against real audio. The
+config-default `prosodic:` class is now `ParselmouthProsodyMLDetector`:
+the SAME three Praat features, combined by a logistic regression
+(hardcoded as plain sigmoid arithmetic, not a serialized model — see that
+class's own module docstring for why) instead of three independent
+floors/ceiling. It reaches **82.5% balanced accuracy on genuinely
+held-out data** (Chatterbox-cloned spoof + local speakers' own reserved
+test clips, neither used in fitting) — see `eval/indian_language/
+README.md`'s "Prosodic detector calibration" section and `results/
+prosodic_calibration.json` for the full numbers. Read this honestly too:
+140 held-out examples is still a calibration-scale sample, and the
+learned shimmer coefficient runs opposite the old heuristic's "low
+shimmer is suspicious" hypothesis on this specific cloning system's
+artifacts — a real, validated 3-feature classifier, not yet a large
+validated benchmark. `ParselmouthProsodyDetector` (the old heuristic) is
+kept in the same file, unchanged, as a documented historical baseline.
+The lightweight acoustic fallback (`acoustic_spectral_flatness.py`) still
+has the un-validated-heuristic caveat this section used to describe.
 
 ## Voiceprint consistency: real ECAPA-TDNN comparison, with real limits
 
@@ -256,9 +274,10 @@ transparency away for a kind of signal this project doesn't actually need.
 
 **What's still a placeholder**: the keyword lists (English/Hindi/Marathi)
 were drafted for thematic coverage, not validated against real fraud-call
-transcripts — same class of caveat as the prosodic/voiceprint detectors'
-placeholder thresholds elsewhere in this document. Real ASR, real keyword
-matches; the specific word lists are a starting point.
+transcripts — same class of caveat as voiceprint consistency's threshold
+elsewhere in this document (prosodic's own threshold was validated and
+replaced 2026-09-09 — see "The prosodic detector" above). Real ASR, real
+keyword matches; the specific word lists are a starting point.
 
 **Reproducibility fix, 2026-09-08**: a real intermittent bug was found and
 fixed — Whisper's `transcribe()` defaults to a temperature FALLBACK tuple,
@@ -335,8 +354,8 @@ visible and inspectable rather than hidden inside one opaque number. This
 does not fix the miscalibration — it means an operator sees "creating
 urgency or time pressure: 39%, ordinary conversation: 4%" laid out in
 full and can judge for themselves, the same trust model this project's
-other honestly-flagged heuristic thresholds (prosodic, voiceprint
-consistency) already rely on. Real fixes not done yet: several distinct
+other honestly-flagged heuristic thresholds (voiceprint consistency)
+already rely on. Real fixes not done yet: several distinct
 "ordinary" hypotheses instead of one, a real held-out evaluation set, or
 a different base model.
 
