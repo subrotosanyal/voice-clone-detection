@@ -1,16 +1,17 @@
 {
   "notes": [
     "after_finetune is evaluated on the SAME data (XTTS-v2) the fine-tune ran on — read this as 'did the mechanism improve fit', not a generalisation claim. See held_out_chatterbox below for the genuine generalisation check.",
-    "held_out_chatterbox is the genuine generalisation check the blueprint's held-out-generator design always needed: Chatterbox (Resemble AI) is a completely different model family/training data from XTTS-v2 (Coqui), and its output was never used in fine-tuning — see generate_synthetic_corpus_chatterbox.py's own docstring for how it was generated and verified."
+    "held_out_chatterbox is the genuine generalisation check the blueprint's held-out-generator design always needed: Chatterbox (Resemble AI) is a completely different model family/training data from XTTS-v2 (Coqui), and its output was never used in fine-tuning — see generate_synthetic_corpus_chatterbox.py's own docstring for how it was generated and verified.",
+    "held_out_local_speakers is the MOST rigorous held-out check available: genuine side is each local speaker's own RESERVED test utterance (never in build_dataset()'s training data — only that speaker's other 5 clips were), spoof side is Chatterbox (never in training either). Neither the specific utterance nor the synthesis system was seen during fine-tuning."
   ],
   "before_finetune": {
     "hi": {
-      "n_genuine": 200,
-      "n_synthetic": 40,
-      "bonafide_accuracy": 0.82,
-      "spoof_accuracy": 0.825,
-      "eer": 0.1775,
-      "mean_spoof_probability_genuine": 0.1877976777394906
+      "n_genuine": 1399,
+      "n_synthetic": 340,
+      "bonafide_accuracy": 0.3645461043602573,
+      "spoof_accuracy": 0.9176470588235294,
+      "eer": 0.360612622461422,
+      "mean_spoof_probability_genuine": 0.6335076792795458
     },
     "mr": {
       "n_genuine": 20,
@@ -23,12 +24,12 @@
   },
   "languages": {
     "hi": {
-      "n_genuine": 200,
-      "n_synthetic": 40,
-      "bonafide_accuracy": 0.82,
-      "spoof_accuracy": 0.825,
-      "eer": 0.1775,
-      "mean_spoof_probability_genuine": 0.1877976777394906
+      "n_genuine": 1399,
+      "n_synthetic": 340,
+      "bonafide_accuracy": 0.3645461043602573,
+      "spoof_accuracy": 0.9176470588235294,
+      "eer": 0.360612622461422,
+      "mean_spoof_probability_genuine": 0.6335076792795458
     },
     "mr": {
       "n_genuine": 20,
@@ -41,12 +42,12 @@
   },
   "after_finetune": {
     "hi": {
-      "n_genuine": 200,
-      "n_synthetic": 40,
-      "bonafide_accuracy": 1.0,
-      "spoof_accuracy": 0.925,
-      "eer": 0.030000000000000002,
-      "mean_spoof_probability_genuine": 0.02888497249523425
+      "n_genuine": 1399,
+      "n_synthetic": 340,
+      "bonafide_accuracy": 0.8577555396711937,
+      "spoof_accuracy": 0.9088235294117647,
+      "eer": 0.11997960728251272,
+      "mean_spoof_probability_genuine": 0.19122396574019979
     },
     "mr": {
       "n_genuine": 20,
@@ -54,17 +55,17 @@
       "bonafide_accuracy": 1.0,
       "spoof_accuracy": null,
       "eer": null,
-      "mean_spoof_probability_genuine": 0.00023029651583783561
+      "mean_spoof_probability_genuine": 0.05272665871307254
     }
   },
   "held_out_chatterbox": {
     "hi": {
-      "n_genuine": 200,
+      "n_genuine": 1399,
       "n_synthetic": 40,
-      "bonafide_accuracy": 1.0,
-      "spoof_accuracy": 0.75,
-      "eer": 0.10250000000000001,
-      "mean_spoof_probability_genuine": 0.02888497249523425
+      "bonafide_accuracy": 0.8577555396711937,
+      "spoof_accuracy": 0.825,
+      "eer": 0.15005360972122944,
+      "mean_spoof_probability_genuine": 0.19122396574019979
     },
     "mr": {
       "n_genuine": 20,
@@ -72,7 +73,17 @@
       "bonafide_accuracy": 1.0,
       "spoof_accuracy": null,
       "eer": null,
-      "mean_spoof_probability_genuine": 0.00023029651583783561
+      "mean_spoof_probability_genuine": 0.05272665871307254
+    }
+  },
+  "held_out_local_speakers": {
+    "hi": {
+      "n_genuine": 100,
+      "n_synthetic": 40,
+      "bonafide_accuracy": 0.79,
+      "spoof_accuracy": 0.825,
+      "eer": 0.195,
+      "mean_spoof_probability_genuine": 0.2379230867409933
     }
   }
 }

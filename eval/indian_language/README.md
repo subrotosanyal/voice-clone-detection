@@ -137,6 +137,55 @@ sample, not a statistically solid one.
   make the held-out EER a statistically solid number rather than a
   calibration-scale one.
 
+## 2026-09-09 update: results on the expanded, properly-licensed corpus
+
+Everything above (200 genuine / 40 spoof) is now superseded by a much
+larger and more diverse corpus — see `TODO.md`'s Phase 1-4 for how it was
+built: **1423 genuine Hindi** (existing IndicTTS-Hindi + Kathbath, CC BY
+4.0 + Movie-MUSNOMIX, CC0/non-commercial + the 100 local speakers' own
+training clips) and **340 spoof Hindi** (existing XTTS-v2 handful + new
+XTTS-v2 clones of all 100 local speakers). Re-run via `scripts/
+fine_tune_aasist.py` then `scripts/run_held_out_eval.py` (now itself
+extended to cover the same expanded sources — see that script's own
+`main()`):
+
+| | Bonafide accuracy | Spoof accuracy | EER |
+|---|---|---|---|
+| **Before fine-tuning** | **36.5%** | 91.8% | **36.1%** |
+| **After fine-tuning** (trained-on) | 85.8% | 90.9% | **12.0%** |
+| **After fine-tuning, HELD-OUT synthesis system** (Chatterbox) | 85.8% | 82.5% | **15.0%** |
+| **After fine-tuning, HELD-OUT on BOTH dimensions** (local speakers' own reserved test clips x Chatterbox) | 79.0% | 82.5% | **19.5%** |
+
+**Read the "before" number honestly — it did not get worse; the test got
+harder, and more honest.** The old 82% bonafide accuracy / 17.75% EER
+baseline was measured against 200 clean IndicTTS-Hindi studio
+recordings. This corpus adds Kathbath's real crowd-sourced audio and
+Movie-MUSNOMIX's noisy movie dialogue — the SAME real-world gap the
+"Informal spot-check" note below already flagged informally (75%
+false-positive rate on an ad-hoc, unlicensed sample) is now measured
+with properly-licensed, committed data instead: 36.5% bonafide accuracy,
+i.e. the un-recalibrated English-trained AASIST checkpoint misclassifies
+the majority of real, diverse Hindi speech as spoof. This is the honest
+baseline the recalibration is actually solving, not a regression.
+
+**The recalibration result is real and substantial at this larger
+scale**: EER drops 36.1%→12.0% on trained-on data, and — the number that
+actually matters — **36.1%→19.5% on data held out on BOTH the speaker/
+utterance AND the synthesis-system dimensions at once** (never-seen
+local-speaker test clips, never-seen Chatterbox spoof). That's the most
+rigorous check this pipeline can currently run, and it still shows the
+recalibration cutting the baseline gap by nearly half against data it
+genuinely never saw in any form.
+
+**Read this honestly too**: 100 held-out genuine + 40 held-out spoof
+(the dual-held-out row) is still a calibration-scale sample, and 4 of
+the 100 local speakers' test clips (`Nimish_1/2/4/5`) abstained as
+near-silent rather than scoring — correctly handled (no fabricated
+score), but a real gap in that speaker's usable held-out data. See
+`scripts/run_held_out_eval.py`'s own comments for the exact
+methodology, and `results/summary.json` for the full machine-readable
+numbers.
+
 ### Informal spot-check (2026-09-08): the real gap is larger than the studio-recorded corpus above suggests
 
 The before-fine-tune numbers above come from IndicTTS-Hindi — clean,

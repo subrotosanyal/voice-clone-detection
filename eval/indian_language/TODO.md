@@ -108,21 +108,47 @@ with this trained classifier in production — that's an architecture
 change (serialized model behind the same `DetectorPort`, not just a
 config constant), not just a threshold edit to risk_formula.yaml.
 
-## Phase 4 — AASIST fine-tuning
+## Phase 4 — AASIST fine-tuning (done)
 
-- [ ] Extend `scripts/fine_tune_aasist.py` with the larger, more diverse
-      dataset (existing IndicTTS-Hindi + Kathbath genuine, existing
-      XTTS-v2/Chatterbox synthetic + new local-speaker-cloned synthetic)
-- [ ] **Verbose progress reporting required** — the script already prints
-      dataset-build progress, class balance, per-50-step and per-epoch
-      metrics, best-epoch selection; extend this, don't rebuild it
-- [ ] Held-out generalization check: never test on a synthesis system
-      used in training (same discipline as the existing XTTS-v2/held-out
-      Chatterbox split)
+- [x] Extended `scripts/fine_tune_aasist.py`'s `build_dataset()` with all
+      four genuine sources + both spoof sources (1423 genuine / 340
+      spoof total). Also switched training from batch_size=1 to 16
+      (needed at this scale) and chunked the validation forward pass
+      after a real bug: the first run died silently (OOM-suspected) at
+      the single unchunked 352-example validation batch — fixed, and the
+      re-run completed all 30 epochs cleanly (best epoch 22, trained-on
+      balanced accuracy 0.840).
+- [x] **Verbose progress reporting** — genuine/spoof source counts,
+      per-250/100-file loading progress, per-10-batch and per-epoch
+      metrics, best-epoch selection, all printed live during the run
+- [x] Held-out generalization check — extended `scripts/
+      run_held_out_eval.py` to match the expanded training sources, and
+      added a NEW dual-held-out check (local speakers' own reserved test
+      clips x Chatterbox) — held out on BOTH the speaker/utterance and
+      synthesis-system dimensions at once, the most rigorous check
+      available. Real numbers: EER 36.1% (before) → 12.0% (trained-on)
+      → 19.5% (dual held-out) — see README.md's "2026-09-09 update" for
+      the full table and honest discussion of why "before" looks worse
+      than the old 200-example baseline (harder, more honest test data,
+      not a regression).
 
 ## Phase 5 — Reporting & deployment decision
 
-- [ ] Honest before/after numbers for both AASIST and Prosodic (same
-      format as README.md's existing before/after tables)
+- [x] Honest before/after numbers for AASIST — see README.md's
+      "2026-09-09 update" section and `results/summary.json`.
+- [x] Honest calibration numbers for Prosodic — see README.md's
+      "Prosodic detector calibration" section and `results/
+      prosodic_calibration.json`.
 - [ ] Decide whether to update `config/risk_formula.yaml` based on the
-      real numbers, not before
+      real numbers, not before — **pending explicit user decision**:
+      - AASIST: the fine-tuned output layer (`results/
+        aasist_out_layer_finetuned.pth`) would need copying to
+        `services/live-call-api/app/adapters/detectors/vendor/
+        checkpoints/AASIST_hindi_finetuned_out_layer.pth` (same
+        mechanism already wired into `config/risk_formula.yaml`'s
+        `finetuned_out_layer_path` — this would just be refreshing that
+        existing artifact with the new, more broadly-trained weights).
+      - Prosodic: NOT a simple config edit — replacing
+        `ParselmouthProsodyDetector`'s hand-tuned formula with the
+        trained logistic regression is an architecture change (a
+        serialized model behind the same `DetectorPort`), not started.
