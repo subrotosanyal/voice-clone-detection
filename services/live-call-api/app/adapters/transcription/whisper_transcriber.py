@@ -71,6 +71,28 @@ file's duration isn't an exact multiple of the hop length, not a
 contrived edge case. Fixed the same way: abstain instead of crashing,
 with a conservative safety margin above the ~20-60ms window lengths
 observed to trigger it.
+
+REAL BUG found and fixed 2026-09-09 (second instance, different
+trigger), via a real user-supplied ~4-minute MP3 conversation recording
+uploaded through the live dashboard: the SAME crash
+(`RuntimeError: cannot reshape tensor of 0 elements...`) recurred even
+though the WHOLE buffer was comfortably longer than `_MIN_DURATION_S`
+below — because this time the zero-length slice happens INSIDE
+Whisper's own internal `transcribe()` seek loop, on one of the many
+~30-second segments it internally splits a long recording into, not on
+our own windowing.py's trailing partial window. `_MIN_DURATION_S` only
+guards the length of the WHOLE buffer passed in; it can't guard against
+whatever real-audio characteristic (a silence gap landing on an
+internal segment boundary, in this case) makes ONE of Whisper's own
+internal segments zero-length. Rather than trying to out-guess
+Whisper's internal segmentation, the fix is the same "best-effort,
+never break the whole request" guarantee the LIVE path's
+`_transcribe()` already gives (see app/pipeline/live_transcription.py)
+but the file-upload path (`Engine.score_call()`'s synchronous call
+here) did not: catch ANY exception from the real model call and fall
+back to an empty transcript, same as "no speech found" — transcription
+failing is always recoverable (the rest of the pipeline still scores
+the call, just without transcript-derived signals), a crash never is.
 """
 from __future__ import annotations
 
@@ -79,6 +101,9 @@ from math import gcd
 import numpy as np
 
 from app.domain.models import TranscriptResult
+from app.logging_setup import get_logger
+
+logger = get_logger(component="whisper_transcriber")
 
 _MODEL_SAMPLE_RATE = 16_000
 _DOWNLOAD_ROOT = "app/adapters/transcription/.cache"
@@ -123,7 +148,17 @@ class WhisperTranscriber:
         # tuple) forces pure greedy decoding — see this module's
         # REPRODUCIBILITY FIX docstring note for why the default is
         # genuinely non-deterministic on non-speech audio.
-        result = self._model.transcribe(samples.astype(np.float32), fp16=False, temperature=0.0)
+        try:
+            result = self._model.transcribe(samples.astype(np.float32), fp16=False, temperature=0.0)
+        except Exception:  # noqa: BLE001 — see the second REAL BUG note above the
+            # class docstring: Whisper's own internal segmentation can hit a
+            # zero-length slice on real, long audio in a way _MIN_DURATION_S
+            # above can't guard against. Best-effort, same as every other
+            # "abstain rather than crash" detector in this project —
+            # transcription failing is recoverable, a crash isn't.
+            logger.exception("whisper_transcription_failed", duration_s=duration_s)
+            return TranscriptResult(text="", language=None, detector_name=self.name, detector_version=self.version)
+
         return TranscriptResult(
             text=result["text"].strip(),
             language=result.get("language"),

@@ -69,12 +69,13 @@ jobs:
       - name: Install Python dependencies
         run: pip install -r requirements-dev.txt
 
-      # AASIST checkpoint, ECAPA-TDNN, and Whisper "small" — the same
-      # three real, checksum-or-source-verified, confirmed-ungated models
-      # docs/testing.md describes tests/conftest.py's fixtures fetching on
-      # first run. Cached here so only the first CI run after this
-      # workflow is added (or a model version bump) pays the download
-      # cost; bump the cache key below if a model URL/version ever changes.
+      # AASIST checkpoint, ECAPA-TDNN, Whisper "small", and the intent
+      # classifier — the same real, checksum-or-source-verified,
+      # confirmed-ungated models docs/testing.md describes tests/conftest.py's
+      # fixtures fetching on first run. Cached here so only the first CI
+      # run after this workflow is added (or a model version bump) pays
+      # the download cost; bump the cache key below if a model URL/
+      # version ever changes.
       - name: Cache pretrained models
         uses: actions/cache@v4
         with:
@@ -83,11 +84,28 @@ jobs:
             services/live-call-api/app/adapters/embeddings/.cache
             services/live-call-api/app/adapters/transcription/.cache
             services/live-call-api/app/adapters/intent/.cache
-          # v2: added the intent/ cache path (mDeBERTa-v3, ~280MB, used by
-          # test_zero_shot_intent_classifier.py) — bumped so a fresh cache
-          # entry gets created that actually includes it; the old v1 key's
-          # saved archive predates that path and would never populate it.
-          key: satya-vani-models-v2
+            services/live-call-api/app/adapters/semantic_risk/.cache
+          # v3: added the semantic_risk/ cache path (Phi-3-mini-4k-instruct
+          # GGUF, ~2.4GB) — bumped so a fresh cache entry gets created that
+          # actually includes it; the old v2 key's saved archive predates
+          # that path and would never populate it.
+          key: satya-vani-models-v3
+
+      # REAL BUG found and fixed 2026-09-09: unlike AASIST/ECAPA/Whisper/
+      # intent (each fetched lazily by a conftest.py fixture a SPECIFIC
+      # test requests), config/risk_formula.yaml's `semantic_risk_
+      # classification:` section means EVERY test that spins up a real
+      # TestClient(app) and produces a transcript unconditionally tries
+      # to load this model via Engine.score_call() -- with no test
+      # explicitly fetching it first. tests/integration/ sorts before
+      # tests/unit/ alphabetically, so integration tests hit the missing
+      # file before test_local_llm_semantic_classifier.py's own fixture
+      # ever got a chance to download it -- 9 failed with "ValueError:
+      # Model path does not exist" in the CI run that surfaced this.
+      # Fetching explicitly here, before any test runs, same as the
+      # Dockerfile's own build-time fetch step.
+      - name: Fetch local LLM model (Phi-3-mini)
+        run: python app/adapters/semantic_risk/fetch_llm_model.py
 
       - name: Run tests
         run: pytest tests/ -v

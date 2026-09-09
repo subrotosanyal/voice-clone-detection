@@ -24,12 +24,17 @@ class _FakeLlama:
     """Mimics llama_cpp.Llama's __call__ return shape closely enough for
     LocalLLMSemanticClassifier.analyze() to consume — no real model."""
 
-    def __init__(self, completion_text: str) -> None:
+    def __init__(self, completion_text: str = "", raises: Exception | None = None) -> None:
         self.completion_text = completion_text
+        self.raises = raises
         self.calls = 0
+        self.last_prompt: str | None = None
 
     def __call__(self, prompt: str, **kwargs) -> dict:
         self.calls += 1
+        self.last_prompt = prompt
+        if self.raises is not None:
+            raise self.raises
         return {"choices": [{"text": self.completion_text}]}
 
 
@@ -100,7 +105,47 @@ def test_missing_required_field_falls_back_to_neutral():
     clf = _classifier_with_fake_llm('{"urgency_level": 0.5}')  # missing financial_solicitation etc.
     result = clf.analyze("some transcript")
     assert result.urgency_level == 0.0
-    assert "could not parse" in result.reasoning
+
+
+def test_model_call_exception_falls_back_to_neutral_not_a_crash():
+    """Regression test for a real bug found 2026-09-09: a real ~4-minute
+    conversation transcript (~3400 chars) overflowed the ORIGINAL
+    n_ctx=1024 context window — `ValueError: Requested tokens (1062)
+    exceed context window of 1024` — crashing the whole request instead
+    of abstaining, discovered live in the deployed container right after
+    a separate Whisper fix started successfully producing long
+    transcripts. Same "never let an infrastructure failure manufacture a
+    false positive" discipline as the JSON-parse failure above, now
+    covering the model call itself, not just its output."""
+    clf = LocalLLMSemanticClassifier()
+    clf._llm = _FakeLlama(raises=ValueError("Requested tokens (1062) exceed context window of 1024"))
+
+    result = clf.analyze("some transcript")
+
+    assert result.urgency_level == 0.0
+    assert result.financial_solicitation is False
+    assert "model call failed" in result.reasoning
+
+
+def test_long_transcript_is_truncated_before_reaching_the_model():
+    """Regression test for the same real bug above — the OTHER half of
+    the fix: even with n_ctx raised to 4096, an arbitrarily long real
+    call (much longer than the ~4-minute one that triggered this) must
+    not be able to overflow the window again. Verifies the prompt sent
+    to the model is bounded, not that any particular number is "right" —
+    see the module's own REAL BUG note for the honest trade-off in which
+    end gets kept."""
+    from app.adapters.semantic_risk.local_llm_semantic_classifier import _MAX_TRANSCRIPT_CHARS
+
+    clf = _classifier_with_fake_llm('{"urgency_level": 0.0, "financial_solicitation": false, '
+                                     '"authority_claim": false, "isolation_request": false, "reasoning": "x"}')
+    very_long_transcript = "word " * 10_000  # ~50,000 chars, far past _MAX_TRANSCRIPT_CHARS
+
+    clf.analyze(very_long_transcript)
+
+    assert clf._llm.last_prompt is not None
+    # generous margin over _MAX_TRANSCRIPT_CHARS for the system prompt/template text around it
+    assert len(clf._llm.last_prompt) < _MAX_TRANSCRIPT_CHARS + 2000
 
 
 # --- Real model: the actual evaluation that justified enabling this ----

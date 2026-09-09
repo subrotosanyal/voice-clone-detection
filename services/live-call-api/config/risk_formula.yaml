@@ -258,5 +258,13 @@ semantic_risk_classification:
   class: app.adapters.semantic_risk.local_llm_semantic_classifier:LocalLLMSemanticClassifier
   params:
     model_path: app/adapters/semantic_risk/.cache/Phi-3-mini-4k-instruct-q4.gguf
-    n_ctx: 1024
+    # n_ctx MUST match (or exceed) the class's own default — REAL BUG
+    # found 2026-09-09: this was left at 1024 after the class default
+    # was raised to 4096 to fix a real transcript overflowing the
+    # window, so the config value silently overrode the fix and kept
+    # the bug alive (the try/except fallback masked it as a graceful
+    # abstain instead of a crash, which is how it was caught). Explicit
+    # here on purpose, as a reminder to keep the two in sync — see
+    # local_llm_semantic_classifier.py's own REAL BUG note.
+    n_ctx: 4096
     max_tokens: 150

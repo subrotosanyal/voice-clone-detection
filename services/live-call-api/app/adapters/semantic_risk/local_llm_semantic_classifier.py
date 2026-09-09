@@ -52,6 +52,37 @@ instructed to. On any parse failure, this returns a NEUTRAL assessment
 a false positive" discipline every detector in this project follows
 (e.g. abstaining, not scoring high, on a near-silent window).
 
+REAL BUG found and fixed 2026-09-09, via a real user-uploaded ~4-minute
+conversation recording (the exact same upload that surfaced the Whisper
+long-file crash fixed in whisper_transcriber.py the same day): once
+that Whisper fix let a real, long transcript (~3400 characters, ~840
+tokens) through, THIS classifier crashed instead — `ValueError:
+Requested tokens (1062) exceed context window of 1024`. The original
+`n_ctx=1024` default only had headroom for a short example sentence,
+not a real multi-minute conversation. Fixed two ways: `n_ctx` raised to
+4096 (Phi-3-mini-4k-instruct's own native context size — using the full
+capacity the model was actually built for, not an arbitrary guess), and
+the transcript itself is truncated to `_MAX_TRANSCRIPT_CHARS` before
+building the prompt, so an even longer real call still can't overflow
+the window. Truncation keeps the LAST N characters, not the first — an
+honest, undecided trade-off documented here, not a validated choice:
+a scam's actual financial ask often lands late in the call, but an
+opening authority claim could be lost if the call is long enough to
+truncate. Also now wraps the model call itself in a broad try/except,
+same neutral-fallback discipline as the JSON-parse failure above — this
+project's own track record this session (three separate transcript-fed
+models crashing on real, unanticipated inputs) is reason enough not to
+assume this is the last failure mode either.
+
+LATENCY, measured by hand on this same real transcript after the fix:
+~18.7s (vs ~1-1.5s for the short example sentences this was originally
+verified against) — a real cost of the larger n_ctx and the longer
+prompt itself, not a regression to chase down. Acceptable for a one-
+shot file-upload analysis (Whisper's own transcription of a multi-
+minute file already takes a comparable amount of time), but this is the
+real number, not the ~1-1.5s figure quoted elsewhere in this module for
+short inputs — don't assume that number holds for a long transcript.
+
 STATUS (2026-09-09): wired into Engine.score_call() and the active risk
 formula (config/risk_formula.yaml's `semantic_risk` entry, weight 0.15,
 running alongside — not replacing — `intent`). See that config entry
@@ -88,6 +119,12 @@ _SYSTEM_PROMPT = (
 # the model's output can't be parsed as the required JSON shape.
 _NEUTRAL_REASONING_PREFIX = "could not parse a structured judgment from the model"
 
+# See the REAL BUG note above the class docstring: ~8000 characters is a
+# generous margin under n_ctx=4096 even after the ~260-token system
+# prompt and the completion budget — the real transcript that overflowed
+# the OLD 1024-token window was only ~3400 characters.
+_MAX_TRANSCRIPT_CHARS = 8000
+
 
 class LocalLLMSemanticClassifier:
     """Wraps llama-cpp-python's Llama class. See this module's own
@@ -99,7 +136,7 @@ class LocalLLMSemanticClassifier:
     def __init__(
         self,
         model_path: str = "app/adapters/semantic_risk/.cache/Phi-3-mini-4k-instruct-q4.gguf",
-        n_ctx: int = 1024,
+        n_ctx: int = 4096,
         n_threads: Optional[int] = None,
         max_tokens: int = 150,
     ) -> None:
@@ -126,20 +163,32 @@ class LocalLLMSemanticClassifier:
             return self._neutral_assessment(text, reason="empty transcript — nothing to analyse")
 
         self._ensure_loaded()
-        prompt = f"<|user|>\n{_SYSTEM_PROMPT}\n\nTranscript: \"{text}\"<|end|>\n<|assistant|>"
+        # See the REAL BUG note above the class docstring: a real, long
+        # transcript can overflow the context window on its own — this
+        # truncates the PROMPT input, not the `text` field recorded on
+        # the returned assessment, so detail/logging still show the full
+        # original transcript even though the model only saw part of it.
+        prompt_text = text[-_MAX_TRANSCRIPT_CHARS:] if len(text) > _MAX_TRANSCRIPT_CHARS else text
+        prompt = f"<|user|>\n{_SYSTEM_PROMPT}\n\nTranscript: \"{prompt_text}\"<|end|>\n<|assistant|>"
 
-        with self._lock:
-            # temperature=0.0: this project's whole design point is
-            # explainable, REPLAY-IDENTICAL scoring (see docs/risk-
-            # model.md's "Reproducibility" section) — a nonzero
-            # temperature would make this the one non-deterministic
-            # signal in an otherwise fully reproducible pipeline.
-            completion = self._llm(
-                prompt,
-                max_tokens=self.max_tokens,
-                temperature=0.0,
-                stop=["<|end|>", "<|user|>"],
-            )
+        try:
+            with self._lock:
+                # temperature=0.0: this project's whole design point is
+                # explainable, REPLAY-IDENTICAL scoring (see docs/risk-
+                # model.md's "Reproducibility" section) — a nonzero
+                # temperature would make this the one non-deterministic
+                # signal in an otherwise fully reproducible pipeline.
+                completion = self._llm(
+                    prompt,
+                    max_tokens=self.max_tokens,
+                    temperature=0.0,
+                    stop=["<|end|>", "<|user|>"],
+                )
+        except Exception as exc:  # noqa: BLE001 — see the REAL BUG note above the
+            # class docstring: this project's track record this session is
+            # three separate transcript-fed models crashing on real,
+            # unanticipated inputs — never assume this is the last one.
+            return self._neutral_assessment(text, reason=f"model call failed: {exc}")
 
         raw_text = completion["choices"][0]["text"]
         parsed = _extract_json(raw_text)

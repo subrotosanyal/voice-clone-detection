@@ -115,6 +115,33 @@ def test_abstains_instead_of_crashing_on_a_very_short_window(transcriber):
     assert result.language is None
 
 
+def test_falls_back_to_empty_transcript_instead_of_crashing_on_model_failure(transcriber, monkeypatch):
+    """Regression test for a real bug found 2026-09-09 (second instance,
+    different trigger than the short-window one above): a real user-
+    uploaded ~4-minute MP3 conversation recording crashed the WHOLE
+    request with the SAME uncaught RuntimeError as the short-window bug
+    — but this time from INSIDE Whisper's own internal transcribe() seek
+    loop on a long, comfortably-above-_MIN_DURATION_S buffer, which that
+    guard can't catch. Reproducing the exact upstream trigger isn't
+    reliable (it didn't even reproduce locally on macOS — only inside
+    the actual Linux container, likely a libsndfile/MP3-decode
+    difference) — this instead verifies OUR OWN fallback behaviour
+    directly, by making the real model object raise, same as monkeypatch
+    patterns already used elsewhere in this suite (e.g.
+    test_perth_watermark.py's test_raises_actionable_error_if_watermarker_is_none)."""
+    monkeypatch.setattr(
+        transcriber._model,
+        "transcribe",
+        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("cannot reshape tensor of 0 elements...")),
+    )
+    loud_speech_length = np.random.default_rng(0).uniform(-0.5, 0.5, size=SR * 5).astype(np.float32)
+
+    result = transcriber.transcribe(loud_speech_length, SR)
+
+    assert result.text == ""
+    assert result.language is None
+
+
 def test_repeated_calls_on_non_speech_audio_are_deterministic(transcriber):
     """Regression test for a real intermittent bug found 2026-09-08: without
     a fixed temperature, Whisper's default fallback-to-sampling behaviour on
