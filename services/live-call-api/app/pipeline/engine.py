@@ -60,12 +60,18 @@ class Engine:
         history: Optional[HistoryStorePort] = None,
         transcriber: Optional[TranscriberPort] = None,
         intent_classifier: Optional[IntentClassifierPort] = None,
+        live_speaker_embedder: Optional[Any] = None,
     ) -> None:
         self.pipeline = pipeline
         self.sessions = session_store or SessionStore()
         self.history = history
         self.transcriber = transcriber
         self.intent_classifier = intent_classifier
+        # Optional[EcapaEmbeddingExtractor] — read by ws_router.py to build
+        # a per-session LiveSpeakerTracker (app/pipeline/live_diarization.py).
+        # Untyped (Any) here for the same reason Pipeline.live_speaker_embedder
+        # is: avoid an eager speechbrain import in this module.
+        self.live_speaker_embedder = live_speaker_embedder
 
     def score_window(self, window: AudioWindow, context: dict[str, Any]) -> FusedScore:
         results = [detector.score(window, context) for detector in self.pipeline.detectors]

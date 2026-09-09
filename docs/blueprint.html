@@ -554,7 +554,7 @@ figure.diagram figcaption b{color:var(--slate); font-weight:600;}
 
       <div class="callout status-done">
         <div class="callout-title">The short version</div>
-        <p>The pluggable core — acoustic, prosodic, and third-signal detection (now including real Whisper transcription feeding automatic urgency/financial-language detection), fused and explained transparently, with a working dashboard, persistent history, voiceprint enrollment, and speaker diarization — is <strong>built, running in Docker, and covered by 114 passing automated tests</strong>. <strong>§04, the Indian-language differentiator</strong>, has started, and its scope has been deliberately narrowed to <strong>English and Hindi only, for now</strong> — Marathi and Malvi are no longer required (see the scope note in §04). Real, license-verified genuine Hindi speech and real XTTS-v2 Hindi spoof clones have been scored and used to fine-tune AASIST, giving a first real number — 10% EER for Hindi, unchanged before/after fine-tuning, an honest finding rather than an improvement. Still missing: an independently-measured English baseline EER against a public benchmark, and a second held-out Hindi synthesis system (needed to prove generalisation, not just recalibration). That gap is still the one most likely to decide the round.</p>
+        <p>The pluggable core — acoustic, prosodic, third-signal, zero-shot intent, and watermark-check detection (now including real Whisper transcription feeding automatic urgency/financial-language detection), fused and explained transparently, with a working dashboard, persistent history, voiceprint enrollment, file-upload AND live speaker diarization — is <strong>built, running in Docker, and covered by 157 passing automated tests</strong>. <strong>§04, the Indian-language differentiator</strong>, is well underway, and its scope has been deliberately narrowed to <strong>English and Hindi only, for now</strong> — Marathi and Malvi are no longer required (see the scope note in §04). Real, license-verified genuine Hindi speech and real XTTS-v2 Hindi spoof clones have been scored and used to fine-tune AASIST, after finding and fixing two real fine-tuning bugs: <strong>17.75% &rarr; 3.0% EER</strong> on the trained-on system. A second, genuinely held-out synthesis system (Chatterbox) now confirms this generalises: <strong>17.75% &rarr; 10.25% EER</strong> held-out. Still missing: an independently-measured English baseline EER against a public benchmark, and more held-out spoof volume to make that held-out number statistically solid. That gap is still the one most likely to decide the round.</p>
       </div>
 
       <p style="font-family:'IBM Plex Mono',monospace; font-size:12px; letter-spacing:.05em; text-transform:uppercase; color:var(--slate-soft); margin-top:30px;">Timeline against the plan</p>
@@ -657,7 +657,7 @@ figure.diagram figcaption b{color:var(--slate); font-weight:600;}
             </g>
           </svg>
         </div>
-        <figcaption><b>What this shows:</b> the pluggable detection core (rows 1–8) is complete — built, wired to real pretrained models, and running end to end in Docker, roughly within the first three weeks of the plan's five-week window. The Indian-language differentiator (row 9) has now started — real, license-verified genuine Hindi speech scored through the same AASIST model, a first real number in hand (see §04) — with an independently-measured English baseline and a second held-out Hindi synthesis system still remaining. Scope has been narrowed to English and Hindi only; Marathi and Malvi are no longer required. The mock banking approval and adversarial/production hardening (rows 10–11) haven't started at all.</figcaption>
+        <figcaption><b>What this shows:</b> the pluggable detection core (rows 1–8) is complete — built, wired to real pretrained models, and running end to end in Docker, roughly within the first three weeks of the plan's five-week window. The Indian-language differentiator (row 9) is well underway — real, license-verified genuine Hindi speech scored through the same AASIST model, fine-tuned and validated against a SECOND, genuinely held-out synthesis system (see §04) — with only an independently-measured English baseline still remaining. Scope has been narrowed to English and Hindi only; Marathi and Malvi are no longer required. The mock banking approval and adversarial/production hardening (rows 10–11) haven't started at all.</figcaption>
       </figure>
 
       <p style="font-family:'IBM Plex Mono',monospace; font-size:12px; letter-spacing:.05em; text-transform:uppercase; color:var(--slate-soft); margin-top:34px;">Built vs. not built</p>
@@ -672,25 +672,26 @@ figure.diagram figcaption b{color:var(--slate); font-weight:600;}
             <li>Zero-shot intent classifier (<code>MoritzLaurer/mDeBERTa-v3-base-mnli-xnli</code>, MIT, real Hindi coverage) — a fourth, separately-weighted scoring component, <strong>active by default</strong> at a deliberately low weight (0.15). A real calibration check found it can misclassify ordinary conversation as fraud-relevant; mitigated (not fixed) by that low weight plus full UI transparency — the dashboard shows every candidate label's own score, not just the winner. See §03's model card below.</li>
             <li>Third signal, consistency mode — real ECAPA-TDNN speaker-embedding comparison</li>
             <li>Voiceprint enrollment — enroll / list / delete, embedding-only storage</li>
-            <li>Speaker diarization — splits a multi-speaker file, scores each voice separately</li>
+            <li>Speaker diarization (file-upload path) — splits a multi-speaker file, scores each voice separately</li>
+            <li>Live diarization (WebSocket path) — incremental "who's talking now" speaker tracking as a call progresses, same ECAPA-TDNN embeddings, a simpler nearest-centroid algorithm; purely informational, doesn't change the score</li>
+            <li>Watermark check — Resemble AI's Perth neural watermark (MIT), a narrow, high-precision complement to AASIST for Perth-integrated cloning tools like Chatterbox</li>
             <li>Fusion — EMA smoothing, abstain-aware reweighting, band thresholds</li>
             <li>Full per-window explainability — every score traceable to raw feature values</li>
             <li>Persistent, replayable session history, survives restarts</li>
             <li>Browser dashboard — upload, live mic, diarization, enrollment, history, help tooltips</li>
             <li>Docker Compose runtime + central JSON log viewer (Dozzle)</li>
-            <li>114 automated tests passing (unit + integration)</li>
-            <li>Indian-language eval pipeline (§04) — real CC BY 4.0 Hindi/Marathi genuine speech + real XTTS-v2 Hindi clones, scored and fine-tuned: <strong>10% EER for Hindi</strong> (unchanged before/after fine-tuning — an honest finding, not yet an improvement)</li>
+            <li>Degraded-audio robustness testing — noise at two SNR levels, a telephone-bandwidth filter, and a real low-bitrate Opus re-encode, verifying no detector NaNs or swings unreasonably on real, if degraded, genuine speech</li>
+            <li>157 automated tests passing (unit + integration)</li>
+            <li>Indian-language eval pipeline (§04) — real CC BY 4.0 Hindi genuine speech + real XTTS-v2 Hindi clones, at real volume (200 genuine + 40 spoof), fine-tuned after finding and fixing two real bugs (class imbalance, BatchNorm/Dropout drift): <strong>17.75% &rarr; 3.0% EER</strong> on the trained-on system. A SECOND, genuinely held-out synthesis system (Resemble AI's Chatterbox, never used in training) confirms this generalises: <strong>17.75% &rarr; 10.25% EER</strong> held-out.</li>
           </ul>
         </div>
         <div class="scope-col notbuilt">
           <h4>Not built yet</h4>
           <ul>
-            <li><strong>A genuinely held-out second synthesis system for Hindi (§04)</strong> — without one, "after fine-tuning" is only measured on data the model already trained on, not a real generalisation test; also still missing: an independently-measured English baseline EER against a public benchmark. (Scope is English + Hindi only for now — Marathi and Malvi were dropped as required scope, so neither is tracked as a gap here.)</li>
             <li>Independent EER measurement of the acoustic model against a public English benchmark — it runs on its pretrained checkpoint, unvalidated by this team on English</li>
+            <li>More held-out spoof volume for the Hindi eval (§04) — 40 examples from Chatterbox is a real, independent check, but still a calibration-scale sample, not yet a statistically solid one</li>
             <li>Mock banking approval screen that actually blocks a pending transfer on High</li>
-            <li>Adversarial/codec robustness testing (noise, resampling, re-encoding)</li>
-            <li>Real-time diarization on the live microphone path (file-upload only today)</li>
-            <li>Calibrated risk thresholds — several mappings are honestly-documented placeholders, not tuned on labeled data</li>
+            <li>Calibrated risk thresholds — several mappings (voiceprint consistency, diarization clustering — both file-upload and live, Parselmouth prosodic) are honestly-documented placeholders, not tuned on labeled data</li>
             <li>Everything in §06's Scaling table — concurrency beyond one process, an ANN vector store, 22-language coverage, compliance tooling</li>
           </ul>
         </div>
@@ -917,8 +918,10 @@ figure.diagram figcaption b{color:var(--slate); font-weight:600;}
           <tr><td>Acoustic countermeasure</td><td class="mono">AASIST (clovaai/aasist, MIT), checksum-verified fetch</td><td>The pretrained model as published — not yet independently re-evaluated by the team against a benchmark (see §00)</td><td><span class="status-pill partial">wired, not re-validated</span></td></tr>
           <tr><td>Third signal</td><td class="mono">Rules engine (contextual) · real ECAPA-TDNN comparison (consistency)</td><td>Both modes built and config-selectable, plus an enrollment flow (§03)</td><td><span class="status-pill done">built</span></td></tr>
           <tr><td>Speaker embeddings (consistency mode + diarization)</td><td class="mono">SpeechBrain ECAPA-TDNN, Apache-2.0, confirmed ungated</td><td>Shared by voiceprint consistency and by a new capability not in the original plan — see below</td><td><span class="status-pill done">built</span></td></tr>
-          <tr><td>Speaker diarization <em>(not in original plan)</em></td><td class="mono">Embedding-clustering (scipy), reusing the ECAPA-TDNN model above</td><td>Splits a multi-speaker recording and scores each voice separately — file-upload only, not the live path</td><td><span class="status-pill done">built</span> (beyond scope)</td></tr>
+          <tr><td>Speaker diarization <em>(not in original plan)</em></td><td class="mono">Embedding-clustering (scipy), reusing the ECAPA-TDNN model above</td><td>Splits a multi-speaker recording and scores each voice separately — file-upload path (needs a complete recording to cluster)</td><td><span class="status-pill done">built</span> (beyond scope)</td></tr>
+          <tr><td>Live diarization <em>(not in original plan)</em></td><td class="mono">Nearest-centroid tracking over the SAME ECAPA-TDNN embeddings, a separate instance</td><td>The live-path answer to the row above — discovers speakers incrementally, one window at a time, as a call progresses; purely informational, doesn't change the score</td><td><span class="status-pill done">built</span> (beyond scope)</td></tr>
           <tr><td>Intent classification <em>(not in original plan)</em></td><td class="mono">Zero-shot NLI (MoritzLaurer/mDeBERTa-v3-base-mnli-xnli), a fourth detector alongside acoustic/prosodic/third signal</td><td>Scores the transcript against fraud-relevant candidate labels — weighted low (0.15) since a real calibration check found it can misjudge ordinary conversation; every candidate's own score shown in the dashboard, not just the winner</td><td><span class="status-pill partial">built, active, known caveat</span> (beyond scope)</td></tr>
+          <tr><td>Watermark check <em>(not in original plan)</em></td><td class="mono">Resemble AI Perth neural watermark (MIT), a fifth detector</td><td>Narrow, high-precision complement to AASIST — fires only for Perth-integrated cloning tools (Chatterbox and similar), verified by hand against genuine speech and a different, non-Perth TTS system</td><td><span class="status-pill done">built, active</span> (beyond scope)</td></tr>
         </table>
       </div>
 
@@ -1122,7 +1125,7 @@ fusion:
       <div class="section-head"><span class="section-num">04</span><h2 class="section-title">The differentiator: Indian languages</h2> <span class="status-pill partial">started</span></div>
       <div class="callout status-todo">
         <div class="callout-title">Status — in progress, real first number in hand</div>
-        <p>Started, using existing licensed public corpora instead of recruiting classmates first — see <code>eval/indian_language/README.md</code> for the full pipeline. Real, license-verified (CC BY 4.0) genuine Hindi speech plus real XTTS-v2-cloned Hindi speech has been scored through the exact same AASIST model §02 wired in, then AASIST's final layer was actually fine-tuned on it: <strong>10% Equal Error Rate for Hindi, both before and after fine-tuning</strong> — fine-tuning shifted the decision threshold (catching every genuine Hindi speaker but missing more clones, 100%→80% spoof accuracy) without improving actual separability, an honest finding given only 50 total examples. Still remaining: an independently-measured English baseline EER against a public benchmark, and — the one that would make "after fine-tuning" mean something — a second, genuinely held-out Hindi synthesis system.</p>
+        <p>Well underway, using existing licensed public corpora instead of recruiting classmates first — see <code>eval/indian_language/README.md</code> for the full pipeline. Real, license-verified (CC BY 4.0) genuine Hindi speech (200 examples) plus real XTTS-v2-cloned Hindi speech (40 examples) has been scored through the exact same AASIST model §02 wired in, then AASIST's final layer was actually fine-tuned on it — after finding and fixing two real bugs along the way (a class-imbalance issue, and a BatchNorm/Dropout statistics-drift bug that made an earlier attempt non-reproducible): <strong>17.75% &rarr; 3.0% Equal Error Rate</strong> on the trained-on system. A SECOND, genuinely held-out synthesis system (Resemble AI's Chatterbox, never used in training) now confirms this generalises rather than just memorising the first one: <strong>17.75% &rarr; 10.25% EER</strong> held-out — worse than the trained-on number, as expected for a genuinely novel distribution, but a real, substantial improvement over the before-fine-tuning baseline. Still remaining: an independently-measured English baseline EER against a public benchmark, and more held-out spoof volume (currently 40 examples) to make that held-out number statistically solid rather than calibration-scale.</p>
       </div>
       <div class="callout">
         <div class="callout-title">Scope decision — English and Hindi only, for now</div>
@@ -1270,7 +1273,7 @@ fusion:
           <tr><td class="tabular">EER (spectral countermeasure)</td><td class="tabular">&lt; 10%</td><td>Held-out public benchmark eval split</td><td><span class="status-pill todo">not measured yet</span></td></tr>
           <tr><td class="tabular">Chunk-to-score latency, p95</td><td class="tabular">&lt; 2.5s</td><td>Concurrent-session load test</td><td><span class="status-pill done">~2s/window observed</span></td></tr>
           <tr><td class="tabular">Alert precision at High band</td><td class="tabular">&gt; 80%</td><td>Scripted E2E set, manually labelled</td><td><span class="status-pill todo">not measured yet</span></td></tr>
-          <tr><td class="tabular">Indian-language gap</td><td class="tabular">reported, not hidden</td><td>Before/after fine-tune, held-out synthesis system (§04)</td><td><span class="status-pill partial">first number in: 10% EER for Hindi, unchanged before/after fine-tune — held-out synthesis system still missing</span></td></tr>
+          <tr><td class="tabular">Indian-language gap</td><td class="tabular">reported, not hidden</td><td>Before/after fine-tune, held-out synthesis system (§04)</td><td><span class="status-pill partial">17.75% &rarr; 3.0% EER trained-on, 17.75% &rarr; 10.25% EER held-out (Chatterbox) — English baseline still missing</span></td></tr>
         </table>
       </div>
 
@@ -1300,7 +1303,7 @@ fusion:
         <div class="gate">
           <div class="gate-week">Week 4 · Gate 5</div>
           <div class="gate-title">Indian-language result <span class="status-pill partial">partial</span></div>
-          <div class="gate-desc">Two measured numbers: English benchmark, and the Indian-language set. The Indian-language number is in — 10% EER for Hindi, before and after fine-tuning (see §04 and §00) — but it's measured only against data the model already trained on; the held-out synthesis system needed to make "after fine-tuning" mean something is still missing, and no independent English-benchmark number has been measured yet either (see Gate 3).</div>
+          <div class="gate-desc">Two measured numbers: English benchmark, and the Indian-language set. The Indian-language number is in, twice over — 17.75% &rarr; 3.0% EER for Hindi on the trained-on synthesis system, AND 17.75% &rarr; 10.25% EER held-out on a second, genuinely unseen synthesis system (Chatterbox — see §04 and §00), confirming this generalises rather than just recalibrating to one system's artifacts. Still missing: no independent English-benchmark number has been measured yet (see Gate 3).</div>
         </div>
         <div class="gate">
           <div class="gate-week">Week 5 · Gate 6</div>

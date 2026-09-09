@@ -10,7 +10,7 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
-from app.domain.models import Band, EnrollmentSummary, FusedScore, SessionSummary
+from app.domain.models import Band, EnrollmentSummary, FusedScore, LiveSpeakerInfo, SessionSummary
 
 
 class CallContext(BaseModel):
@@ -35,6 +35,23 @@ class ComponentContributionOut(BaseModel):
     detail: dict[str, Any]
 
 
+class LiveSpeakerInfoOut(BaseModel):
+    """See LiveSpeakerInfo's own docstring in app/domain/models.py —
+    WebSocket-path-only, incremental, not persisted to session history."""
+
+    speaker_label: str
+    is_new_speaker: bool
+    speaker_count: int
+
+    @classmethod
+    def from_domain(cls, info: LiveSpeakerInfo) -> "LiveSpeakerInfoOut":
+        return cls(
+            speaker_label=info.speaker_label,
+            is_new_speaker=info.is_new_speaker,
+            speaker_count=info.speaker_count,
+        )
+
+
 class FusedScoreOut(BaseModel):
     session_id: str
     seq: int
@@ -46,6 +63,7 @@ class FusedScoreOut(BaseModel):
     third_signal_mode: str
     components: list[ComponentContributionOut]
     recommended_action: str
+    live_speaker: Optional[LiveSpeakerInfoOut] = None
 
     @classmethod
     def from_domain(cls, fused: FusedScore) -> "FusedScoreOut":
@@ -71,6 +89,7 @@ class FusedScoreOut(BaseModel):
                 for c in fused.components
             ],
             recommended_action=fused.recommended_action,
+            live_speaker=LiveSpeakerInfoOut.from_domain(fused.live_speaker) if fused.live_speaker else None,
         )
 
 

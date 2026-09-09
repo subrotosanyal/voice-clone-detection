@@ -75,7 +75,8 @@ services/live-call-api/         # the one service that exists so far
                                  # claim keyword detection) + intent/ (zero-shot classifier,
                                  # active by default, known calibration caveat) + the shared
                                  # ECAPA-TDNN embedding extractor + the plugin registry
-    pipeline/                   # windowing + orchestration (engine.py)
+    pipeline/                   # windowing + orchestration (engine.py) + live transcription
+                                 # and live diarization buffers for the WebSocket path
     api/                        # FastAPI routes (REST + WebSocket + session history + enrollment)
     ui/                         # the browser dashboard (no build step — plain HTML/JS)
   config/risk_formula.yaml      # the formula — weights, thresholds, third-signal mode, diarizer
@@ -145,11 +146,17 @@ Dependency-light, torch/Praat-free fallbacks remain available for the
 acoustic and prosodic detectors via a one-line config swap (see the
 comments in `config/risk_formula.yaml`).
 
-**Diarization** (file-upload only): `POST /v1/score/file?diarize=true`
-splits a multi-speaker recording by voice (embedding clustering, reusing
-the same ECAPA-TDNN model) and scores each speaker separately, alongside
-the whole-call score. Not attempted on the live microphone/WebSocket path
-— see `docs/architecture.md`, "What's not built yet".
+**Diarization**: `POST /v1/score/file?diarize=true` splits a
+multi-speaker recording by voice (embedding clustering, ECAPA-TDNN) and
+scores each speaker separately, alongside the whole-call score. The live
+microphone/WebSocket path has its own, genuinely different **live
+diarization** (added 2026-09-09): an incremental "who's talking now"
+tracker (`app/pipeline/live_diarization.py`) that discovers speakers one
+window at a time as the call progresses — same ECAPA-TDNN embeddings,
+a simpler nearest-centroid-with-a-threshold algorithm instead of
+clustering a complete recording. Purely informational (doesn't change
+the risk score), and not yet calibrated against a real labeled
+multi-speaker corpus — see `docs/architecture.md`, "Live diarization".
 
 A browser dashboard exists (upload with optional diarization, live
 microphone, voiceprint enrollment, and session history — every past score

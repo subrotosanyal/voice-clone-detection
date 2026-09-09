@@ -22,8 +22,21 @@ contributing on the live path too, not just file uploads — same
 detector, same known calibration caveat (see docs/risk-model.md,
 "Intent detection"), now also fed a (lagging) live transcript instead of
 always abstaining for lack of one.
+
+Live diarization (added 2026-09-09): a LiveSpeakerTracker, ALSO scoped
+to this one connection, incrementally attributes each window to a
+speaker as the call progresses — see app/pipeline/live_diarization.py
+for how, including its own honesty note on what's calibrated and what
+isn't. Unlike live transcription, this does NOT merge into `context`
+(no detector reads it, it doesn't change the score) — its result is
+attached directly onto the outgoing FusedScore as `live_speaker`, purely
+informational. Silently produces nothing (fused.live_speaker stays None)
+when `live_diarization:` isn't configured in risk_formula.yaml, same
+"omit the config section to disable" shape as transcription/intent.
 """
 from __future__ import annotations
+
+import dataclasses
 
 import numpy as np
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -33,6 +46,7 @@ from pydantic import ValidationError
 from app.api.schemas import FusedScoreOut, StreamChunkIn
 from app.domain.models import AudioWindow
 from app.logging_setup import get_logger
+from app.pipeline.live_diarization import LiveSpeakerTracker
 from app.pipeline.live_transcription import LiveTranscriptionBuffer
 
 router = APIRouter()
@@ -49,6 +63,14 @@ async def stream(websocket: WebSocket, session_id: str) -> None:
         transcriber=engine.transcriber,
         intent_classifier=engine.intent_classifier,
         hop_ms=engine.pipeline.config["windowing"]["hop_ms"],
+    )
+    live_diarization_params = engine.pipeline.config.get("live_diarization", {}).get("params", {})
+    live_speaker_tracker = LiveSpeakerTracker(
+        embedder=engine.live_speaker_embedder,
+        floor_rms=live_diarization_params.get("floor_rms", 1e-4),
+        similarity_threshold=live_diarization_params.get("similarity_threshold", 0.75),
+        ema_alpha=live_diarization_params.get("ema_alpha", 0.1),
+        max_speakers=live_diarization_params.get("max_speakers", 8),
     )
 
     try:
@@ -81,8 +103,15 @@ async def stream(websocket: WebSocket, session_id: str) -> None:
             # so this one session's per-window inference doesn't stall
             # every other concurrent WS session or HTTP request on the
             # single event loop. See http_router.py's score_file() for the
-            # same reasoning.
+            # same reasoning. Diarization's embedding extraction is its
+            # own separate CPU-bound forward pass — same reasoning, own
+            # threadpool call, not bundled into engine.score_window (which
+            # knows nothing about live_speaker — see this module's own
+            # docstring on why that stays a WS-router-only concern).
+            live_speaker = await run_in_threadpool(live_speaker_tracker.ingest, window.samples, window.sample_rate)
             fused = await run_in_threadpool(engine.score_window, window, context)
+            if live_speaker is not None:
+                fused = dataclasses.replace(fused, live_speaker=live_speaker)
             await websocket.send_json(FusedScoreOut.from_domain(fused).model_dump(mode="json"))
 
     except WebSocketDisconnect:

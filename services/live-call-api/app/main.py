@@ -50,7 +50,11 @@ async def lifespan(app: FastAPI):
     app.state.pipeline = pipeline
     app.state.history = history
     app.state.engine = Engine(
-        pipeline, history=history, transcriber=pipeline.transcriber, intent_classifier=pipeline.intent_classifier
+        pipeline,
+        history=history,
+        transcriber=pipeline.transcriber,
+        intent_classifier=pipeline.intent_classifier,
+        live_speaker_embedder=pipeline.live_speaker_embedder,
     )
 
     # If the configured third_signal.consistency_class is the real
@@ -72,6 +76,7 @@ async def lifespan(app: FastAPI):
         diarization_available=pipeline.diarizer is not None,
         transcription_available=pipeline.transcriber is not None,
         intent_classification_available=pipeline.intent_classifier is not None,
+        live_diarization_available=pipeline.live_speaker_embedder is not None,
     )
     yield
 

@@ -67,13 +67,34 @@ class ComponentContribution:
 
 
 @dataclass(frozen=True)
+class LiveSpeakerInfo:
+    """Live, incremental "who's talking now" — WebSocket path only, built
+    up one window at a time as the call progresses. NOT the same thing as
+    SpeakerSegment below (that partitions a COMPLETE recording after the
+    fact, file-upload only — see app/adapters/diarization/
+    embedding_cluster_diarizer.py). See app/pipeline/live_diarization.py
+    for how this is produced, including the honest calibration/scope caveats.
+
+    NOT persisted: app/adapters/history/sqlite_store.py's save() doesn't
+    reference this field, so replaying a past live session from History
+    shows the score breakdown, not who was talking at each point — a
+    deliberate scope cut, not an oversight.
+    """
+
+    speaker_label: str  # "speaker_1", "speaker_2", ... first-seen order, THIS call only
+    is_new_speaker: bool  # True on the window this label was first created
+    speaker_count: int  # distinct speakers seen so far in this call
+
+
+@dataclass(frozen=True)
 class FusedScore:
     """The full, explainable output of one window's fusion step.
 
     Every field here is either a direct input or something reproducibly
     derived from those inputs plus the config in risk_formula.yaml — nothing
     here is computed off any state that isn't itself in `components` or
-    `formula_version`.
+    `formula_version`. The one exception is `live_speaker` (see its own
+    docstring): it doesn't feed the formula at all, purely informational.
     """
 
     session_id: str
@@ -86,6 +107,7 @@ class FusedScore:
     third_signal_mode: str
     components: list[ComponentContribution]
     recommended_action: str
+    live_speaker: Optional[LiveSpeakerInfo] = None
 
 
 @dataclass(frozen=True)

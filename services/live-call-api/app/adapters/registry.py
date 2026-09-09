@@ -100,6 +100,38 @@ def _build_intent_classifier(config: dict[str, Any]) -> IntentClassifierPort | N
     return cls(**intent_cfg.get("params", {}))
 
 
+def _build_live_speaker_embedder(config: dict[str, Any]):
+    """Live diarization (app/pipeline/live_diarization.py) is optional,
+    same "omit the section to disable" convention as transcription/
+    intent_classification above — no `live_diarization:` section means
+    ws_router.py's LiveSpeakerTracker gets embedder=None and every window
+    quietly has no `live_speaker` attached (same "abstain quietly" shape
+    every other optional feature in this project already has).
+
+    Returns only the shared, expensive-to-load EcapaEmbeddingExtractor —
+    NOT a LiveSpeakerTracker itself, since that class holds PER-SESSION
+    state (speaker centroids) and must be instantiated fresh per
+    WebSocket connection, not once at startup. ws_router.py reads the
+    other tuning params (similarity_threshold, ema_alpha, max_speakers,
+    floor_rms) straight out of `live_diarization.params` itself when it
+    constructs each session's tracker — no need to thread them through
+    Pipeline/Engine, they're plain primitives, not an expensive model.
+
+    Deliberately builds its OWN EcapaEmbeddingExtractor instance rather
+    than reusing `diarizer`'s internal one (if `diarization:` is also
+    configured) — see live_diarization.py's own docstring for why that's
+    an honest trade-off (a second copy of the model in memory when both
+    features are enabled), not an oversight.
+    """
+    live_diarization_cfg = config.get("live_diarization")
+    if live_diarization_cfg is None:
+        return None
+    from app.adapters.embeddings.ecapa_embedding import EcapaEmbeddingExtractor
+
+    params = live_diarization_cfg.get("params", {})
+    return EcapaEmbeddingExtractor(source=params.get("embedding_model_source", "speechbrain/spkrec-ecapa-voxceleb"))
+
+
 @dataclass(frozen=True)
 class Pipeline:
     """Everything the engine needs, built once from config and reused."""
@@ -110,6 +142,7 @@ class Pipeline:
     diarizer: DiarizerPort | None = None
     transcriber: TranscriberPort | None = None
     intent_classifier: IntentClassifierPort | None = None
+    live_speaker_embedder: Any = None  # Optional[EcapaEmbeddingExtractor], lazily typed to avoid an eager speechbrain import
 
 
 def build_pipeline(config_path: str | Path) -> Pipeline:
@@ -119,6 +152,7 @@ def build_pipeline(config_path: str | Path) -> Pipeline:
     diarizer = _build_diarizer(config)
     transcriber = _build_transcriber(config)
     intent_classifier = _build_intent_classifier(config)
+    live_speaker_embedder = _build_live_speaker_embedder(config)
     return Pipeline(
         config=config,
         detectors=detectors,
@@ -126,4 +160,5 @@ def build_pipeline(config_path: str | Path) -> Pipeline:
         diarizer=diarizer,
         transcriber=transcriber,
         intent_classifier=intent_classifier,
+        live_speaker_embedder=live_speaker_embedder,
     )

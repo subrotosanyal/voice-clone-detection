@@ -237,10 +237,11 @@ extractor voiceprint consistency uses), agglomerative clustering
 consecutive same-cluster segments merge into a `SpeakerSegment`.
 
 Wired into `POST /v1/score/file` only, via an optional `diarize=true` form
-field (`app/api/http_router.py::_diarize_and_score`) — **not** the live
-WebSocket path, where diarization would mean discovering speaker clusters
-incrementally from partial audio, a substantially harder problem left for
-later. When requested, each detected speaker's audio is concatenated and
+field (`app/api/http_router.py::_diarize_and_score`) — this diarizer
+itself is NOT used on the live WebSocket path (it needs a COMPLETE
+recording before it can cluster). The live path has its own, genuinely
+different incremental tracker instead — see "Live diarization" below.
+When requested, each detected speaker's audio is concatenated and
 run through the exact same `Engine.score_call()` as a normal whole-call
 score, under a derived session id (`{session_id}::{speaker_label}`) — so
 every per-speaker window still flows through the normal fusion + history-
@@ -373,6 +374,48 @@ transcription, but still real latency for that specific signal). If a WS
 client's hop doesn't match `windowing.hop_ms`, the reconstructed buffer
 stretches or compresses relative to real time — a documented limitation,
 not a silent one. See the module's own docstring for the full account.
+
+## Live diarization — incremental "who's talking now" for the WebSocket path
+
+`app/pipeline/live_diarization.py` (`LiveSpeakerTracker`) answers the
+same "who spoke when" question the file-upload diarizer answers, above
+— but incrementally, one window at a time, for a call that has no
+"after the fact" the way a complete recording does. `app/api/ws_router.py`
+holds one instance per connection; `ingest()` runs once per window,
+extracting an ECAPA-TDNN embedding (the same shared model the file-
+upload diarizer and voiceprint consistency both use, via a SEPARATE
+instance — see the module's own docstring for why sharing an instance
+across features wasn't done) and comparing it against every speaker
+centroid seen so far this call by cosine similarity. Above
+`similarity_threshold`: same speaker, the matched centroid is nudged
+toward the new embedding via EMA so it can drift with natural voice
+variation. Below threshold: a new speaker, up to `max_speakers` (past
+that cap, same safety-net reasoning as the file-upload diarizer's own
+cap — attribute to the closest existing speaker rather than minting an
+unbounded number of new ones).
+
+Unlike live transcription, this does NOT merge into `context` and does
+NOT feed any detector's score — it's attached directly onto the
+outgoing `FusedScore` as `live_speaker` (`speaker_label`,
+`is_new_speaker`, `speaker_count`), purely informational. Optional, same
+"omit the config section to disable" shape as transcription/intent
+classification — see `config/risk_formula.yaml`'s `live_diarization:`
+section.
+
+**Honesty note, same caveat class as the file-upload diarizer's own**:
+`similarity_threshold` (0.75) and `ema_alpha` (0.1) are reasonable-
+looking defaults, not validated against any real labeled multi-speaker
+LIVE-call dataset — no such corpus exists in this repo. 0.75 is chosen
+deliberately above the file-upload diarizer's own effective threshold
+(0.6), reasoning from that diarizer's own measured ~0.67-0.70 cross-
+speaker cosine-similarity baseline for this embedding space — seeing
+0.6 sit below that baseline is exactly why 0.75 was picked here instead,
+but it remains a starting point, not a tuned result. Not persisted:
+session history does not record `live_speaker` — replaying a past live
+session from the History tab shows the score breakdown, not who was
+talking at each point. Per-window, not per-utterance: unlike the file-
+upload diarizer (which segments on detected pauses first), every window
+is attributed independently, with no pause-aware segment boundary.
 
 ## Intent detection — built, verified, active with a known caveat
 
@@ -538,10 +581,6 @@ repo that says so.
 
 ## What's not built yet
 
-- **Real-time diarization on the live WebSocket path.** File-upload
-  diarization is built (see "Diarization" above); doing the same
-  incrementally, from partial streamed audio, is a substantially harder
-  problem and hasn't been attempted.
 - **Persistent *history* is built (above); persistent *live smoothing
   state* is not** — these are two different things. `Engine.sessions`
   (the EMA state used mid-call, in `SessionStore`) is still in-memory
@@ -567,9 +606,10 @@ repo that says so.
 - The mock banking approval flow (the dashboard UI itself is built —
   see above).
 - Calibrated risk thresholds for voiceprint consistency, diarization
-  clustering, and the Parselmouth prosodic mapping — all three are real
-  signal-processing/model pipelines with honestly-documented placeholder
-  heuristic score mappings, not yet tuned against a labeled dataset.
+  clustering (both file-upload and live), and the Parselmouth prosodic
+  mapping — all real signal-processing/model pipelines with honestly-
+  documented placeholder heuristic score mappings, not yet tuned against
+  a labeled dataset.
 
 None of this changes the shape of `services/live-call-api/app/` — each
 item above is a new adapter (or a new service) behind an existing or new

@@ -216,6 +216,17 @@ part of this you can actually trust regardless. Good enough for "roughly
 how many voices, roughly which stretches" — not turn-by-turn
 transcription-grade diarization.
 
+**Live path has its own, separate tracker (added 2026-09-09)**: this
+diarizer needs a COMPLETE recording before it can cluster, so it does
+NOT run on the live WebSocket path. `app/pipeline/live_diarization.py`
+(`LiveSpeakerTracker`) answers the same question incrementally instead —
+same ECAPA-TDNN embeddings, a simpler nearest-centroid-with-a-threshold
+algorithm. It does not feed the risk formula at all (purely
+informational — `live_speaker` on the API response), so it's not part
+of "the formula" this document otherwise covers; see
+`docs/architecture.md`, "Live diarization" for the full account,
+including its own separate calibration caveat.
+
 ## Transcription and urgency-language detection
 
 `whisper_transcriber.py` transcribes an uploaded call once via OpenAI's

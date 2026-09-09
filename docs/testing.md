@@ -9,13 +9,16 @@ pip install -r requirements-dev.txt                   # first time only
 pytest tests/ -v
 ```
 
-145 tests, no Docker needed — unit tests for each detector (including
+157 tests, no Docker needed — unit tests for each detector (including
 `test_acoustic_aasist.py`'s coverage of the optional Hindi-recalibrated
 `finetuned_out_layer_path`, verifying it actually changes the score, not
 just that the parameter is accepted; and `test_perth_watermark.py`,
 which watermarks a real spoken clip via Perth's own `apply_watermark()`
 and confirms the detector actually distinguishes it from the
-unwatermarked original, not just that it runs), degraded-audio
+unwatermarked original, not just that it runs — plus a regression test
+for a real bug found 2026-09-09 via dogfooding external audio: a very
+short trailing window used to crash the whole request instead of
+abstaining), degraded-audio
 robustness checks against AASIST and the prosodic detector
 (`test_degraded_audio_robustness.py` — noise at two SNR levels, a
 telephone-bandwidth filter, and a real low-bitrate Opus re-encode,
@@ -26,6 +29,11 @@ math, the fusion formula (including the abstain/renormalisation
 behaviour), the SQLite history and enrollment stores, the ECAPA-TDNN-based
 diarizer and its pause-aware segmentation front end
 (`test_pause_segmentation.py`, `test_embedding_cluster_diarizer.py`), the
+live WebSocket path's incremental speaker tracker
+(`test_live_diarization.py` — a fake embedder for the clustering-logic
+tests, plus one test through the real ECAPA-TDNN model proving actual
+same/different-speaker separation, not just that the arithmetic is
+right; see app/pipeline/live_diarization.py), the
 Whisper transcriber and its urgency/financial/authority-claim keyword
 detection, the zero-shot intent classifier (`test_zero_shot_
 intent_classifier.py` — includes a KNOWN LIMITATION test that documents,
@@ -37,7 +45,8 @@ internals driven via plain `asyncio.run()`), plus integration tests that
 drive the real FastAPI app with `TestClient`
 (`tests/integration/test_api_score_file.py`, `test_ui_served.py`,
 `test_history_api.py`, `test_enrollment_api.py`, `test_diarization_api.py`,
-`test_transcription_api.py`, `test_live_transcription_ws.py`).
+`test_transcription_api.py`, `test_live_transcription_ws.py`,
+`test_live_diarization_ws.py`).
 
 **Real-speech tests use macOS's `say` command.** `test_whisper_transcriber.py`
 and `test_transcription_api.py` need genuinely intelligible speech, not a
@@ -110,15 +119,19 @@ manually, via workflow_dispatch), two jobs:
 round number picked in advance)**: a real CI run hit an earlier 20min
 limit and got cancelled at 16% of tests, having spent 1-4 real minutes on
 several individual integration tests. Two compounding reasons, not a
-fluke: every one of the 22 `with TestClient(app) as client:` blocks across
-`tests/integration/` reloads AASIST + ECAPA-TDNN + Whisper from disk into
-memory from scratch (the app's lifespan runs fresh each time), and every
-`/v1/score/file` call also runs a real Whisper decode regardless of
+fluke: every one of the 25 `with TestClient(app) as client:` blocks across
+`tests/integration/` (8 files) reloads AASIST + Whisper + ECAPA-TDNN from
+disk into memory from scratch (the app's lifespan runs fresh each time —
+and, as of `live_diarization:` being enabled by default alongside
+`diarization:`, this now loads TWO separate ECAPA-TDNN copies per
+startup, one per feature — see app/pipeline/live_diarization.py's own
+docstring for why that's a deliberate, not accidental, trade-off), and
+every `/v1/score/file` call also runs a real Whisper decode regardless of
 whether that particular test has anything to do with transcription — a
 GitHub-hosted CPU runner is slower than a dev machine for this. Sharing
 one long-lived app/TestClient across a test module (loading each model
 once for the whole run, not once per test) would meaningfully cut this,
-but touches all six integration test files and needs care around tests
+but touches every integration test file and needs care around tests
 that share SQLite-backed state — not done yet; the honest workaround for
 now is enough timeout headroom to let the real work finish.
 

@@ -176,3 +176,22 @@ intent_classification:
   class: app.adapters.intent.zero_shot_intent_classifier:ZeroShotIntentClassifier
   params:
     model_name: MoritzLaurer/mDeBERTa-v3-base-mnli-xnli
+
+# Optional — real-time, incremental "who's talking now" for the live
+# WebSocket path only (see app/pipeline/live_diarization.py). NOT the
+# same feature as `diarization:` above, which partitions a COMPLETE
+# recording after the fact and only runs on POST /v1/score/file?diarize=true.
+# Omit this whole section to disable live diarization entirely; every
+# window's `live_speaker` field then stays null, same "omit to disable"
+# shape as transcription/intent_classification above. No `class:` here —
+# unlike a DetectorPort/DiarizerPort, LiveSpeakerTracker isn't (yet) a
+# swappable port, just a config-tunable class; see that module's own
+# docstring for why, and its CALIBRATION HONESTY NOTE before changing
+# similarity_threshold/ema_alpha without real labeled multi-speaker data.
+live_diarization:
+  params:
+    embedding_model_source: speechbrain/spkrec-ecapa-voxceleb
+    floor_rms: 0.0001
+    similarity_threshold: 0.75
+    ema_alpha: 0.1
+    max_speakers: 8
