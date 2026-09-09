@@ -257,7 +257,20 @@ live_diarization:
 semantic_risk_classification:
   class: app.adapters.semantic_risk.local_llm_semantic_classifier:LocalLLMSemanticClassifier
   params:
-    model_path: app/adapters/semantic_risk/.cache/Phi-3-mini-4k-instruct-q4.gguf
+    # model_path deliberately omitted — REAL BUG found (every
+    # /v1/score/file call with a transcript crashed with `ValueError:
+    # Model path does not exist`): this used to hardcode the flat
+    # ".cache/Phi-3-mini-4k-instruct-q4.gguf" path, which fetch_llm_model.py
+    # stopped writing to once it migrated to huggingface_hub's own nested
+    # cache layout (models--.../snapshots/<rev>/<filename> — see that
+    # module's MIGRATION NOTE), so a fresh Docker build always downloaded
+    # the model to a path this config didn't point at. Leaving this unset
+    # lets LocalLLMSemanticClassifier._ensure_loaded() resolve the real,
+    # current path itself via fetch_llm_model.ensure_model() — the same
+    # resolution tests/conftest.py's phi3_llm_model_path fixture already
+    # used, which is exactly why CI stayed green while every real
+    # deployment crashed. Set this explicitly only to pin a specific file
+    # outside the normal fetch/cache flow.
     # n_ctx MUST match (or exceed) the class's own default — REAL BUG
     # found 2026-09-09: this was left at 1024 after the class default
     # was raised to 4096 to fix a real transcript overflowing the

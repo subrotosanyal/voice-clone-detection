@@ -505,6 +505,41 @@ function clearError(boxId) {
   document.getElementById(boxId).classList.remove("show");
 }
 
+// Reads a fetch Response as JSON without assuming the SERVER actually sent
+// JSON. REAL BUG this was written for: an unhandled backend exception (e.g.
+// a missing model file) makes FastAPI/Starlette's default error handler
+// return a plain-text 500 body ("Internal Server Error"), not JSON — code
+// that did `const body = await res.json()` unconditionally then threw
+// inside that parse, and the resulting SyntaxError's browser-native message
+// ("The string did not match the expected pattern." in Safari; "Unexpected
+// token I in JSON at position 0" in Chrome) is what actually reached the
+// user, with zero indication a request even failed server-side or why.
+// This always reads the body as text first, so a non-JSON error body still
+// produces an actionable message instead of a parse-error message.
+async function parseJsonResponse(res) {
+  const text = await res.text();
+  let body = null;
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch {
+    // Not JSON — fall through with body === null; callers use res.ok /
+    // res.status and the raw text below instead.
+  }
+  if (!res.ok) {
+    const detail = body && body.detail;
+    throw new Error(
+      detail || (text ? text.slice(0, 300) : `request failed (HTTP ${res.status})`)
+    );
+  }
+  if (body === null) {
+    // res.ok but the body wasn't valid JSON — shouldn't happen for this
+    // API's success responses, but fail with a clear message rather than
+    // returning null and letting a caller crash on body.whatever instead.
+    throw new Error(`expected a JSON response but got: ${text.slice(0, 300)}`);
+  }
+  return body;
+}
+
 // ---------- upload tab ----------
 const dropzone = document.getElementById("dropzone");
 const fileInput = document.getElementById("fileInput");
@@ -573,8 +608,7 @@ analyzeFileBtn.addEventListener("click", async () => {
     form.append("diarize", diarizeOn ? "true" : "false");
 
     const res = await fetch("/v1/score/file", { method: "POST", body: form });
-    const body = await res.json();
-    if (!res.ok) throw new Error(body.detail || "analysis failed");
+    const body = await parseJsonResponse(res);
 
     hideAnalysing();
     body.trace.forEach(renderFusedScore); // replays the whole trace so the chart shows the full call
@@ -853,8 +887,7 @@ enrollBtn.addEventListener("click", async () => {
     form.append("identity", identity);
     form.append("file", selectedEnrollFile);
     const res = await fetch("/v1/enroll", { method: "POST", body: form });
-    const body = await res.json();
-    if (!res.ok) throw new Error(body.detail || "enrollment failed");
+    await parseJsonResponse(res);
     selectedEnrollFile = null;
     document.getElementById("enrollFileName").textContent = "";
     enrollIdentityInput.value = "";

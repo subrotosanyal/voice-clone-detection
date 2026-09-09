@@ -127,6 +127,68 @@ def test_model_call_exception_falls_back_to_neutral_not_a_crash():
     assert "model call failed" in result.reasoning
 
 
+def test_model_load_failure_falls_back_to_neutral_not_a_crash():
+    """Regression test for a real bug: every /v1/score/file call with a
+    transcript crashed the WHOLE request — taking every other detector's
+    result down with it — with `ValueError: Model path does not exist`.
+    _ensure_loaded() used to be called OUTSIDE analyze()'s try/except
+    (only the inference call itself was guarded); a genuine model-load
+    failure must abstain the same "never let an infrastructure failure
+    manufacture a false positive/crash" way the inference-call and
+    JSON-parse failures already do, not propagate up through
+    Engine.score_call()."""
+    clf = LocalLLMSemanticClassifier(model_path="/definitely/does/not/exist.gguf")
+    clf._ensure_loaded = lambda: (_ for _ in ()).throw(
+        ValueError("Model path does not exist: /definitely/does/not/exist.gguf")
+    )
+
+    result = clf.analyze("some transcript")
+
+    assert result.urgency_level == 0.0
+    assert result.financial_solicitation is False
+    assert "model load failed" in result.reasoning
+
+
+def test_ensure_loaded_falls_back_to_fetch_llm_model_when_configured_path_is_stale(monkeypatch, tmp_path):
+    """Regression test for the actual root cause: config/risk_formula.yaml
+    used to hardcode a flat model_path that fetch_llm_model.py's
+    migration to huggingface_hub's own nested cache layout
+    (models--.../snapshots/<rev>/<filename> — see that module's
+    MIGRATION NOTE) stopped writing to, so a correctly-fetched model was
+    never found at the configured path. _ensure_loaded() must fall back
+    to fetch_llm_model.ensure_model() — the same resolution
+    tests/conftest.py's phi3_llm_model_path fixture already used —
+    whenever the configured path doesn't actually exist, not only when
+    it's unset, so config drifting out of sync with the fetch script's
+    storage layout can't reproduce this again."""
+    import sys
+    import types
+
+    resolved_path = tmp_path / "resolved.gguf"
+    resolved_path.write_bytes(b"fake")
+    captured: dict = {}
+
+    fake_llama_module = types.ModuleType("llama_cpp")
+
+    class _FakeLlamaCtor:
+        def __init__(self, model_path, **kwargs):
+            captured["model_path"] = model_path
+
+    fake_llama_module.Llama = _FakeLlamaCtor
+    monkeypatch.setitem(sys.modules, "llama_cpp", fake_llama_module)
+
+    fake_fetch_module = types.ModuleType("app.adapters.semantic_risk.fetch_llm_model")
+    fake_fetch_module.ensure_model = lambda: resolved_path
+    monkeypatch.setitem(sys.modules, "app.adapters.semantic_risk.fetch_llm_model", fake_fetch_module)
+
+    stale_path = str(tmp_path / "does-not-exist.gguf")
+    clf = LocalLLMSemanticClassifier(model_path=stale_path)
+
+    clf._ensure_loaded()
+
+    assert captured["model_path"] == str(resolved_path)
+
+
 def test_long_transcript_is_truncated_before_reaching_the_model():
     """Regression test for the same real bug above — the OTHER half of
     the fix: even with n_ctx raised to 4096, an arbitrarily long real
