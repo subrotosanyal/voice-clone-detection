@@ -1,0 +1,116 @@
+{
+  "train_set_sizes": {
+    "genuine": 1419,
+    "spoof": 340
+  },
+  "held_out_set_sizes": {
+    "genuine": 100,
+    "spoof": 40
+  },
+  "feature_distributions": {
+    "genuine_train": {
+      "jitter_local": {
+        "mean": 0.022052058141914126,
+        "std": 0.004985427594221522,
+        "p10": 0.016034891115001317,
+        "p50": 0.021649826504359718,
+        "p90": 0.02859139791575785
+      },
+      "shimmer_local": {
+        "mean": 0.09649887591801945,
+        "std": 0.025366790377629855,
+        "p10": 0.06673343310937652,
+        "p50": 0.09384456562602636,
+        "p90": 0.12886668351680575
+      },
+      "hnr_db": {
+        "mean": 13.41423756890324,
+        "std": 3.1509410021754403,
+        "p10": 9.447116442705342,
+        "p50": 13.647359706506036,
+        "p90": 16.9603696292913
+      }
+    },
+    "spoof_train": {
+      "jitter_local": {
+        "mean": 0.022643308041656533,
+        "std": 0.005604853728278321,
+        "p10": 0.01664618565146721,
+        "p50": 0.02185235388820747,
+        "p90": 0.029776951852600514
+      },
+      "shimmer_local": {
+        "mean": 0.09269159651865862,
+        "std": 0.022885011329226317,
+        "p10": 0.06387696613956967,
+        "p50": 0.09049979009387032,
+        "p90": 0.11971833647237881
+      },
+      "hnr_db": {
+        "mean": 13.699956652064,
+        "std": 2.8880873925325825,
+        "p10": 9.975987277241835,
+        "p50": 13.862004912954488,
+        "p90": 17.495745399883567
+      }
+    }
+  },
+  "current_thresholds": {
+    "jitter_floor": 0.01,
+    "shimmer_floor": 0.035,
+    "hnr_ceiling": 20.0
+  },
+  "current_thresholds_performance": {
+    "train": {
+      "genuine_accuracy": 1.0,
+      "spoof_accuracy": 0.0,
+      "balanced_accuracy": 0.5
+    },
+    "held_out": {
+      "genuine_accuracy": 1.0,
+      "spoof_accuracy": 0.0,
+      "balanced_accuracy": 0.5
+    }
+  },
+  "recommended_thresholds": {
+    "jitter_floor": 0.016034891115001317,
+    "shimmer_floor": 0.06673343310937652,
+    "hnr_ceiling": 16.9603696292913
+  },
+  "recommended_thresholds_performance": {
+    "train": {
+      "genuine_accuracy": 0.9992952783650458,
+      "spoof_accuracy": 0.0,
+      "balanced_accuracy": 0.4996476391825229
+    },
+    "held_out": {
+      "genuine_accuracy": 1.0,
+      "spoof_accuracy": 0.0,
+      "balanced_accuracy": 0.5
+    }
+  },
+  "logistic_regression": {
+    "note": "coefficients are on STANDARDIZED (zero-mean, unit-variance) features — see StandardScaler means_/scale_ below to convert back to raw units",
+    "scaler_mean_jitter_shimmer_hnr": [
+      0.022166341806446492,
+      0.09576296062763698,
+      13.469464679917822
+    ],
+    "scaler_scale_jitter_shimmer_hnr": [
+      0.005116343520411652,
+      0.02495170502399299,
+      3.1039219121944606
+    ],
+    "coefficients_jitter_shimmer_hnr": [
+      0.3018977933589121,
+      -0.31844813946535616,
+      0.03738590949551451
+    ],
+    "intercept": -0.02643924021858421,
+    "held_out_performance": {
+      "genuine_accuracy": 0.7,
+      "spoof_accuracy": 0.95,
+      "balanced_accuracy": 0.825
+    }
+  }
+}
