@@ -48,12 +48,39 @@ Near-silence: get_watermark() returns NaN on all-zero input (a real,
 verified edge case, not a hypothetical one) — guarded by the same
 floor_rms abstain pattern every other acoustic detector in this project
 uses.
+
+REAL BUG found and fixed 2026-09-09, via dogfooding real external audio
+(IndieFake Dataset's public demo clips, arxiv.org/html/2506.19014 —
+Indian-accented English samples, not part of this project's committed
+pipeline, just a spot-check input) through the deployed service: a very
+short trailing window crashed the WHOLE request with an uncaught
+`RuntimeError: Argument #4: Padding size should be less than the
+corresponding input dimension` — not abstained, an actual HTTP 500.
+Root cause verified by inspecting Perth's own loaded config
+(`PerthImplicitWatermarker().perth_net.ap.hp`): `sample_rate=32000,
+n_fft=2048`. `get_watermark()` computes a centered STFT via
+`torch.stft` (reflect-padded by `n_fft // 2 = 1024` samples on each
+side, internally after resampling to 32kHz) — reflect padding requires
+the input to be STRICTLY LONGER than the pad amount, so any window
+resampling to 1024 samples or fewer at Perth's internal 32kHz (~32ms)
+crashes. `windowing.py`'s own docstring already documents that the
+final window of any file "is still yielded" even when shorter than the
+configured window length — a totally normal occurrence whenever a
+file's duration isn't an exact multiple of the hop length, not a
+specifically crafted edge case. Fixed the same way `floor_rms` already
+handles near-silence: abstain instead of crashing, with a safety margin
+above the verified 1024-sample/32kHz minimum.
 """
 from __future__ import annotations
 
 import numpy as np
 
 from app.domain.models import AudioWindow, DetectorResult
+
+# Perth's own internal STFT needs the (resampled-to-32kHz) signal longer
+# than n_fft // 2 = 1024 samples (~32ms) — see the REAL BUG note above.
+# 50ms is a safety margin above that verified minimum, not a tuned value.
+_MIN_DURATION_S = 0.05
 
 
 class PerthWatermarkDetector:
@@ -95,6 +122,26 @@ class PerthWatermarkDetector:
                 score=None,
                 detail={"rms": rms, "floor_rms": self.floor_rms},
                 abstain_reason="window is near-silent — nothing to check for a watermark in",
+            )
+
+        duration_s = samples.size / window.sample_rate if window.sample_rate else 0.0
+        if duration_s < _MIN_DURATION_S:
+            # See the REAL BUG note above the class docstring: Perth's own
+            # STFT crashes (uncaught RuntimeError, an actual HTTP 500) on a
+            # window this short — this is not hypothetical, a real trailing
+            # partial window from windowing.py triggered it.
+            return DetectorResult(
+                detector_name=self.name,
+                detector_version=self.version,
+                score=None,
+                detail={
+                    "duration_s": duration_s,
+                    "min_duration_s": _MIN_DURATION_S,
+                },
+                abstain_reason=(
+                    f"window too short ({duration_s * 1000:.1f}ms) for Perth's own STFT — "
+                    f"needs at least {_MIN_DURATION_S * 1000:.0f}ms"
+                ),
             )
 
         watermark_probability = float(

@@ -78,6 +78,31 @@ def test_abstains_on_near_silence(detector):
     assert result.abstain_reason is not None
 
 
+def test_abstains_instead_of_crashing_on_a_very_short_window(detector):
+    """Regression test for a real bug found 2026-09-09 (via dogfooding real
+    external audio — IndieFake Dataset's public demo clips — through the
+    deployed service): Perth's own STFT (n_fft=2048, reflect-padded by 1024
+    samples internally at its 32kHz working rate) raises an uncaught
+    RuntimeError on a window shorter than that pad amount — an actual HTTP
+    500, not a graceful abstain. A window this short is not a contrived
+    edge case: windowing.py's own docstring documents that the final
+    window of any file "is still yielded" even when shorter than the
+    configured window length, which happens for ANY file whose duration
+    isn't an exact multiple of the hop length. Loud (not silent) so this
+    exercises the NEW length guard specifically, not the existing
+    near-silence one above."""
+    # 20ms at 16kHz = 320 samples — comfortably below both the 1024-sample
+    # crash threshold at Perth's internal 32kHz rate and this detector's
+    # own 50ms (_MIN_DURATION_S) guard.
+    short_loud = np.random.default_rng(0).uniform(-0.5, 0.5, size=320).astype(np.float32)
+
+    result = detector.score(_window(short_loud), context={})
+
+    assert result.score is None
+    assert result.abstain_reason is not None
+    assert "short" in result.abstain_reason
+
+
 def test_scores_low_on_genuine_unwatermarked_speech(detector, spoken_samples):
     result = detector.score(_window(spoken_samples), context={})
 
