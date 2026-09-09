@@ -289,10 +289,24 @@ def main() -> None:
                     f"running_avg_loss={total_loss / (batch_start + len(batch_idx)):.4f}"
                 )
 
+        # REAL BUG found and fixed 2026-09-09: the whole 352-example
+        # validation set was passed through the model in ONE unchunked
+        # batch — the first real run of the expanded (post-corpus-
+        # growth) dataset died silently right at this line (no Python
+        # traceback, process just gone — consistent with an OOM kill),
+        # after epoch 1's training batches (batch_size=16) completed
+        # cleanly. Chunking the val forward pass the same way training
+        # already is removes the peak-memory spike without changing any
+        # computed metric (still an exact per-example eval() forward
+        # pass, just split across fewer examples at a time).
         model.eval()
+        val_preds_parts = []
         with torch.no_grad():
-            _, val_logits = model(x[val_idx])
-            val_preds = val_logits.argmax(dim=-1)
+            for val_start in range(0, len(val_idx), train_batch_size):
+                val_batch = val_idx[val_start : val_start + train_batch_size]
+                _, batch_logits = model(x[val_batch])
+                val_preds_parts.append(batch_logits.argmax(dim=-1))
+        val_preds = torch.cat(val_preds_parts)
         val_metrics = _per_class_accuracy(val_preds, y[val_idx])
 
         is_best = val_metrics["balanced_acc"] > best_balanced_acc
