@@ -155,6 +155,7 @@ class Engine:
         session_store: Optional[SessionStore] = None,
         history: Optional[HistoryStorePort] = None,
         transcriber: Optional[TranscriberPort] = None,
+        live_transcriber: Optional[TranscriberPort] = None,
         intent_classifier: Optional[IntentClassifierPort] = None,
         semantic_risk_classifier: Optional[SemanticRiskClassifierPort] = None,
         live_speaker_embedder: Optional[Any] = None,
@@ -163,6 +164,16 @@ class Engine:
         self.sessions = session_store or SessionStore()
         self.history = history
         self.transcriber = transcriber
+        # Optional[TranscriberPort] — the LIVE WebSocket path's own
+        # transcriber (see app/adapters/registry.py's
+        # _build_live_transcriber and config/risk_formula.yaml's
+        # `live_transcription:` section), separate from `transcriber`
+        # above (file-upload's one-shot transcription). ws_router.py
+        # reads this directly off the Engine instance, falling back to
+        # `transcriber` when it's None — see that module's own comment
+        # at that fallback for why (an unconfigured/unreachable live
+        # transcriber degrades rather than disables live transcription).
+        self.live_transcriber = live_transcriber
         self.intent_classifier = intent_classifier
         self.semantic_risk_classifier = semantic_risk_classifier
         # Optional[EcapaEmbeddingExtractor] — read by ws_router.py to build

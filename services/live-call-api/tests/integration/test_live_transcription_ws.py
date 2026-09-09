@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import itertools
 import shutil
+import socket
 import subprocess
 import time
 
@@ -20,6 +21,8 @@ import pytest
 import soundfile as sf
 from fastapi.testclient import TestClient
 
+from app.adapters.registry import load_config
+from app.config import settings
 from app.main import app
 from app.pipeline.live_transcription import _TRANSCRIBE_EVERY_MS
 
@@ -39,6 +42,40 @@ MAX_WAIT_S = 60
 @pytest.fixture(autouse=True)
 def _ensure_checkpoint_before_app_startup(aasist_checkpoint):
     return aasist_checkpoint
+
+
+def _tcp_reachable(host: str, port: int, timeout: float = 1.0) -> bool:
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _skip_if_whisperlive_unreachable():
+    """This test drives the live path's REAL transcription end-to-end,
+    which now (config/risk_formula.yaml's `live_transcription:` section)
+    means a real collabora/WhisperLive server, not an in-process Whisper
+    model — see app/adapters/transcription/whisperlive_transcriber.py's
+    own docstring for why the live path moved there. A plain `pytest` run
+    outside `docker compose`'s network has no such server reachable, so
+    this skips gracefully rather than failing — same "skip when a real
+    external dependency isn't available" convention this suite already
+    uses for macOS's `say` (see spoken_urgency_samples below) or an
+    offline model download."""
+    live_cfg = load_config(settings.risk_config_path).get("live_transcription")
+    if live_cfg is None:
+        return  # feature not configured at all — nothing to skip for
+    params = live_cfg.get("params", {})
+    host, port = params.get("host", "whisper-live"), params.get("port", 9090)
+    if not _tcp_reachable(host, port):
+        pytest.skip(
+            f"WhisperLive server not reachable at {host}:{port} — run "
+            "`docker compose up -d whisper-live` (or run this test from "
+            "inside the docker-compose network) to exercise the live "
+            "transcription path end-to-end."
+        )
 
 
 @pytest.fixture(scope="module")

@@ -87,6 +87,28 @@ def _build_transcriber(config: dict[str, Any]) -> TranscriberPort | None:
     return cls(**transcription_cfg.get("params", {}))
 
 
+def _build_live_transcriber(config: dict[str, Any]) -> TranscriberPort | None:
+    """The LIVE WebSocket path's own transcriber — optional, same "omit
+    the section to disable" convention as `transcription:` above, and
+    same shape as `live_diarization:` (a live-only variant of an
+    existing capability, config-gated separately from the file-upload
+    one). ws_router.py falls back to the shared `transcription:`
+    transcriber when this section is absent, so an unconfigured (or
+    momentarily unreachable) live transcriber degrades to the older
+    in-process behaviour rather than disabling live transcription
+    outright — see ws_router.py's own comment at that fallback.
+
+    Default config (see config/risk_formula.yaml) points this at
+    app.adapters.transcription.whisperlive_transcriber:WhisperLiveTranscriber
+    — see that module's own docstring for why the live path specifically
+    (not file-upload) needed its transcriber moved out of this process."""
+    live_transcription_cfg = config.get("live_transcription")
+    if live_transcription_cfg is None:
+        return None
+    cls = _load_class(live_transcription_cfg["class"])
+    return cls(**live_transcription_cfg.get("params", {}))
+
+
 def _build_intent_classifier(config: dict[str, Any]) -> IntentClassifierPort | None:
     """Intent classification is optional, same reasoning as transcription
     above — no `intent_classification:` section means Engine.score_call()
@@ -159,6 +181,7 @@ class Pipeline:
     fusion: FusionPort
     diarizer: DiarizerPort | None = None
     transcriber: TranscriberPort | None = None
+    live_transcriber: TranscriberPort | None = None
     intent_classifier: IntentClassifierPort | None = None
     semantic_risk_classifier: SemanticRiskClassifierPort | None = None
     live_speaker_embedder: Any = None  # Optional[EcapaEmbeddingExtractor], lazily typed to avoid an eager speechbrain import
@@ -170,6 +193,7 @@ def build_pipeline(config_path: str | Path) -> Pipeline:
     fusion = _build_fusion(config)
     diarizer = _build_diarizer(config)
     transcriber = _build_transcriber(config)
+    live_transcriber = _build_live_transcriber(config)
     intent_classifier = _build_intent_classifier(config)
     semantic_risk_classifier = _build_semantic_risk_classifier(config)
     live_speaker_embedder = _build_live_speaker_embedder(config)
@@ -179,6 +203,7 @@ def build_pipeline(config_path: str | Path) -> Pipeline:
         fusion=fusion,
         diarizer=diarizer,
         transcriber=transcriber,
+        live_transcriber=live_transcriber,
         intent_classifier=intent_classifier,
         semantic_risk_classifier=semantic_risk_classifier,
         live_speaker_embedder=live_speaker_embedder,

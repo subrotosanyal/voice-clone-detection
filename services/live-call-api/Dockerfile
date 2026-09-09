@@ -144,6 +144,27 @@ RUN --mount=type=secret,id=hf_token,env=HF_TOKEN \
 RUN --mount=type=secret,id=hf_token,env=HF_TOKEN \
     python app/adapters/semantic_risk/fetch_llm_model.py
 
+# REAL BUG found 2026-09-09 (live-mic parity investigation): none of
+# torch/OpenBLAS/MKL/numexpr had a thread-count limit, so each of
+# AASIST, Parselmouth/Praat, ECAPA-TDNN, and llama.cpp's own forward
+# pass defaulted to grabbing every visible core per call. On the live
+# WS path, several of these run every ~500ms concurrently with each
+# other AND with the periodic background transcription task — measured
+# by hand: per-window latency inflated to 0.85-1.5s against the 500ms
+# target, starving the transcriber of CPU behind that contention (see
+# app/pipeline/live_transcription.py's own docstring for the resulting
+# "small piece, then nothing" symptom). Bounding every BLAS/OpenMP
+# thread pool process-wide fixes the oversubscription directly, without
+# needing per-model code changes. 2 is a conservative starting point,
+# not a measured-optimal one — this host has 14 cores and typically 3-4
+# of these model calls can be in flight at once; rebalance only with
+# real concurrency numbers in hand, same discipline as
+# ws_router.py's own _HANGUP_DIARIZE_MAX_CONCURRENT note.
+ENV OMP_NUM_THREADS=2 \
+    MKL_NUM_THREADS=2 \
+    OPENBLAS_NUM_THREADS=2 \
+    NUMEXPR_NUM_THREADS=2
+
 ENV PYTHONUNBUFFERED=1
 EXPOSE 8000
 

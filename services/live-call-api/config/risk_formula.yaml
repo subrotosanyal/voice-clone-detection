@@ -207,6 +207,31 @@ transcription:
     model_size: small  # "base" was tested and found unreliable for Hindi — see whisper_transcriber.py
     floor_rms: 0.0001
 
+# The LIVE WebSocket path's OWN transcriber — separate from
+# `transcription:` above, which stays local Whisper for POST
+# /v1/score/file (one transcription per call, never the CPU-contention
+# problem this section fixes). Real, measured bug (see
+# app/pipeline/live_transcription.py's own docstring, "REAL BUG found
+# 2026-09-09, live-mic parity investigation"): the live path re-
+# transcribes every ~4s while several OTHER CPU-bound detectors
+# (acoustic, prosodic, live-diarization) also run every ~500ms in the
+# SAME process — real live sessions measured 0-1 transcripts per
+# 11-15s session, cycles 13s+ apart instead of the configured 4s.
+# Pointing this at a separate collabora/WhisperLive server (MIT
+# licensed, faster-whisper/CTranslate2 on CPU — see
+# app/adapters/transcription/whisperlive_transcriber.py's own docstring)
+# moves that model's forward pass OUT of this process entirely, so it no
+# longer competes for the same CPU/thread pool. Omit this whole section
+# to disable it; app/api/ws_router.py then falls back to `transcription:`
+# above for the live path too (today's pre-WhisperLive behaviour).
+live_transcription:
+  class: app.adapters.transcription.whisperlive_transcriber:WhisperLiveTranscriber
+  params:
+    host: whisper-live  # docker-compose.yml's sidecar service name
+    port: 9090
+    model: small  # matches transcription:'s model_size — same verified Hindi/Marathi minimum
+    use_vad: true
+
 # Feeds the `intent` detector above once per call, same "compute once,
 # read many times" pattern as transcription — see Engine.score_call()'s
 # docstring. Real MIT-licensed model, confirmed ungated, real Hindi
@@ -281,3 +306,10 @@ semantic_risk_classification:
     # local_llm_semantic_classifier.py's own REAL BUG note.
     n_ctx: 4096
     max_tokens: 150
+    # REAL BUG found 2026-09-09 (live-mic parity investigation): unset
+    # (llama.cpp's own default), this forward pass grabs every visible
+    # core, contending with AASIST/Parselmouth/ECAPA on the live path's
+    # per-window detectors — see the Dockerfile's own OMP_NUM_THREADS
+    # note for the same fix applied to torch/BLAS; llama.cpp's n_threads
+    # is its own separate knob, unaffected by those env vars.
+    n_threads: 2
