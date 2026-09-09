@@ -12,7 +12,7 @@
 # every log line so a score can always be tied back to the exact config
 # that produced it (see docs/risk-model.md, "Reproducibility").
 
-formula_version: "2026.09.12"
+formula_version: "2026.09.13"
 
 detectors:
   # Real pretrained countermeasure (AASIST, ASVspoof2019 LA, MIT licensed —
@@ -20,12 +20,17 @@ detectors:
   # doesn't prove). The checkpoint is fetched separately, not committed to
   # git — see app/adapters/detectors/vendor/fetch_checkpoint.py.
   #
-  # finetuned_out_layer_path (added 2026-09-08): a small, in-house-produced
-  # recalibration of just AASIST's final classification layer for Hindi —
-  # see eval/indian_language/README.md for the full reproducible process
-  # and the honest before/after numbers (this recalibration cut the
-  # false-positive rate on real, held-out Hindi speech from 75% to 20%).
-  # Omit this line to run the original, un-recalibrated checkpoint.
+  # finetuned_out_layer_path: a small, in-house-produced recalibration of
+  # just AASIST's final classification layer for Hindi — see
+  # eval/indian_language/README.md for the full reproducible process.
+  # Updated 2026-09-09 to train on a much larger, more diverse corpus
+  # (1423 genuine / 340 spoof, up from 200/40) — real before/after/held-
+  # out numbers: EER 36.1% (before) -> 12.0% (trained-on) -> 19.5% (held
+  # out on BOTH the speaker/utterance and synthesis-system dimensions at
+  # once — see README.md's "2026-09-09 update" for the full table and
+  # why "before" looks worse than the old baseline: harder, more honest
+  # test data, not a regression). Omit this line to run the original,
+  # un-recalibrated checkpoint.
   #
   # To fall back to the dependency-light DSP heuristic instead (no torch,
   # no checkpoint download — useful for a quick local run), swap the two
@@ -42,14 +47,23 @@ detectors:
 
   - name: prosodic
     # Real Praat-derived jitter/shimmer/HNR (see
-    # app/adapters/detectors/prosody_parselmouth.py) — still a heuristic
-    # score mapping, honestly documented in that file's docstring.
+    # app/adapters/detectors/prosody_parselmouth.py), scored by a
+    # logistic regression trained 2026-09-09 on 1423 genuine + 340 spoof
+    # Hindi examples — 82.5% balanced accuracy on genuinely held-out
+    # data. REPLACES ParselmouthProsodyDetector's hand-tuned thresholds,
+    # which the same calibration run measured at exactly 50% (chance
+    # level) on real data — see eval/indian_language/README.md's
+    # "Prosodic detector calibration" section for the full numbers, and
+    # this file's own module docstring for why. That superseded class is
+    # kept in the same file, unchanged, as a documented historical
+    # baseline — swap the line below back to it (unweighted, same
+    # params) to revert.
     #
     # To fall back to the dependency-light autocorrelation heuristic
     # instead (no Praat), swap the two lines below for:
     #   class: app.adapters.detectors.prosody_pitch_variance:PitchVarianceDetector
     #   params: {frame_ms: 40, hop_ms: 20, scale: 2.5}
-    class: app.adapters.detectors.prosody_parselmouth:ParselmouthProsodyDetector
+    class: app.adapters.detectors.prosody_parselmouth:ParselmouthProsodyMLDetector
     weight: 0.2
     params:
       floor_rms: 0.0001

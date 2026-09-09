@@ -1,6 +1,8 @@
 import numpy as np
+import pytest
 
-from app.adapters.detectors.prosody_parselmouth import ParselmouthProsodyDetector
+from app.adapters.detectors import prosody_parselmouth
+from app.adapters.detectors.prosody_parselmouth import ParselmouthProsodyDetector, ParselmouthProsodyMLDetector
 from app.domain.models import AudioWindow
 
 SR = 16_000
@@ -89,3 +91,105 @@ def test_score_is_always_within_unit_bounds():
 
     assert result.score is not None
     assert 0.0 <= result.score <= 1.0
+
+
+# --- ParselmouthProsodyMLDetector — deployed 2026-09-09, see
+# app/adapters/detectors/prosody_parselmouth.py's own module docstring
+# ("2026-09-09: trained-classifier upgrade") for the real calibration
+# numbers behind this. Reuses the same _extract_features() abstain logic
+# as ParselmouthProsodyDetector (tested above), so these tests focus on
+# what's actually new: the trained score mapping. ------------------------
+
+
+def test_ml_detector_abstains_on_near_silence():
+    """Same shared _extract_features() path as ParselmouthProsodyDetector
+    — confirms the refactor into a shared helper didn't lose this."""
+    detector = ParselmouthProsodyMLDetector(floor_rms=1e-3)
+    silence = np.zeros(SR * 2, dtype=np.float32)
+
+    result = detector.score(_window(silence), context={})
+
+    assert result.score is None
+    assert result.abstain_reason is not None
+
+
+def test_ml_detector_abstains_cleanly_on_short_window():
+    detector = ParselmouthProsodyMLDetector()
+    short_loud = np.random.default_rng(0).uniform(-0.5, 0.5, size=320).astype(np.float32)
+
+    result = detector.score(_window(short_loud), context={})
+
+    assert result.score is None
+    assert result.abstain_reason is not None
+    assert "short" in result.abstain_reason
+
+
+def test_ml_detector_score_is_always_within_unit_bounds():
+    detector = ParselmouthProsodyMLDetector()
+    t = np.linspace(0, 2.0, SR * 2, endpoint=False)
+    rng = np.random.default_rng(7)
+    signal = (0.3 * np.sin(2 * np.pi * 200 * t) + rng.normal(0, 0.05, t.size)).astype(np.float32)
+
+    result = detector.score(_window(signal), context={})
+
+    assert result.score is not None
+    assert 0.0 <= result.score <= 1.0
+
+
+def test_ml_detector_reproduces_the_exact_fitted_logistic_regression(monkeypatch):
+    """Pins the hardcoded _ML_SCALER_MEAN/_ML_SCALER_SCALE/_ML_COEF/
+    _ML_INTERCEPT constants against a hand-computed sigmoid, independent
+    of Praat entirely (monkeypatches _measure_voice_quality with a fixed
+    triple) — catches an accidental edit to those constants going
+    forward. Values are the exact means from eval/indian_language/
+    results/prosodic_calibration.json's genuine_train distribution, which
+    a real (not fabricated) genuine example should therefore land near
+    the classifier's own decision boundary for."""
+    monkeypatch.setattr(
+        prosody_parselmouth,
+        "_measure_voice_quality",
+        lambda samples, sample_rate: (0.0203, 0.096, 13.4),  # ~genuine-train means
+    )
+    detector = ParselmouthProsodyMLDetector()
+    loud_enough = np.random.default_rng(0).uniform(-0.5, 0.5, size=SR).astype(np.float32)
+
+    result = detector.score(_window(loud_enough), context={})
+
+    z = [
+        (0.0203 - 0.022166341806446492) / 0.005116343520411652,
+        (0.096 - 0.09576296062763698) / 0.02495170502399299,
+        (13.4 - 13.469464679917822) / 3.1039219121944606,
+    ]
+    coef = (0.3018977933589121, -0.31844813946535616, 0.03738590949551451)
+    logit = sum(c * v for c, v in zip(coef, z)) + -0.02643924021858421
+    expected = 1.0 / (1.0 + np.exp(-logit))
+
+    assert result.score is not None
+    assert result.score == pytest.approx(expected, abs=1e-9)
+
+
+def test_ml_detector_and_heuristic_detector_can_disagree(monkeypatch):
+    """The whole point of the 2026-09-09 upgrade (see module docstring):
+    the two detectors are not the same formula wearing different code,
+    and CAN disagree on the same input. This specific (jitter, shimmer,
+    hnr) triple is a real, verified case (jitter/hnr both comfortably
+    inside ParselmouthProsodyDetector's "normal" range, so its heuristic
+    averages down to low risk despite low shimmer alone) where the
+    heuristic reads LOW risk (0.238, jitter_risk=hnr_risk=0 dilutes the
+    average) but the trained model reads HIGH risk (0.718) — confirmed
+    by hand-computing both formulas before writing this assertion, not
+    guessed."""
+    monkeypatch.setattr(
+        prosody_parselmouth,
+        "_measure_voice_quality",
+        lambda samples, sample_rate: (0.02, 0.01, 13.0),
+    )
+    heuristic = ParselmouthProsodyDetector()
+    ml = ParselmouthProsodyMLDetector()
+    loud_enough = np.random.default_rng(0).uniform(-0.5, 0.5, size=SR).astype(np.float32)
+
+    heuristic_result = heuristic.score(_window(loud_enough), context={})
+    ml_result = ml.score(_window(loud_enough), context={})
+
+    assert heuristic_result.score < 0.5
+    assert ml_result.score > 0.5
