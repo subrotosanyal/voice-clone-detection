@@ -24,6 +24,8 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import urllib.error
+import urllib.request
 
 import numpy as np
 import pytest
@@ -39,6 +41,15 @@ SR = 16_000
 
 def _window(samples: np.ndarray) -> AudioWindow:
     return AudioWindow(session_id="s1", seq=0, sample_rate=SR, samples=samples.astype(np.float32), window_start_ms=0)
+
+
+def _window_at(samples: np.ndarray, sample_rate: int) -> AudioWindow:
+    """Same as _window() above but for a sample rate OTHER than this
+    file's fixed SR=16kHz — needed for known_deepfake_speech below, which
+    is fetched at its own native rate (24kHz), not resampled beforehand
+    (AasistAcousticDetector resamples internally; mislabeling the rate
+    here would skip that step and silently corrupt the test)."""
+    return AudioWindow(session_id="s1", seq=0, sample_rate=sample_rate, samples=samples, window_start_ms=0)
 
 
 @pytest.fixture(scope="module")
@@ -106,6 +117,134 @@ def _low_bitrate_reencode(samples: np.ndarray, tmp_path, bitrate: str = "6k") ->
 @pytest.fixture(scope="module")
 def aasist(aasist_checkpoint) -> AasistAcousticDetector:
     return AasistAcousticDetector(checkpoint_path=aasist_checkpoint)
+
+
+_INDIEFAKE_SAMPLE_URL = "https://indie-fake-dataset.netlify.app/audios/sadhguru_deepfake.wav"
+_HINDI_FINETUNED_OUT_LAYER = "app/adapters/detectors/vendor/checkpoints/AASIST_hindi_finetuned_out_layer.pth"
+
+
+@pytest.fixture(scope="module")
+def aasist_as_deployed(aasist_checkpoint) -> AasistAcousticDetector:
+    """The `aasist` fixture above does NOT include the Hindi-recalibrated
+    output layer config/risk_formula.yaml actually wires into production
+    (finetuned_out_layer_path) — verified by hand this matters a lot for
+    the test below: the base checkpoint scored the same real deepfake
+    window at spoof_probability=0.999 (correct, and unmoved by
+    degradation), while the actually-deployed recalibrated checkpoint
+    scored the SAME window at 0.22 (far more marginal) and DID move under
+    degradation. Real production behaviour needs this exact config."""
+    return AasistAcousticDetector(
+        checkpoint_path=aasist_checkpoint, finetuned_out_layer_path=_HINDI_FINETUNED_OUT_LAYER
+    )
+
+
+def _reverb_and_lossy_reencode(samples: np.ndarray, sample_rate: int, tmp_path) -> np.ndarray:
+    """Real room reverb (ffmpeg's `aecho`) + a real lossy AAC re-encode —
+    a realistic proxy for actual real-world recording/distribution
+    conditions (e.g. a YouTube-sourced clip), not a synthetic simulation.
+    Distinct from _low_bitrate_reencode above (opus at a very low
+    bitrate — a degraded CALL connection): this is a milder but more
+    acoustically realistic kind of degradation, closer to what a public
+    video's audio track would actually carry."""
+    wav_in = tmp_path / "clean_kd.wav"
+    m4a_out = tmp_path / "degraded_kd.m4a"
+    wav_out = tmp_path / "degraded_kd.wav"
+    sf.write(wav_in, samples, sample_rate)
+    subprocess.run(
+        [
+            "ffmpeg", "-y", "-i", str(wav_in),
+            "-af", "aecho=0.8:0.7:40|60:0.35|0.2,acompressor",
+            "-ar", str(sample_rate), "-ac", "1", "-c:a", "aac", "-b:a", "96k", str(m4a_out),
+        ],
+        check=True, capture_output=True,
+    )
+    subprocess.run(
+        ["ffmpeg", "-y", "-i", str(m4a_out), "-ar", str(sample_rate), "-ac", "1", str(wav_out)],
+        check=True, capture_output=True,
+    )
+    degraded, out_sr = sf.read(wav_out, dtype="float32", always_2d=False)
+    assert out_sr == sample_rate
+    if degraded.size < samples.size:
+        degraded = np.pad(degraded, (0, samples.size - degraded.size))
+    return degraded[: samples.size].astype(np.float32)
+
+
+@pytest.fixture(scope="module")
+def known_deepfake_speech(tmp_path_factory) -> tuple[np.ndarray, int]:
+    """A REAL, modern-commercial-TTS-generated deepfake sample — deliberately
+    NOT a macOS `say` fixture: verified by hand that `say`'s concatenative/
+    formant synthesis is SO obviously synthetic (spoof_probability ~0.999
+    on the base checkpoint) that no realistic degradation can move it. This
+    regression test needs a genuinely BORDERLINE case, which is exactly
+    what exposed the real finding below.
+
+    One public demo clip from the IndieFake Dataset (Kumar, Verma, More —
+    "IndieFake Dataset: A Benchmark Dataset for Audio Deepfake Detection",
+    arxiv.org/html/2506.19014), licensed CC BY 4.0 (site footer: "Licensed
+    under Creative Commons Attribution 4.0 International License") — NOT
+    the full dataset, which is request-gated and not adopted into this
+    project (see docs/risk-model.md's note on why). Fetched at test time
+    rather than committed to git (avoids a binary-audio commit for one
+    test), skipping gracefully if unreachable — same "network-optional,
+    skip don't fail" convention as every other externally-sourced fixture
+    in this project (see conftest.py's aasist_checkpoint)."""
+    tmp_dir = tmp_path_factory.mktemp("indiefake_sample")
+    wav_path = tmp_dir / "known_deepfake.wav"
+    try:
+        urllib.request.urlretrieve(_INDIEFAKE_SAMPLE_URL, wav_path)
+    except (urllib.error.URLError, OSError) as exc:
+        pytest.skip(f"IndieFake Dataset demo sample unreachable (no network?): {exc}")
+    samples, sr = sf.read(wav_path, dtype="float32", always_2d=False)
+    if samples.ndim > 1:
+        samples = samples.mean(axis=1).astype(np.float32)
+    return samples, sr
+
+
+def test_known_limitation_degrading_a_real_deepfake_lowers_its_spoof_score(
+    aasist_as_deployed, known_deepfake_speech, tmp_path
+):
+    """KNOWN LIMITATION, not a regression to fix quietly — same "document
+    the actual bad behaviour, flip the assertion once it's fixed"
+    convention as test_zero_shot_intent_classifier.py's own known-
+    limitation test. Found 2026-09-09 while investigating why a real
+    external deepfake sample scored LOW risk in the live dashboard: room
+    reverb + a lossy AAC re-encode (simulating realistic real-world
+    channel conditions, e.g. a YouTube-sourced clip) consistently LOWERS
+    AASIST's spoof-probability on this KNOWN, unambiguously synthetic
+    clip — the opposite of what a robust countermeasure should do, and a
+    CAUSAL (not just correlational) confirmation of the exact real-world
+    risk already motivating this test file (NCC Group's vishing finding:
+    poor audio quality helps real attacks evade detection).
+
+    Specific to the DEPLOYED (Hindi-recalibrated) checkpoint, verified by
+    hand — the base checkpoint scored this same window at 0.999 (correct)
+    and was unmoved by this degradation; the recalibration that reduced
+    Hindi false positives appears to have also made the decision more
+    marginal, and it's exactly that marginal state degradation can push
+    the wrong way. Verified by hand across 4 different IndieFake speakers
+    before writing this test — all 4 showed the same direction under this
+    degradation.
+
+    Flip this assertion once AASIST's real-world robustness genuinely
+    improves (a better fine-tune, a newer checkpoint, or an ensemble with
+    a detector that doesn't share this failure mode) — don't delete it."""
+    samples, sr = known_deepfake_speech
+    window_samples = samples[: sr * 2] if samples.size > sr * 2 else samples
+
+    clean_result = aasist_as_deployed.score(_window_at(window_samples, sr), context={})
+    assert clean_result.score is not None
+
+    degraded = _reverb_and_lossy_reencode(window_samples, sr, tmp_path)
+    degraded_result = aasist_as_deployed.score(_window_at(degraded, sr), context={})
+    assert degraded_result.score is not None
+
+    assert degraded_result.score < clean_result.score, (
+        f"expected the KNOWN LIMITATION to still reproduce (degraded score should read "
+        f"LOWER than clean) — clean={clean_result.score:.3f} degraded={degraded_result.score:.3f}. "
+        "If this now FAILS because degraded >= clean, that's genuinely good news: AASIST's "
+        "real-world robustness may have improved — investigate and, if confirmed, flip this "
+        "assertion rather than deleting the test."
+    )
 
 
 @pytest.fixture(scope="module")
