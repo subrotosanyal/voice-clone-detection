@@ -20,6 +20,28 @@ def test_abstains_on_near_silence():
     assert result.abstain_reason is not None
 
 
+def test_abstains_cleanly_instead_of_leaking_a_raw_praat_error_on_a_short_window():
+    """Regression test for a real bug found 2026-09-09 (via a real external
+    deepfake sample whose trailing window was ~26.7ms): Praat's own
+    pitch-period extraction needs at least 3 periods of _MIN_PITCH_HZ
+    (70Hz) visible, i.e. ~42.9ms — a shorter window was already caught
+    (no crash) but abstained with Praat's raw, jargon-heavy exception
+    text ("minimum pitch must not be less than 112.5Hz...") instead of a
+    clean reason. Loud (not silent) so this exercises the NEW length
+    guard specifically, not the existing near-silence one above."""
+    detector = ParselmouthProsodyDetector()
+    # 20ms at 16kHz = 320 samples — below both the ~42.9ms Praat minimum
+    # and this detector's own 60ms (_MIN_DURATION_S) guard.
+    short_loud = np.random.default_rng(0).uniform(-0.5, 0.5, size=320).astype(np.float32)
+
+    result = detector.score(_window(short_loud), context={})
+
+    assert result.score is None
+    assert result.abstain_reason is not None
+    assert "short" in result.abstain_reason
+    assert "112.5" not in result.abstain_reason  # no raw Praat internals leaking through
+
+
 def test_pure_tone_scores_maximal_risk():
     """A perfectly periodic pure tone has ~zero jitter/shimmer and very
     high HNR — the extreme case this detector's heuristic (see its

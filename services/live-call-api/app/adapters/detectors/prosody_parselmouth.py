@@ -35,6 +35,20 @@ from app.domain.models import AudioWindow, DetectorResult
 _MIN_PITCH_HZ = 70.0
 _MAX_PITCH_HZ = 400.0
 
+# Praat's own pitch-period extraction needs at least 3 periods of
+# _MIN_PITCH_HZ visible in the window (3 / 70Hz ≈ 42.9ms) — a real,
+# verified minimum, not a guess: caught 2026-09-09 via a real external
+# deepfake sample (IndieFake Dataset's public demo clips) whose trailing
+# window was ~26.7ms; the exception message read "minimum pitch must not
+# be less than 112.5Hz" (3 / 112.5Hz ≈ 26.7ms — Praat naming the pitch
+# floor THIS window's actual length would have supported). Same root
+# cause class as the short-window crash already found and fixed in
+# perth_watermark.py that same day — here it was already caught (the
+# broad except below), just with an unfriendly raw Praat message leaking
+# through instead of a clean abstain reason. 60ms is a safety margin
+# above the verified 42.9ms minimum.
+_MIN_DURATION_S = 0.06
+
 # Placeholder "healthy/natural voice" reference points — see HONESTY NOTE.
 # Clinical voice-quality literature commonly cites ~1% jitter and ~3-4%
 # shimmer as typical upper bounds for a healthy natural voice; we use those
@@ -72,6 +86,19 @@ class ParselmouthProsodyDetector:
                 score=None,
                 detail={"rms": rms},
                 abstain_reason="window is near-silent — nothing to analyse",
+            )
+
+        duration_s = samples.size / window.sample_rate if window.sample_rate else 0.0
+        if duration_s < _MIN_DURATION_S:
+            return DetectorResult(
+                detector_name=self.name,
+                detector_version=self.version,
+                score=None,
+                detail={"rms": rms, "duration_s": duration_s, "min_duration_s": _MIN_DURATION_S},
+                abstain_reason=(
+                    f"window too short ({duration_s * 1000:.1f}ms) for Praat's own pitch-period "
+                    f"extraction — needs at least {_MIN_DURATION_S * 1000:.0f}ms"
+                ),
             )
 
         try:
