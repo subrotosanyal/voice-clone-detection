@@ -6,6 +6,13 @@
 docker compose up --build
 ```
 
+Optional: set `HF_TOKEN` in your shell first for faster, authenticated
+HuggingFace Hub downloads during the build's model-fetch steps (ECAPA,
+the intent classifier, and the ~2.4GB Phi-3-mini GGUF) —
+`export HF_TOKEN=hf_...`. Never baked into the built image (see the
+Dockerfile's own HF_TOKEN note); safe to leave unset, same anonymous
+downloads as before this existed.
+
 This starts:
 
 - **`live-call-api`** — the FastAPI service, on http://localhost:8020
