@@ -153,8 +153,21 @@ def test_long_transcript_is_truncated_before_reaching_the_model():
 
 @pytest.fixture(scope="session")
 def real_classifier(phi3_llm_model_path) -> LocalLLMSemanticClassifier:
+    """REAL BUG found and fixed 2026-09-10 (CI fast/slow split): this
+    fixture's own comment always claimed "a failure skips cleanly", but
+    had no try/except at all — `_ensure_loaded()` raising (e.g.
+    `llama_cpp` not installed at all, not just the model file missing)
+    would ERROR this fixture, not skip it, unlike every other real-model
+    fixture in this file (`aasist_checkpoint`, `phi3_llm_model_path`
+    itself) which already follow the correct pattern. This matters now
+    that CI's `test-unit` job deliberately doesn't install `llama-cpp-
+    python` at all (see .github/workflows/ci.yml) — these 3 real-model
+    tests need to skip there, not error the whole job."""
     clf = LocalLLMSemanticClassifier(model_path=phi3_llm_model_path)
-    clf._ensure_loaded()  # force the load now, so a failure skips cleanly
+    try:
+        clf._ensure_loaded()
+    except Exception as exc:  # noqa: BLE001 — any load failure just skips
+        pytest.skip(f"Phi-3-mini model unavailable (llama-cpp-python not installed?): {exc}")
     return clf
 
 

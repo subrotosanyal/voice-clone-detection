@@ -9,7 +9,7 @@ pip install -r requirements-dev.txt                   # first time only
 pytest tests/ -v
 ```
 
-185 tests, no Docker needed — unit tests for each detector (including
+217 tests (190 unit, 27 integration), no Docker needed — unit tests for each detector (including
 `test_acoustic_aasist.py`'s coverage of the optional Hindi-recalibrated
 `finetuned_out_layer_path`, verifying it actually changes the score, not
 just that the parameter is accepted; `test_perth_watermark.py`,
@@ -107,16 +107,23 @@ Run just one file while iterating: `pytest tests/unit/test_fusion_weighted_sum.p
 ## Continuous integration
 
 `.github/workflows/ci.yml` runs on every push/PR to `master` (and
-manually, via workflow_dispatch), two jobs:
+manually, via workflow_dispatch), three jobs:
 
-- **`test`** — the exact `pytest tests/ -v` command above, on a plain
+- **`test-unit`** — the FAST job: `pytest tests/unit -v` on a plain
   Python 3.12 venv (not Docker). Installs CPU-only torch/torchaudio first
-  (same reasoning as the Dockerfile's own install step — a plain `pip
-  install torch` on Linux resolves the ~2GB CUDA build this CPU-only
-  runner never uses), then fetches the same AASIST/ECAPA-TDNN/Whisper
-  models described above via the same `conftest.py` fixtures — cached
-  across runs (`actions/cache`) so only the first run after a model
-  version bump pays the download cost.
+  (same reasoning as the Dockerfile's own install step), then fetches
+  AASIST/ECAPA-TDNN/Whisper (the models a handful of unit tests load once
+  each via a session-scoped `conftest.py` fixture) — cached across runs.
+  Deliberately does NOT install the ~2.4GB Phi-3-mini semantic-risk LLM
+  (`llama-cpp-python` alone takes ~10min to build from source): the 3
+  real-model tests in `test_local_llm_semantic_classifier.py` that need
+  it skip gracefully here and run for real in `test-integration` instead,
+  which already pays that cost anyway. This is the job that gates every
+  PR quickly — see "Honest accounting" below for why it's split out.
+- **`test-integration`** — the SLOW job: `pytest tests/integration -v`,
+  same environment, but also fetches the Phi-3-mini GGUF since every
+  integration test's `TestClient(app)` loads the full model set
+  regardless of what it's testing.
 - **`docker-compose-build`** — runs the real `docker compose build` /
   `up`, waits for the container's own healthcheck to pass, then scores
   `samples/genuine_tone.wav` through the running container exactly like
@@ -124,30 +131,35 @@ manually, via workflow_dispatch), two jobs:
   docker-compose.yml combination still works end to end, not just that
   the test suite passes outside Docker.
 
-**Honest accounting of why `test` needs a generous timeout (45min, not a
-round number picked in advance)**: a real CI run hit an earlier 20min
-limit and got cancelled at 16% of tests, having spent 1-4 real minutes on
-several individual integration tests. Compounding reasons, not a
-fluke: every one of the 25 `with TestClient(app) as client:` blocks across
-`tests/integration/` (8 files) reloads AASIST + Whisper + ECAPA-TDNN from
-disk into memory from scratch (the app's lifespan runs fresh each time —
-and, as of `live_diarization:` being enabled by default alongside
-`diarization:`, this now loads TWO separate ECAPA-TDNN copies per
-startup, one per feature — see app/pipeline/live_diarization.py's own
-docstring for why that's a deliberate, not accidental, trade-off), and
-every `/v1/score/file` call also runs a real Whisper decode regardless of
-whether that particular test has anything to do with transcription — a
-GitHub-hosted CPU runner is slower than a dev machine for this. As of
+**Honest accounting of why this was split 2026-09-10, and why
+`test-integration` needs a generous timeout (150min, not a round number
+picked in advance)**: a real CI run got CANCELLED at the previous single
+job's 45min timeout having completed only 8 of 187 tests (see that run's
+own log — `test_enroll_list_and_delete_round_trip` passed in 14s, then
+the next test alone ran for 14 real minutes before the whole job was
+killed). Compounding reasons, not a fluke: every one of the 25+
+`with TestClient(app) as client:` blocks across `tests/integration/`
+reloads AASIST + Whisper + ECAPA-TDNN from disk into memory from scratch
+(the app's lifespan runs fresh each time — and, as of `live_diarization:`
+being enabled by default alongside `diarization:`, this now loads TWO
+separate ECAPA-TDNN copies per startup, one per feature — see
+app/pipeline/live_diarization.py's own docstring for why that's a
+deliberate, not accidental, trade-off), and every `/v1/score/file` call
+also runs a real Whisper decode regardless of whether that particular
+test has anything to do with transcription — a GitHub-hosted CPU runner
+is slower than a dev machine for this. As of
 `semantic_risk_classification:` being enabled by default too, every
 startup now ALSO loads a ~2.4GB local LLM (Phi-3-mini) into memory, and
 every `/v1/score/file` call with a transcript runs a real ~1-1.5s CPU LLM
 forward pass on top of everything else — the single heaviest addition to
-integration-test startup cost so far. Sharing one long-lived
-app/TestClient across a test module (loading each model once for the
-whole run, not once per test) would meaningfully cut this, but touches
-every integration test file and needs care around tests that share
-SQLite-backed state — not done yet; the honest workaround for now is
-enough timeout headroom to let the real work finish.
+integration-test startup cost so far, and the straw that actually broke
+the previous single-job pipeline. Splitting the fast unit suite out
+means a PR still gets quick feedback even while the slow job is still
+running; sharing one long-lived app/TestClient across a test module
+(loading each model once for the whole run, not once per test) would cut
+`test-integration`'s cost far more fundamentally, but touches every
+integration test file and needs care around tests that share
+SQLite-backed state — not done yet, a real follow-up, not this fix.
 
 ## The fastest way to debug a score
 
