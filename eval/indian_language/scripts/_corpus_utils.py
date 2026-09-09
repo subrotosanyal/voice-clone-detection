@@ -27,6 +27,19 @@ def parse_hindi_sentences(sentences_md_path: Path) -> list[str]:
     return rows
 
 
+def local_speaker_entries(split_dir: Path, eval_dir: Path) -> list[dict]:
+    """`data/local_speakers/{train,test}/` has no manifest.json (it's the
+    user's own raw folders, not a fetch script's output) — build entries
+    directly from the directory listing, same {utterance_id, wav_path}
+    shape every manifest.json uses, so callers don't need to special-case
+    it. Shared by calibrate_prosodic_thresholds.py, fine_tune_aasist.py,
+    and run_held_out_eval.py."""
+    entries = []
+    for wav_path in sorted(split_dir.rglob("*.wav")):
+        entries.append({"utterance_id": wav_path.stem, "wav_path": str(wav_path.relative_to(eval_dir))})
+    return entries
+
+
 def pick_reference_speakers(
     genuine: list[dict], eval_dir: Path, max_per_gender: int = 4
 ) -> dict[str, dict]:
