@@ -10,30 +10,27 @@ run_held_out_eval.py:
     source ../../services/live-call-api/.venv/bin/activate
     python scripts/fine_tune_aasist.py
 
-WHY ONLY THE FINAL LAYER, NOT THE WHOLE MODEL: with a few hundred examples
-total (200 genuine Hindi + whatever generate_synthetic_corpus.py produced
-— currently 40 synthetic Hindi utterances from 4 cloned speakers, all
-one gender code per fetch_genuine_corpus.py's own honest finding that
-the source corpus's gender field wasn't actually mixed in the fetched
-range), fully fine-tuning AASIST's ~300k-parameter graph-attention
-network would still badly overfit — it would memorise this comparatively
-tiny set rather than learn anything that generalises to a real caller's
-voice. Freezing every layer except AasistNet's final `out_layer` (a
-single `nn.Linear(5*gat_dims[1], 2)`) is closer to recalibrating the
-existing English-trained features for Hindi than retraining the model —
-a defensible thing to do with this little data. Full fine-tuning needs
-hundreds-to-thousands of examples PER CLASS to be trustworthy — the
-genuine side is there, the spoof side (40) very much isn't yet; that's
-exactly why real dataset collection (more volunteers, more languages,
-Malvi still entirely missing) matters more than this script's
-cleverness does.
+WHY ONLY THE FINAL LAYER, NOT THE WHOLE MODEL: even after the 2026-09-09
+dataset expansion (see build_dataset()'s own docstring for the four
+genuine + two spoof sources it now combines — roughly 1400 genuine and
+340 spoof examples, up from the original 200/40), this is still nowhere
+near the scale a from-scratch or full-model fine-tune of AASIST's
+~300k-parameter graph-attention network would need without overfitting.
+Freezing every layer except AasistNet's final `out_layer` (a single
+`nn.Linear(5*gat_dims[1], 2)`) is closer to recalibrating the existing
+English-trained features for Hindi than retraining the model — a
+defensible thing to do at this data scale. Full fine-tuning still needs
+hundreds-to-thousands of examples PER CLASS from genuinely independent
+recording conditions (not just more clones of the same reference
+speakers) to be trustworthy — real dataset collection, not just this
+script's cleverness, is still what would close that gap further.
 
-CLASS IMBALANCE (fixed 2026-09-08): scaling genuine 10x while only
-scaling synthetic 2x left the training set 5.5:1 imbalanced, which a
-plain unweighted loss + raw-accuracy model selection badly mishandled —
-see the REAL BUG comment above the training loop in main() for the
-measured before/after numbers and the two-part fix (class-weighted loss,
-balanced-accuracy model selection).
+CLASS IMBALANCE (fixed 2026-09-08, still relevant post-expansion): the
+class-weighted loss and balanced-accuracy model selection described in
+the REAL BUG comment above the training loop in main() remain necessary
+even at the new, less extreme ~4.2:1 genuine:spoof ratio (previously
+5.5:1) — see that comment for the measured before/after numbers from
+when this was first found.
 """
 from __future__ import annotations
 
@@ -50,9 +47,11 @@ import torch.nn as nn
 _EVAL_DIR = Path(__file__).resolve().parent.parent
 _LIVE_CALL_API_DIR = _EVAL_DIR.parent.parent / "services" / "live-call-api"
 sys.path.insert(0, str(_LIVE_CALL_API_DIR))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from app.adapters.detectors.acoustic_aasist import _DEFAULT_MODEL_CONFIG, _deterministic_pad  # noqa: E402
 from app.adapters.detectors.vendor.aasist_model import AasistNet  # noqa: E402
+from _corpus_utils import local_speaker_entries  # noqa: E402
 
 CHECKPOINT_PATH = _LIVE_CALL_API_DIR / "app/adapters/detectors/vendor/checkpoints/AASIST.pth"
 MANIFEST_BASE_DIR = _EVAL_DIR
@@ -80,24 +79,49 @@ def _load_and_pad(wav_path: Path) -> np.ndarray:
 
 
 def build_dataset() -> tuple[torch.Tensor, torch.Tensor]:
-    genuine = _load_manifest(MANIFEST_BASE_DIR / "data" / "genuine" / "manifest.json")
-    synthetic = _load_manifest(MANIFEST_BASE_DIR / "data" / "synthetic" / "manifest.json")
+    """Expanded 2026-09-09 with three new sources per TODO.md's Phase 4:
+    Kathbath (CC BY 4.0, via the ungated IndicSUPERB mirror), Movie-
+    MUSNOMIX (real Bollywood dialogue), and the 100 local speakers'
+    training clips on the genuine side; the same 100 speakers' XTTS-v2
+    clones on the spoof side. Deliberately EXCLUDES two held-out sources
+    that must never be trained on: `data/synthetic_chatterbox/` (the
+    held-out second synthesis system — see README.md's "Held-out
+    generalisation check") and `data/local_speakers/test/` (each local
+    speaker's own reserved test utterance) — both are read only by
+    run_held_out_eval.py, for the genuinely-held-out number that actually
+    matters."""
+    genuine = (
+        _load_manifest(MANIFEST_BASE_DIR / "data" / "genuine" / "manifest.json")
+        + _load_manifest(MANIFEST_BASE_DIR / "data" / "genuine" / "hi_kathbath" / "manifest.json")
+        + _load_manifest(MANIFEST_BASE_DIR / "data" / "genuine" / "hi_movie_musnomix" / "manifest.json")
+        + local_speaker_entries(MANIFEST_BASE_DIR / "data" / "local_speakers" / "train", MANIFEST_BASE_DIR)
+    )
+    synthetic = _load_manifest(MANIFEST_BASE_DIR / "data" / "synthetic" / "manifest.json") + _load_manifest(
+        MANIFEST_BASE_DIR / "data" / "synthetic_local_speakers" / "manifest.json"
+    )
 
     if not synthetic:
         raise SystemExit(
-            "No synthetic corpus found at data/synthetic/manifest.json — "
-            "run scripts/generate_synthetic_corpus.py first. Fine-tuning "
+            "No synthetic corpus found — run scripts/generate_synthetic_corpus.py "
+            "and/or scripts/generate_local_speaker_clones.py first. Fine-tuning "
             "needs both classes; see README.md's Status section."
         )
 
+    print(f"  genuine sources: {len(genuine)} total (see build_dataset()'s docstring for the breakdown)")
+    print(f"  spoof sources: {len(synthetic)} total (XTTS-v2 handful + local-speaker clones; Chatterbox held out)")
+
     xs: list[np.ndarray] = []
     ys: list[int] = []
-    for e in genuine:
+    for i, e in enumerate(genuine):
         xs.append(_load_and_pad(MANIFEST_BASE_DIR / e["wav_path"]))
         ys.append(1)  # bonafide — matches AASIST's own training label convention
-    for e in synthetic:
+        if (i + 1) % 250 == 0 or (i + 1) == len(genuine):
+            print(f"  loaded genuine {i + 1}/{len(genuine)}")
+    for i, e in enumerate(synthetic):
         xs.append(_load_and_pad(MANIFEST_BASE_DIR / e["wav_path"]))
         ys.append(0)  # spoof
+        if (i + 1) % 100 == 0 or (i + 1) == len(synthetic):
+            print(f"  loaded spoof {i + 1}/{len(synthetic)}")
 
     return torch.tensor(np.stack(xs), dtype=torch.float32), torch.tensor(ys, dtype=torch.long)
 
@@ -230,23 +254,39 @@ def main() -> None:
     best_state = None
     best_epoch = -1
 
+    # REAL CHANGE, 2026-09-09: batch_size=1 (one forward/backward pass per
+    # example) was fine at the original ~260-example scale but does not
+    # scale to the ~1760 examples the corpus expansion brought in — same
+    # total FLOPs either way, but 16x fewer Python-level loop iterations
+    # and optimizer.step() calls per epoch. Safe to change: the whole
+    # model stays in .eval() mode throughout (see the REAL BUG comment
+    # above), and .eval()-mode BatchNorm uses its stored running
+    # statistics regardless of how many examples are in a batch — so a
+    # batch of 16 produces the EXACT SAME per-example forward output as
+    # 16 separate batches of 1 would, just faster. Only out_layer (a bare
+    # nn.Linear, no batch-dependent behaviour at all) receives gradients
+    # either way.
+    train_batch_size = 16
+
     for epoch in range(n_epochs):
         # Deliberately NOT model.train() — see the REAL BUG comment above
         # the optimizer/loss setup for why the whole model stays in
         # .eval() mode even during training.
         perm = np.random.permutation(train_idx)
         total_loss = 0.0
-        for step, i in enumerate(perm, start=1):
+        n_batches = (len(perm) + train_batch_size - 1) // train_batch_size
+        for step, batch_start in enumerate(range(0, len(perm), train_batch_size), start=1):
+            batch_idx = perm[batch_start : batch_start + train_batch_size]
             optimizer.zero_grad()
-            _, logits = model(x[i : i + 1])
-            loss = loss_fn(logits, y[i : i + 1])
+            _, logits = model(x[batch_idx])
+            loss = loss_fn(logits, y[batch_idx])
             loss.backward()
             optimizer.step()
-            total_loss += float(loss.item())
-            if step % 50 == 0 or step == len(perm):
+            total_loss += float(loss.item()) * len(batch_idx)
+            if step % 10 == 0 or step == n_batches:
                 print(
-                    f"  epoch {epoch + 1:02d}/{n_epochs}  step {step:3d}/{len(perm)}  "
-                    f"running_avg_loss={total_loss / step:.4f}"
+                    f"  epoch {epoch + 1:02d}/{n_epochs}  batch {step:3d}/{n_batches}  "
+                    f"running_avg_loss={total_loss / (batch_start + len(batch_idx)):.4f}"
                 )
 
         model.eval()
