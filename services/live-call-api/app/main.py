@@ -16,6 +16,7 @@ from app.adapters.registry import build_pipeline
 from app.api.enrollment_router import router as enrollment_router
 from app.api.history_router import router as history_router
 from app.api.http_router import router as http_router
+from app.api.ws_router import drain_pending_hangup_diarizations
 from app.api.ws_router import router as ws_router
 from app.config import settings
 from app.logging_setup import configure_logging, get_logger
@@ -81,6 +82,16 @@ async def lifespan(app: FastAPI):
         live_diarization_available=pipeline.live_speaker_embedder is not None,
     )
     yield
+    # REAL BUG found 2026-09-11 (CI): without this, ws_router.py's
+    # detached "diarize on hangup" background tasks (see its own
+    # 2026-09-11 REAL BUG note) silently outlive this app's own
+    # lifespan — in this project's integration test suite specifically,
+    # where many `with TestClient(app) as client:` blocks reuse the SAME
+    # process, that let one test's hangup work keep running concurrently
+    # with the NEXT test's, piling up and exhausting a CI runner's disk.
+    # Bounded (see drain_pending_hangup_diarizations' own docstring): a
+    # stuck task must not hang shutdown forever.
+    await drain_pending_hangup_diarizations()
 
 
 def _find_voiceprint_detector(detectors) -> VoiceprintConsistencyDetector | None:

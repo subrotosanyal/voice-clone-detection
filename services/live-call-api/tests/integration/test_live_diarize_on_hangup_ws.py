@@ -26,7 +26,14 @@ from app.main import app
 from tests.audio_fixtures import VOICE_A_FORMANTS, VOICE_B_FORMANTS, formant_voice
 
 SR = 16_000
-MAX_WAIT_S = 30
+# Was 30 — bumped 2026-09-11 after a real CI run's poll loop hit this
+# timeout with 0 speakers found (a GitHub-hosted runner is measurably
+# slower than local dev hardware for this real-model-inference work);
+# paired with the actual fix in app/api/ws_router.py's own 2026-09-11
+# REAL BUG note (bounding + draining the background hangup-diarization
+# tasks that were competing with THIS test's own for CPU/disk), not a
+# substitute for it.
+MAX_WAIT_S = 45
 
 
 def _send(ws, seq: int, samples, window_start_ms: int) -> dict:
