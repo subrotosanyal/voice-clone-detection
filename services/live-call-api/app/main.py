@@ -25,6 +25,40 @@ from app.pipeline.engine import Engine
 logger = get_logger(component="startup")
 
 
+def _limit_cpu_threads() -> None:
+    """REAL BUG found 2026-09-09 (live-mic parity investigation): torch's
+    own intra-op/inter-op thread pools default to using every visible
+    core, independent of the Dockerfile's OMP_NUM_THREADS/MKL_NUM_THREADS/
+    OPENBLAS_NUM_THREADS env vars (those bound the underlying BLAS
+    libraries torch calls into; torch's own parallelism knobs are
+    separate and must be set explicitly — see PyTorch's own docs on CPU
+    threading). On the live WS path, AASIST and ECAPA-TDNN (both torch)
+    run every ~500ms, concurrently with each other and with the
+    background transcription task — measured by hand: per-window
+    latency inflated to 0.85-1.5s against the 500ms target. Matches the
+    Dockerfile's own ENV thread-limiting note; called once at startup,
+    before build_pipeline() loads any model, since PyTorch requires
+    set_num_interop_threads() to run before any inter-op parallel work
+    has started."""
+    import torch
+
+    torch.set_num_threads(2)
+    try:
+        torch.set_num_interop_threads(1)
+    except RuntimeError:
+        # REAL BUG found running the test suite: torch only allows
+        # set_num_interop_threads() to be called ONCE per process,
+        # before any parallel work starts — raises otherwise. A single
+        # test-suite process instantiates `TestClient(app)` (and this
+        # lifespan) many times over; the first call succeeds and every
+        # later one hits this exact RuntimeError. Harmless to ignore: it
+        # only ever means interop parallelism is already configured
+        # (either by an earlier call in this same process, same intent,
+        # or because torch's own default already kicked in) — never a
+        # sign the thread limit silently failed to apply.
+        pass
+
+
 class NoCacheStaticFiles(StaticFiles):
     """Adds `Cache-Control: no-cache` to every static response.
 
@@ -46,6 +80,7 @@ class NoCacheStaticFiles(StaticFiles):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     configure_logging(settings.log_level)
+    _limit_cpu_threads()
     pipeline = build_pipeline(settings.risk_config_path)
     history = SqliteHistoryStore(settings.history_db_path)
     app.state.pipeline = pipeline
@@ -54,6 +89,7 @@ async def lifespan(app: FastAPI):
         pipeline,
         history=history,
         transcriber=pipeline.transcriber,
+        live_transcriber=pipeline.live_transcriber,
         intent_classifier=pipeline.intent_classifier,
         semantic_risk_classifier=pipeline.semantic_risk_classifier,
         live_speaker_embedder=pipeline.live_speaker_embedder,
@@ -77,6 +113,7 @@ async def lifespan(app: FastAPI):
         voiceprint_enrollment_available=app.state.voiceprint_detector is not None,
         diarization_available=pipeline.diarizer is not None,
         transcription_available=pipeline.transcriber is not None,
+        live_transcription_available=pipeline.live_transcriber is not None,
         intent_classification_available=pipeline.intent_classifier is not None,
         semantic_risk_classification_available=pipeline.semantic_risk_classifier is not None,
         live_diarization_available=pipeline.live_speaker_embedder is not None,

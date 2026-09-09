@@ -120,7 +120,18 @@ async def stream(websocket: WebSocket, session_id: str) -> None:
 
     hop_ms = engine.pipeline.config["windowing"]["hop_ms"]
     live_transcription = LiveTranscriptionBuffer(
-        transcriber=engine.transcriber,
+        # Prefer the live-only transcriber (config/risk_formula.yaml's
+        # `live_transcription:` section, see app/adapters/registry.py's
+        # _build_live_transcriber) — see
+        # app/adapters/transcription/whisperlive_transcriber.py's own
+        # docstring for why the live path specifically needed its
+        # transcriber moved out of this process (CPU contention with the
+        # per-window detectors below). Falls back to the shared
+        # `transcription:` transcriber when `live_transcription:` is
+        # omitted (or the pipeline was built before this existed), same
+        # "degrade, don't disable" shape as every other optional
+        # feature's fallback in this codebase.
+        transcriber=engine.live_transcriber or engine.transcriber,
         intent_classifier=engine.intent_classifier,
         semantic_risk_classifier=engine.semantic_risk_classifier,
         hop_ms=hop_ms,

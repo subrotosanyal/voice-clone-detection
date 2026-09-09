@@ -42,6 +42,37 @@ services:
       retries: 5
       start_period: 5s
     restart: unless-stopped
+    depends_on:
+      # Start-order only, not health-gated: WhisperLive is a raw
+      # WebSocket server with no HTTP health endpoint to poll, and
+      # app/adapters/transcription/whisperlive_transcriber.py already
+      # degrades gracefully (returns an empty transcript, same as every
+      # other best-effort adapter here) if it isn't reachable yet on the
+      # first live-mic session right after `docker compose up`.
+      - whisper-live
+
+  # Real-time transcription backend for the LIVE WebSocket path only
+  # (see app/adapters/transcription/whisperlive_transcriber.py and
+  # config/risk_formula.yaml's `live_transcription:` section) —
+  # collabora/WhisperLive (MIT licensed), faster-whisper/CTranslate2 on
+  # CPU. Runs as its OWN process/container specifically so its model
+  # inference no longer shares this app's CPU/thread pool with
+  # AASIST/Parselmouth/ECAPA on the live per-window path — see
+  # live_transcription.py's own docstring for the CPU-contention bug
+  # this fixes. POST /v1/score/file (file upload) is unaffected — it
+  # keeps using the local `transcription:` Whisper model, since that
+  # path was never the one starved for CPU (it transcribes once per
+  # call, not every ~4s of a live session).
+  #
+  # KNOWN LIMITATION, not solved here: the stock whisperlive-cpu image
+  # likely doesn't pre-bake "small" model weights, so this container may
+  # need network access on its FIRST connection (one-time download,
+  # then cached in the container's own filesystem until it's recreated).
+  whisper-live:
+    image: ghcr.io/collabora/whisperlive-cpu:latest
+    ports:
+      - "9090:9090"
+    restart: unless-stopped
 
   # Central logging: every container's stdout is already JSON (see
   # app/logging_setup.py) — Dozzle gives a zero-config web UI over
