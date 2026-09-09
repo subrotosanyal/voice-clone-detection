@@ -166,7 +166,33 @@ class LocalLLMSemanticClassifier:
         self._llm = None  # lazy-loaded — see _ensure_loaded()
 
     def _ensure_loaded(self) -> None:
-        if self._llm is None:
+        # REAL BUG found 2026-09-11 (CI): this used to be a plain,
+        # unsynchronized `if self._llm is None:` check — safe as long as
+        # only one caller at a time ever reached analyze() on a given
+        # instance, which was true until Engine.diarize_and_score()
+        # started scoring different speakers CONCURRENTLY (see that
+        # method's own REAL BUG note) via a thread pool, all sharing the
+        # SAME Engine (and therefore the SAME semantic_risk_classifier
+        # instance). Two threads could both see self._llm is None and
+        # both start constructing a NEW Llama(...) — each a full ~2.4GB
+        # GGUF load — concurrently: not a crash (only one survives as
+        # self._llm, and self._lock already served every actual inference
+        # call), but real wasted CPU/disk/memory from a redundant
+        # simultaneous model load, observed in a real CI run as the
+        # underlying diarize_and_score() work taking so long it blew past
+        # its own 120s internal timeout (app/api/ws_router.py's
+        # _HANGUP_DIARIZE_TIMEOUT_S) and kept running for several more
+        # minutes in the background afterward. Double-checked locking
+        # with the SAME self._lock analyze()'s inference call already
+        # uses — sequential loading and sequential inference on one
+        # instance, same "one shared expensive model, one lock" pattern
+        # this project already applies to Parselmouth (PRAAT_LOCK) and
+        # Whisper (WhisperTranscriber._lock).
+        if self._llm is not None:
+            return
+        with self._lock:
+            if self._llm is not None:  # another thread may have just finished loading
+                return
             from llama_cpp import Llama  # local import: heavy, only needed if actually used
 
             model_path = self.model_path

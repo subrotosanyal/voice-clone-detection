@@ -26,14 +26,21 @@ from app.main import app
 from tests.audio_fixtures import VOICE_A_FORMANTS, VOICE_B_FORMANTS, formant_voice
 
 SR = 16_000
-# Was 30 — bumped 2026-09-11 after a real CI run's poll loop hit this
-# timeout with 0 speakers found (a GitHub-hosted runner is measurably
-# slower than local dev hardware for this real-model-inference work);
-# paired with the actual fix in app/api/ws_router.py's own 2026-09-11
-# REAL BUG note (bounding + draining the background hangup-diarization
-# tasks that were competing with THIS test's own for CPU/disk), not a
-# substitute for it.
-MAX_WAIT_S = 45
+# Was 30, then 45 (2026-09-11) — bumped again to 90 the same day after a
+# DIFFERENT real CI failure: a config bug (see risk_formula.yaml's own
+# REAL BUG note on semantic_risk_classification's model_path) had been
+# making every diarize_and_score() call crash immediately, which
+# (accidentally) kept this test fast by skipping the expensive
+# semantic-risk LLM step entirely. Once that bug was fixed, this
+# background work started doing its full real work (Whisper + intent +
+# a ~1-1.5s local-LLM forward pass + AASIST/ECAPA/Perth, PER SPEAKER)
+# and 45s stopped being enough on a loaded GitHub-hosted runner. Paired
+# with two other fixes, not a substitute for either: Engine.
+# diarize_and_score() now scores different speakers CONCURRENTLY (see
+# its own REAL BUG note) instead of sequentially, and app/api/
+# ws_router.py's semaphore+drain (2026-09-11, earlier) still bounds how
+# many of these can run across DIFFERENT tests at once.
+MAX_WAIT_S = 90
 
 
 def _send(ws, seq: int, samples, window_start_ms: int) -> dict:

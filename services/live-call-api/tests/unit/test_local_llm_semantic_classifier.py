@@ -149,6 +149,63 @@ def test_model_load_failure_falls_back_to_neutral_not_a_crash():
     assert "model load failed" in result.reasoning
 
 
+def test_concurrent_ensure_loaded_calls_load_the_model_only_once(monkeypatch, tmp_path):
+    """Regression test for a real bug found 2026-09-11 (CI): _ensure_
+    loaded() used to be a plain, unsynchronized `if self._llm is None:`
+    check — safe as long as only one caller at a time ever reached
+    analyze() on a given instance, which stopped being true once
+    Engine.diarize_and_score() started scoring different speakers
+    CONCURRENTLY via a thread pool, all sharing the same Engine (and
+    therefore the same semantic_risk_classifier instance). Two threads
+    could both see self._llm is None and both start a full ~2.4GB model
+    load concurrently — not a crash, but real wasted CPU/disk/memory,
+    observed in CI as the underlying work taking so long it blew past
+    its own internal timeout. Proves the fix: double-checked locking
+    around the load, same "one shared expensive model, one lock" pattern
+    as test_whisper_transcriber.py's own
+    test_concurrent_transcribe_calls_are_serialized_not_overlapping."""
+    import sys
+    import threading
+    import time
+    import types
+
+    resolved_path = tmp_path / "resolved.gguf"
+    resolved_path.write_bytes(b"fake")
+
+    load_count = 0
+    max_concurrent_loads = 0
+    current_loads = 0
+    counter_lock = threading.Lock()
+
+    fake_llama_module = types.ModuleType("llama_cpp")
+
+    class _SlowFakeLlamaCtor:
+        def __init__(self, model_path, **kwargs):
+            nonlocal load_count, max_concurrent_loads, current_loads
+            with counter_lock:
+                current_loads += 1
+                max_concurrent_loads = max(max_concurrent_loads, current_loads)
+                load_count += 1
+            time.sleep(0.1)  # long enough for a second thread to reach the check first
+            with counter_lock:
+                current_loads -= 1
+
+    fake_llama_module.Llama = _SlowFakeLlamaCtor
+    monkeypatch.setitem(sys.modules, "llama_cpp", fake_llama_module)
+
+    clf = LocalLLMSemanticClassifier(model_path=str(resolved_path))
+
+    threads = [threading.Thread(target=clf._ensure_loaded) for _ in range(4)]
+    for th in threads:
+        th.start()
+    for th in threads:
+        th.join()
+
+    assert load_count == 1, f"model was loaded {load_count} times, not once"
+    assert max_concurrent_loads == 1, "two threads loaded the model concurrently — not actually serialized"
+    assert clf._llm is not None
+
+
 def test_ensure_loaded_falls_back_to_fetch_llm_model_when_configured_path_is_stale(monkeypatch, tmp_path):
     """Regression test for the actual root cause: config/risk_formula.yaml
     used to hardcode a flat model_path that fetch_llm_model.py's
