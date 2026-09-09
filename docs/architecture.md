@@ -174,6 +174,25 @@ static mount only ever catches what's left (`/`, `/app.js`). See
    fusion step doesn't require weights to sum to 1, but a formula that's
    easy to reason about usually should.)
 
+   Concretely, the raw `weight:` values in `risk_formula.yaml` today sum
+   to 1.55, not 1.0 — and `WeightedSumFusion` (`app/adapters/fusion/
+   weighted_sum.py`) uses that raw sum in two different, independent
+   ways per window, both visible in each component's entry in the API
+   response:
+
+   - `weight_configured` = `configured_weight / (sum of every
+     detector's configured weight)` — a fixed proportion, ignoring
+     abstention, useful for "how much does this detector matter in the
+     formula overall."
+   - `weight_effective` = `configured_weight / (sum of configured
+     weight of only the detectors that did NOT abstain this window)` —
+     the actual weight used to compute `raw_score` for that window, so
+     it always sums to 1 across non-abstaining detectors and changes
+     window to window as detectors abstain or not.
+
+   These two fields will disagree whenever any detector abstains — that
+   is expected, not a bug.
+
 3. Restart the service. `GET /v1/config` will show it; `POST
    /v1/score/file` will include it in `components`.
 

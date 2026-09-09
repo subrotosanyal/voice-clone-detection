@@ -19,7 +19,7 @@ const GAUGE_CIRCUMFERENCE = 2 * Math.PI * 62;
 
 // ---------- help tooltips — plain-language explanations for jargon in the UI ----------
 const COMPONENT_HELP = {
-  acoustic: "Detects whether the VOICE ITSELF was AI-generated or cloned, as opposed to a real person speaking — using AASIST, a neural network trained specifically to spot the audio artifacts text-to-speech and voice-cloning tools leave behind that a real human voice doesn't have. Higher % = more likely synthetic/cloned. Only validated on English speech so far.",
+  acoustic: "Detects whether the VOICE ITSELF was AI-generated or cloned, as opposed to a real person speaking — using AASIST, a neural network trained specifically to spot the audio artifacts text-to-speech and voice-cloning tools leave behind that a real human voice doesn't have. Higher % = more likely synthetic/cloned. The base model is only independently validated on English speech; a separately fine-tuned final layer improves accuracy on Hindi specifically (see 'view raw JSON' for whether it was active).",
   prosodic: "Detects whether the voice's pitch and loudness are suspiciously steady — a real human voice naturally wavers a little from breath to breath (jitter, shimmer); a voice that's unusually 'too smooth' can be a sign of synthesis. Higher % = less natural variation than typical speech. This is a heuristic rule of thumb, not a trained classifier like Acoustic.",
   third_signal: "A third, swappable check — NOT about the audio itself. Either (a) red flags about the CALL: an unknown number, an odd hour, urgent/pressuring language, an authority claim (bank/police/government) — especially combined with a financial request, the classic fraud script — or (b) a direct voice match check against a caller's enrolled voiceprint (Voiceprints tab), when one exists. Whichever ran is named in 'view raw JSON'.",
   intent: "Scores the TRANSCRIPT (not the audio) against fraud-relevant candidate labels — 'requesting a money transfer', 'requesting an OTP/PIN', 'impersonating a bank or government official', 'creating urgency', or 'ordinary conversation' — using a zero-shot language model, not exact keyword matching like Third signal. KNOWN LIMITATION: testing found it sometimes misjudges completely ordinary conversation as suspicious — the breakdown below shows every candidate's own score, not just the winner, specifically so you can sanity-check it rather than trust one number blindly. Weighted low in the overall score for that reason. Abstains with no transcript.",
@@ -178,6 +178,7 @@ function helpIcon(text) {
 }
 
 let traceScores = []; // rolling [0-100] scores for the current session/analysis, drives the chart
+let lastConfig = null; // most recent /v1/config response, cached so other UI text (e.g. the analysing message) can name the actual configured detectors instead of a hardcoded, driftable list
 
 // ---------- "How this score is calculated" modal ----------
 // Renders live from whatever /v1/config actually returns — if
@@ -272,6 +273,7 @@ async function checkHealth() {
     chip.classList.add("ok");
     text.textContent = "service healthy";
     const cfg = await (await fetch("/v1/config")).json();
+    lastConfig = cfg;
     document.getElementById("formulaVersion").textContent = cfg.formula_version;
     renderHowItWorks(cfg);
   } catch {
@@ -547,8 +549,13 @@ analyzeFileBtn.addEventListener("click", async () => {
   resetResults();
 
   const diarizeOn = document.getElementById("diarizeCheck").checked;
+  // Named from the live /v1/config detector list, not a hardcoded string, so this can't
+  // silently go stale again the next time a detector is added or removed.
+  const detectorNames = lastConfig && lastConfig.detectors && lastConfig.detectors.length
+    ? lastConfig.detectors.map((d) => COMPONENT_LABEL[d.name] || d.name).join(", ")
+    : "every configured detector";
   showAnalysing(
-    "Running AASIST, Praat, and the third signal over every window" +
+    `Running ${detectorNames} over every window` +
       (diarizeOn ? ", then diarizing and re-scoring per speaker." : ".") +
       " Longer recordings take longer — this runs entirely on CPU."
   );
