@@ -163,12 +163,17 @@ required scope (a deliberate narrowing; see `eval/indian_language/README.md`
 for the reasoning). It has genuinely started, not just been planned: real,
 license-verified (CC BY 4.0) Hindi genuine speech, real XTTS-v2-cloned
 Hindi spoof audio, and an actual fine-tune of AASIST's final layer on that
-data — first real number: 10% Equal Error Rate for Hindi, unchanged before
-and after fine-tuning (an honest "re-balanced, not improved" finding given
-only ~50 examples, not a fabricated improvement). Still missing: an
+data, at real volume (200 genuine + 40 spoof examples) — **17.75% → 3.0%
+EER** on the trained-on synthesis system (XTTS-v2), after finding and
+fixing two real fine-tuning bugs (class imbalance, BatchNorm/Dropout
+statistics drift — see that README for the full account). A second,
+genuinely held-out synthesis system (**Resemble AI's Chatterbox**, never
+used in training) confirms this generalises, not just memorises XTTS-v2:
+**17.75% → 10.25% EER** held-out. This recalibration is the same one wired
+into production above ("Acoustic"). Still missing: an
 independently-measured English baseline EER against a public benchmark,
-and a second, genuinely held-out Hindi synthesis system (needed to prove
-generalisation rather than recalibration). See
+and more held-out spoof volume (currently 40 examples) to make that
+held-out number statistically solid rather than calibration-scale. See
 `eval/indian_language/README.md` for the full pipeline and results.
 
 Not built yet: the mock banking approval flow, and calibrated risk
