@@ -85,6 +85,25 @@ services:
       RISK_CONFIG_PATH: config/risk_formula.yaml
       HISTORY_DB_PATH: data/sessions.db
       LOG_LEVEL: INFO
+      # REAL ISSUE found on this deployment: the Dockerfile's own
+      # OMP_NUM_THREADS=2/MKL_NUM_THREADS=2/OPENBLAS_NUM_THREADS=2/
+      # NUMEXPR_NUM_THREADS=2 (and app/main.py's matching torch thread
+      # cap, see app/config.py's own note) were sized for whatever
+      # concurrent-live-session contention they were built to fix, not
+      # for the box this actually runs on — `top` on this 16-core/64GB
+      # Unraid host showed uvicorn pinned at ~156% CPU (barely 1.5 cores)
+      # while 14+ cores sat idle during a file-upload analysis. These
+      # override the Dockerfile's own baked-in defaults at container
+      # start (no rebuild needed to change them again later) — 6 leaves
+      # ~10 cores for the whisper-live/vexyl-stt sidecars, other stacks
+      # sharing this host, and any concurrent live-mic sessions; raise or
+      # lower to taste for this specific machine.
+      OMP_NUM_THREADS: "6"
+      MKL_NUM_THREADS: "6"
+      OPENBLAS_NUM_THREADS: "6"
+      NUMEXPR_NUM_THREADS: "6"
+      TORCH_NUM_THREADS: "6"
+      TORCH_INTEROP_THREADS: "2"
       # REAL ISSUE found deploying path-routed: this app's UI/API/WS code is
       # root-relative (fetch("/v1/..."), WebSocket to
       # `${location.host}/v1/stream/...`) — every one of those requests

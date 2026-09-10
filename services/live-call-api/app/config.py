@@ -19,6 +19,20 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     host: str = "0.0.0.0"
     port: int = 8000
+    # See app/main.py's _limit_cpu_threads() for the full story: 2/1 is
+    # right for a single call to overlap with the live WS path's own
+    # per-window contention, but this is ONE process-wide setting for the
+    # process's entire lifetime, applied to the one-shot file-upload path
+    # too — which never had that contention problem (score_window() runs
+    # every detector sequentially, one file at a time). REAL ISSUE found
+    # deploying on a 16-core/64GB Unraid box: `top` showed uvicorn pinned
+    # at ~156% CPU (barely 1.5 cores) while 14+ cores sat idle — a
+    # self-imposed ceiling, not weak hardware. Raise these via the
+    # TORCH_NUM_THREADS/TORCH_INTEROP_THREADS env vars on hardware with
+    # cores to spare; 2/1 stays the default so nothing changes for the
+    # live path or on a smaller machine unless explicitly overridden.
+    torch_num_threads: int = 2
+    torch_interop_threads: int = 1
     # Empty by default: this app's UI/API/WebSocket code all uses
     # root-relative paths (fetch("/v1/..."), WebSocket to
     # `${location.host}/v1/stream/...`), which only resolve correctly when

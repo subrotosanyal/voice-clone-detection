@@ -41,12 +41,22 @@ def _limit_cpu_threads() -> None:
     Dockerfile's own ENV thread-limiting note; called once at startup,
     before build_pipeline() loads any model, since PyTorch requires
     set_num_interop_threads() to run before any inter-op parallel work
-    has started."""
+    has started.
+
+    settings.torch_num_threads/torch_interop_threads (default 2/1, see
+    app/config.py) exist because this same cap also throttles the
+    ONE-SHOT file-upload path, which never had the concurrency problem
+    above — score_window() runs every detector sequentially, one file at
+    a time. REAL ISSUE found deploying on a 16-core/64GB Unraid box: `top`
+    showed uvicorn pinned at ~156% CPU while 14+ cores sat idle — self-
+    imposed, not weak hardware. Raise these via env vars on a host with
+    cores to spare; the default stays 2/1 so nothing changes anywhere
+    that doesn't explicitly override them."""
     import torch
 
-    torch.set_num_threads(2)
+    torch.set_num_threads(settings.torch_num_threads)
     try:
-        torch.set_num_interop_threads(1)
+        torch.set_num_interop_threads(settings.torch_interop_threads)
     except RuntimeError:
         # REAL BUG found running the test suite: torch only allows
         # set_num_interop_threads() to be called ONCE per process,
