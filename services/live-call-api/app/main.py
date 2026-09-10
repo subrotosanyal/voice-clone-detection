@@ -6,8 +6,10 @@ Run via compose:   docker compose up   (see repo root docker-compose.yml)
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.adapters.detectors.voiceprint_consistency import VoiceprintConsistencyDetector
@@ -153,8 +155,52 @@ app.include_router(ws_router)
 app.include_router(history_router)
 app.include_router(enrollment_router)
 
+_UI_DIR = Path(__file__).resolve().parent / "ui"
+
+
+@app.get("/", include_in_schema=False)
+@app.get("/index.html", include_in_schema=False)
+def _serve_index() -> HTMLResponse:
+    """Serves index.html with `settings.base_path` substituted for every
+    "__SATYA_VANI_BASE_PATH__" placeholder — the one templated exception to
+    the otherwise-static UI mount below.
+
+    REAL BUG found writing this: the placeholder can't be "__BASE_PATH__"
+    itself, because index.html also assigns that exact text as the JS
+    global's own name (`window.__BASE_PATH__ = "..."`) — a naive
+    str.replace() then mangles the identifier too, turning it into
+    `window./satya-vani = "/satya-vani";` (caught by
+    test_index_page_injects_a_configured_base_path). The placeholder and
+    the JS global it fills in must not share a spelling.
+
+    WHY: this app's UI/API/WebSocket code is all root-relative
+    (fetch("/v1/..."), WebSocket to `${location.host}/v1/stream/...`),
+    which only resolves correctly when served at its origin's root. When
+    Traefik path-routes this app under a prefix on a shared domain (see
+    deploy/portainer/satya-vani.yml), the BROWSER must be told to prefix
+    every request it makes with that same prefix — Traefik only ever sees
+    the request the browser actually sends, so there's nothing a reverse
+    proxy alone can do to "put the prefix back" on a request the page
+    built without it (REAL BUG found deploying: app.js/index.html
+    404'd on every asset and API call once path-routed, exactly because
+    of this). index.html gets `window.__BASE_PATH__` injected here;
+    app/ui/app.js reads it and prefixes every fetch()/WebSocket URL with
+    it. Traefik still strips the prefix back off before forwarding (see
+    the stack file's stripprefix middleware), so this container itself
+    never has to learn to serve anything but the plain root-relative
+    paths it already does — `settings.base_path` defaults to "" (see
+    app/config.py), so locally and via the plain docker-compose.yml
+    deployment this substitutes to nothing and the page is
+    byte-identical to before this existed.
+    """
+    html = (_UI_DIR / "index.html").read_text(encoding="utf-8")
+    html = html.replace("__SATYA_VANI_BASE_PATH__", settings.base_path)
+    return HTMLResponse(content=html, headers={"Cache-Control": "no-cache"})
+
+
 # Browser dashboard — mounted LAST and at the root, so it only catches
-# paths the routers above didn't already claim (/, /app.js). The routes
-# above (/healthz, /v1/*, and FastAPI's own /docs, /redoc, /openapi.json)
-# always win first. See app/ui/README or docs/architecture.md.
+# paths the routers/routes above didn't already claim (/app.js,
+# /favicon.svg, ...). The routes above (/, /index.html, /healthz, /v1/*,
+# and FastAPI's own /docs, /redoc, /openapi.json) always win first. See
+# app/ui/README or docs/architecture.md.
 app.mount("/", NoCacheStaticFiles(directory="app/ui", html=True), name="ui")

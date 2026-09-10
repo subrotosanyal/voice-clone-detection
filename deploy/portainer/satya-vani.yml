@@ -45,16 +45,27 @@
 # app/logging_setup.py) so that existing Dozzle instance picks these up too,
 # same as any other stack's containers.
 #
-# Deliberately NOT modeled on life-balance's "no stripprefix" choice: that
-# app is a static SPA built once with its base path baked into every asset
-# URL (BASE_PATH build arg). Satya-Vani's UI/API/WebSocket code all uses
-# plain root-relative paths instead — fetch("/v1/..."), <script
-# src="/app.js">, WebSocket(`${location.host}/v1/stream/...`) (see
-# app/ui/app.js, app/main.py's static mount) — so the container must keep
-# seeing requests at its own root. The stripprefix middleware below strips
-# "/satya-vani" back off before Traefik forwards, and applies to the
-# WebSocket upgrade request the same as any other HTTP request, so the live
-# mic path needs no separate router or config.
+# REAL BUG found deploying this path-routed the first time: stripprefix
+# alone is NOT enough, unlike the apps that only ever GET /. Satya-Vani's
+# UI/API/WebSocket code uses plain root-relative paths — fetch("/v1/..."),
+# <script src="/app.js">, WebSocket(`${location.host}/v1/stream/...`) — and
+# a browser resolves a leading "/" against the DOMAIN ROOT, not the page's
+# own folder. So every one of those requests went straight to
+# `https://.../app.js`, `https://.../v1/...`, with no "/satya-vani" in them
+# for Traefik's PathPrefix router to even match — 404 on everything past
+# the very first HTML load, no matter what stripprefix does, since
+# stripprefix only ever helps requests that DO carry the prefix.
+#
+# life-balance/last-word avoid this because they're built with Vite, which
+# bakes their BASE_PATH into every asset URL at build time — there's
+# nothing bare left for the browser to mis-resolve. Satya-Vani has no build
+# step, so the equivalent had to be done by hand: BASE_PATH below tells
+# app/main.py's "/" route to inject `window.__BASE_PATH__` into index.html,
+# and app/ui/app.js prefixes every fetch()/WebSocket URL it builds with
+# that value (see app/config.py's own note). The browser then correctly
+# requests everything under "/satya-vani/...", which the stripprefix
+# middleware strips back off before forwarding — so this container still
+# only ever sees the plain root-relative paths it always has.
 
 services:
   # ---- the only container Traefik talks to -------------------------------
@@ -74,6 +85,17 @@ services:
       RISK_CONFIG_PATH: config/risk_formula.yaml
       HISTORY_DB_PATH: data/sessions.db
       LOG_LEVEL: INFO
+      # REAL ISSUE found deploying path-routed: this app's UI/API/WS code is
+      # root-relative (fetch("/v1/..."), WebSocket to
+      # `${location.host}/v1/stream/...`) — every one of those requests
+      # 404'd once path-routed, because the browser sends them straight to
+      # the domain root, with no "/satya-vani" in them for Traefik's
+      # PathPrefix router to even match. Setting this makes app/main.py's
+      # "/" route inject `window.__BASE_PATH__ = "/satya-vani"` into
+      # index.html, and app/ui/app.js prefixes every request with it — see
+      # app/config.py's own note on base_path for the full explanation.
+      # Must match the PathPrefix below and stay free of a trailing slash.
+      BASE_PATH: /satya-vani
     volumes:
       # Session history AND enrolled voiceprints (both SQLite, under this
       # one directory) — must survive `pull_policy: build` recreating the

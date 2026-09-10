@@ -5,6 +5,14 @@
 // the wire format, those two routes (app/api/http_router.py,
 // app/api/ws_router.py) are the source of truth.
 
+// Set by index.html from settings.base_path (see app/main.py's "/" route
+// and app/config.py's own note) — "" unless this app is path-routed under
+// a prefix on a shared domain. Every fetch()/WebSocket URL below is built
+// from this instead of a bare leading "/", so it still resolves against
+// the right origin+prefix when Traefik strips the prefix back off before
+// forwarding to this container.
+const BASE_PATH = (window.__BASE_PATH__ || "").replace(/\/+$/, "");
+
 const BAND_COLOR = { low: "var(--risk-low)", elevated: "var(--risk-med)", high: "var(--risk-high)" };
 const COMPONENT_LABEL = {
   acoustic: "Acoustic (AASIST)",
@@ -341,11 +349,11 @@ async function checkHealth() {
   const chip = document.getElementById("healthChip");
   const text = document.getElementById("healthText");
   try {
-    const res = await fetch("/healthz");
+    const res = await fetch(`${BASE_PATH}/healthz`);
     if (!res.ok) throw new Error("not ok");
     chip.classList.add("ok");
     text.textContent = "service healthy";
-    const cfg = await (await fetch("/v1/config")).json();
+    const cfg = await (await fetch(`${BASE_PATH}/v1/config`)).json();
     lastConfig = cfg;
     document.getElementById("formulaVersion").textContent = cfg.formula_version;
     renderHowItWorks(cfg);
@@ -909,7 +917,7 @@ analyzeFileBtn.addEventListener("click", async () => {
     form.append("context", JSON.stringify(readContext(document.getElementById("ctxUpload"))));
     form.append("diarize", diarizeOn ? "true" : "false");
 
-    const res = await fetch("/v1/score/file", { method: "POST", body: form });
+    const res = await fetch(`${BASE_PATH}/v1/score/file`, { method: "POST", body: form });
     const body = await parseJsonResponse(res);
 
     hideAnalysing();
@@ -1012,7 +1020,7 @@ async function startMic() {
 
   const sessionId = "live-" + Date.now();
   const wsProtocol = location.protocol === "https:" ? "wss:" : "ws:";
-  ws = new WebSocket(`${wsProtocol}//${location.host}/v1/stream/${sessionId}`);
+  ws = new WebSocket(`${wsProtocol}//${location.host}${BASE_PATH}/v1/stream/${sessionId}`);
   ws.onmessage = (evt) => {
     const data = JSON.parse(evt.data);
     if (data.error) { showError("micError", "server rejected a chunk: " + data.error); return; }
@@ -1158,7 +1166,7 @@ async function loadHistoryList() {
   const listEl = document.getElementById("historyList");
   listEl.innerHTML = '<div class="history-empty">Loading…</div>';
   try {
-    const res = await fetch("/v1/sessions?limit=50");
+    const res = await fetch(`${BASE_PATH}/v1/sessions?limit=50`);
     if (!res.ok) throw new Error("could not load session history");
     const sessions = await res.json();
 
@@ -1207,7 +1215,7 @@ function buildHistoryRow(s) {
   row.querySelector(".history-delete").addEventListener("click", async (e) => {
     e.stopPropagation();
     if (!confirm(`Delete session ${s.session_id}? This can't be undone.`)) return;
-    await fetch(`/v1/sessions/${encodeURIComponent(s.session_id)}`, { method: "DELETE" });
+    await fetch(`${BASE_PATH}/v1/sessions/${encodeURIComponent(s.session_id)}`, { method: "DELETE" });
     loadHistoryList();
   });
   return row;
@@ -1216,7 +1224,7 @@ function buildHistoryRow(s) {
 async function openHistorySession(sessionId) {
   clearError("historyError");
   try {
-    const res = await fetch(`/v1/sessions/${encodeURIComponent(sessionId)}`);
+    const res = await fetch(`${BASE_PATH}/v1/sessions/${encodeURIComponent(sessionId)}`);
     if (!res.ok) throw new Error("could not load that session — it may have been deleted");
     const body = await res.json();
     resetResults();
@@ -1261,7 +1269,7 @@ enrollBtn.addEventListener("click", async () => {
     const form = new FormData();
     form.append("identity", identity);
     form.append("file", selectedEnrollFile);
-    const res = await fetch("/v1/enroll", { method: "POST", body: form });
+    const res = await fetch(`${BASE_PATH}/v1/enroll`, { method: "POST", body: form });
     await parseJsonResponse(res);
     selectedEnrollFile = null;
     document.getElementById("enrollFileName").textContent = "";
@@ -1281,7 +1289,7 @@ async function loadEnrollmentList() {
   const listEl = document.getElementById("enrollmentList");
   listEl.innerHTML = '<div class="history-empty">Loading…</div>';
   try {
-    const res = await fetch("/v1/enrollments");
+    const res = await fetch(`${BASE_PATH}/v1/enrollments`);
     if (!res.ok) throw new Error("could not load enrollments (voiceprint consistency detector may not be configured)");
     const enrollments = await res.json();
 
@@ -1310,7 +1318,7 @@ function buildEnrollmentRow(e) {
   `;
   row.querySelector(".history-delete").addEventListener("click", async () => {
     if (!confirm(`Delete the voiceprint enrolled for "${e.identity}"? This can't be undone.`)) return;
-    await fetch(`/v1/enrollments/${encodeURIComponent(e.identity)}`, { method: "DELETE" });
+    await fetch(`${BASE_PATH}/v1/enrollments/${encodeURIComponent(e.identity)}`, { method: "DELETE" });
     loadEnrollmentList();
   });
   return row;

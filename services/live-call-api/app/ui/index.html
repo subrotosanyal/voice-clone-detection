@@ -7,8 +7,8 @@
 <!-- docs/branding/satya-vani-icon.{svg,png} — see that folder's README
      ("mark only, for favicons/app icons"); SVG for modern browsers, PNG
      fallback for the ones that don't support SVG favicons. -->
-<link rel="icon" type="image/svg+xml" href="/favicon.svg">
-<link rel="alternate icon" type="image/png" href="/favicon.png">
+<link rel="icon" type="image/svg+xml" href="__SATYA_VANI_BASE_PATH__/favicon.svg">
+<link rel="alternate icon" type="image/png" href="__SATYA_VANI_BASE_PATH__/favicon.png">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
 <style>
 :root{
@@ -540,7 +540,7 @@ footer.foot a{color:var(--slate-soft);}
 
   <footer class="foot">
     <span>Formula version <span class="mono" id="formulaVersion">–</span></span>
-    <span><a href="/docs">API docs</a> · <a href="https://github.com/clovaai/aasist" target="_blank" rel="noopener">AASIST model</a> · <a href="#" id="howItWorksFootLink">How this score is calculated</a></span>
+    <span><a href="__SATYA_VANI_BASE_PATH__/docs">API docs</a> · <a href="https://github.com/clovaai/aasist" target="_blank" rel="noopener">AASIST model</a> · <a href="#" id="howItWorksFootLink">How this score is calculated</a></span>
   </footer>
 </div>
 
@@ -653,6 +653,11 @@ footer.foot a{color:var(--slate-soft);}
   </div>
 </div>
 
-<script src="/app.js"></script>
+<!-- Substituted by app/main.py's "/" route (see its own docstring for why:
+     this app's UI/API/WS code is root-relative, which only works when
+     served at the origin's root — app.js reads this to prefix every
+     request when Traefik path-routes this app under a shared domain). -->
+<script>window.__BASE_PATH__ = "__SATYA_VANI_BASE_PATH__";</script>
+<script src="__SATYA_VANI_BASE_PATH__/app.js"></script>
 </body>
 </html>
