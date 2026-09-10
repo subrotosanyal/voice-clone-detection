@@ -11,18 +11,34 @@
 #   Credentials  a deploy key or PAT with read access — the repository is
 #                private, so Portainer must authenticate to clone
 #
-# Stack environment variables (set in the Portainer UI, never committed):
+# Stack environment variables (set in the Portainer UI):
 #   VOLUME_LOCATION   host path for bind mounts, as the other stacks use
-#   HF_TOKEN          optional. Needed only the FIRST time each of
-#                     live-call-api / vexyl-stt is built without it already
-#                     cached — see each Dockerfile's own HF_TOKEN note.
-#                     vexyl-stt's build fails outright without it, since
-#                     ai4bharat/indic-conformer-600m-multilingual is gated;
-#                     you must have already requested+been granted access to
-#                     it with the account this token belongs to.
 #
-# Create the bind path before the first deploy, or Docker refuses the volume:
+# HF_TOKEN is deliberately NOT a stack environment variable — REAL ISSUE
+# found deploying this on Portainer/Unraid: `secrets: hf_token: environment:
+# HF_TOKEN` needs HF_TOKEN present in the OS environment of the process that
+# runs `docker compose build`, but Portainer writes stack env vars to a file
+# named `stack.env`, which `docker compose` does not auto-load (only a file
+# literally named `.env` is auto-loaded) — so the build step silently saw no
+# token at all (confirmed via huggingface_hub's own "sending unauthenticated
+# requests" warning, which it only prints when it finds no token whatsoever,
+# not when a token lacks access). `${VOLUME_LOCATION}` above is unaffected
+# because that's plain `${...}` interpolation into the YAML text, which
+# Portainer performs itself — a different mechanism to the one `secrets:
+# environment:` relies on. Using a `file:`-sourced secret instead sidesteps
+# this entirely, since it's resolved the same reliable way as
+# `${VOLUME_LOCATION}` is.
+#
+# One-time setup before the first deploy:
 #   mkdir -p ${VOLUME_LOCATION}/satya-vani/data
+#   printf '%s' 'hf_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx' \
+#     > ${VOLUME_LOCATION}/satya-vani/hf_token
+#   chmod 600 ${VOLUME_LOCATION}/satya-vani/hf_token
+#
+# That token's HF account must have already visited
+# https://huggingface.co/ai4bharat/indic-conformer-600m-multilingual while
+# logged in and been granted access (gated model) — vexyl-stt's build fails
+# outright otherwise, no anonymous fallback.
 #
 # No Dozzle here on purpose — the server already runs one, shared across
 # every stack; every container's stdout is already JSON (see
@@ -46,7 +62,8 @@ services:
     build:
       context: ../../services/live-call-api
       # See docker-compose.yml's own note: read-only at build time, from
-      # the HF_TOKEN stack env var above, never written into an image layer.
+      # the host token file described at the top of this file, never
+      # written into an image layer.
       secrets:
         - hf_token
     # Rebuild on redeploy. Without this, Docker standalone reuses whatever
@@ -151,10 +168,11 @@ volumes:
       type: none
       device: ${VOLUME_LOCATION:?set the host path used by your other stacks}/satya-vani/data
 
-# Sourced from the HF_TOKEN stack environment variable above — a
-# build-time-only BuildKit secret, mounted into individual RUN steps in each
-# Dockerfile via `--mount=type=secret,id=hf_token,env=...`, never written
-# into any image layer.
+# Sourced from the host file described at the top of this file (NOT a
+# stack environment variable — see that note for why) — a build-time-only
+# BuildKit secret, mounted into individual RUN steps in each Dockerfile via
+# `--mount=type=secret,id=hf_token,env=...`, never written into any image
+# layer.
 secrets:
   hf_token:
-    environment: HF_TOKEN
+    file: ${VOLUME_LOCATION:?set the host path used by your other stacks}/satya-vani/hf_token
