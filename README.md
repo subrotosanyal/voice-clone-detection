@@ -188,21 +188,31 @@ The **Indian-language dataset/eval pipeline** (`eval/indian_language/`)
 targets **English and Hindi only, for now** — Marathi and Malvi are not
 required scope (a deliberate narrowing; see `eval/indian_language/README.md`
 for the reasoning). It has genuinely started, not just been planned: real,
-license-verified (CC BY 4.0) Hindi genuine speech, real XTTS-v2-cloned
-Hindi spoof audio, and an actual fine-tune of AASIST's final layer on that
-data, at real volume (200 genuine + 40 spoof examples) — **17.75% → 3.0%
-EER** on the trained-on synthesis system (XTTS-v2), after finding and
-fixing two real fine-tuning bugs (class imbalance, BatchNorm/Dropout
-statistics drift — see that README for the full account). A second,
-genuinely held-out synthesis system (**Resemble AI's Chatterbox**, never
-used in training) confirms this generalises, not just memorises XTTS-v2:
-**17.75% → 10.25% EER** held-out. This recalibration is the same one wired
-into production above ("Acoustic"). Still missing: an
-independently-measured English baseline EER against a public benchmark,
-and more held-out spoof volume (currently 40 examples) to make that
-held-out number statistically solid rather than calibration-scale. See
-`eval/indian_language/README.md` for the full pipeline and results.
+license-verified genuine Hindi speech (IndicTTS-Hindi, CC BY 4.0 +
+Kathbath, CC BY 4.0 + Movie-MUSNOMIX, CC0/non-commercial + 100 local
+speakers) and real spoof audio (XTTS-v2 + per-speaker clones), at real
+volume (1423 genuine + 340 spoof examples as of 2026-09-09, up from an
+original 200/40), and an actual fine-tune of AASIST's final layer on that
+data — **36.1% → 12.0% EER** on the trained-on synthesis system, after
+finding and fixing several real bugs along the way (class imbalance,
+BatchNorm/Dropout statistics drift, a silent OOM-suspected crash — see
+that README for the full account). The number that actually matters —
+held out on BOTH the speaker/utterance AND synthesis-system dimensions at
+once (never-seen local-speaker test clips x **Resemble AI's Chatterbox**,
+never used in training) — confirms this generalises, not just memorises
+the trained-on data: **36.1% → 19.5% EER** held-out. This recalibration
+is the same one wired into production above ("Acoustic"). A companion
+prosodic detector (jitter/shimmer/HNR via Parselmouth, scored by a
+trained logistic regression instead of a hand-tuned formula) reaches
+82.5% balanced accuracy on the same held-out discipline — see
+`eval/indian_language/README.md`'s "Prosodic detector calibration"
+section. Still missing: an independently-measured English baseline EER
+against a public benchmark, and more held-out spoof volume (currently 40
+Chatterbox examples) to make that held-out number statistically solid
+rather than calibration-scale. See `eval/indian_language/README.md` for
+the full pipeline and results.
 
 Not built yet: the mock banking approval flow, and calibrated risk
-thresholds for the newer detectors. See `docs/architecture.md`, "What's
-not built yet".
+thresholds for the remaining newer detectors (voiceprint consistency,
+diarization clustering, semantic-risk LLM). See `docs/architecture.md`,
+"What's not built yet".

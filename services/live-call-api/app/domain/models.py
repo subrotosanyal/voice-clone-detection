@@ -55,13 +55,24 @@ class DetectorResult:
 
 @dataclass(frozen=True)
 class ComponentContribution:
-    """One detector's accounted-for contribution to a fused score."""
+    """One detector's accounted-for contribution to a fused score.
+
+    `raw_score` is THIS WINDOW alone — None if this specific window
+    abstained. `smoothed_score` (added 2026-09-10) is the per-component
+    EMA aggregate CARRIED FORWARD across abstains — the actual number
+    `weight_effective`/`contribution` are computed from, i.e. what really
+    fed the fusion formula. A component can show `abstained=True` (no
+    fresh reading this window) while `smoothed_score` is still not None
+    (it has history from earlier windows this session) — see
+    WeightedSumFusion's own docstring for why this split exists.
+    """
 
     name: str
     raw_score: Optional[float]
+    smoothed_score: Optional[float]
     weight_configured: float
-    weight_effective: float  # after renormalising for abstained components
-    contribution: float  # weight_effective * raw_score, or 0 if abstained
+    weight_effective: float  # after renormalising for components with no usable value at all
+    contribution: float  # weight_effective * smoothed_score, or 0 if never scored this session
     abstained: bool
     detail: dict[str, Any]
 

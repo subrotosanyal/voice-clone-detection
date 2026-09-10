@@ -117,6 +117,47 @@ README.md`'s "2026-09-09 update" for the full account). Every score's
 was active, so nothing here is hidden. Not "solved" — 19.5% EER is still
 a real, material gap, just far better than the un-recalibrated baseline.
 
+**Real bug found and fixed 2026-09-10 — quiet trailing audio was
+confidently mis-scored, not abstained**: found by tracing a real
+fine-tuned run's full per-window trace over three real spoof files
+(POST /v1/score/file's whole `trace`, not just the final smoothed
+number) — every window with rms below roughly 0.03-0.07 scored
+confidently WRONG (near-zero spoof probability on genuinely synthetic
+audio) instead of abstaining. A short clip's natural trailing fade-out
+counted as "not silent enough" under the old `floor_rms` (0.0001, only
+caught literal digital silence), so its EMA-smoothed FINAL score got
+dragged down even when the model correctly flagged the spoken content
+throughout — e.g. a Chatterbox clone scored 0.80/0.79/0.67 spoof-
+probability on its actual speech, then 0.10/0.06/0.00/0.00 on its last
+four, progressively quieter windows. Fixed by raising `floor_rms` to
+0.03 (`acoustic_aasist.py`'s own REAL BUG note has the full account).
+**Honestly incomplete**: at least two windows in the same real traces
+scored wrong at NORMAL loudness (rms 0.12-0.16) — genuine per-window
+volatility in AASIST's own predictions, not a silence artifact. No RMS
+threshold fixes that; it would need cross-trace aggregation (not just
+the last window) or a probability-margin-based abstain, neither done.
+
+**Follow-up real bug found and fixed the same day (2026-09-10) — the
+0.03 fix above over-abstained on genuine audio**: the 0.03 threshold
+was chosen after checking its effect on the three SPOOF files above
+only; a real GENUINE Movie-MUSNOMIX clip (39 windows, rms 0.0038-0.029
+throughout, never once crossing 0.03) then abstained on every single
+window. Checked by hand with the gate bypassed: AASIST correctly scored
+this genuine clip's quiet windows at 0.000-0.020 spoof-probability
+throughout — the same rms 0.01-0.03 band that was confidently WRONG on
+spoof audio is reliably RIGHT on genuine audio. So `floor_rms` alone
+cannot cleanly separate "trustworthy" from "not" in that band, in
+either direction; gating the whole band out costs real, correct signal
+on genuine calls without a comparably clean win on spoof ones. Lowered
+`floor_rms` back to 0.01 (`formula_version` 2026.09.15) — still above
+true silence and below the clearest confirmed-wrong spoof cases (rms
+0.0026-0.0067), but no longer excluding the ambiguous 0.01-0.03 band.
+**Still not solved**: this is a defensible compromise, not a fix — the
+0.01-0.03 band remains genuinely ambiguous (see `acoustic_aasist.py`'s
+own REAL BUG note for the full account); it would take cross-trace
+aggregation or a probability-margin-based abstain to actually resolve
+it, neither implemented here.
+
 ## The prosodic detector: Parselmouth (Praat) features, trained classifier on top
 
 `prosody_parselmouth.py` computes jitter, shimmer, and harmonics-to-noise
@@ -293,6 +334,24 @@ by pinning `temperature=0.0`, which forces pure greedy decoding — see
 `whisper_transcriber.py`'s own REPRODUCIBILITY FIX docstring note for the
 full account and the trade-off this accepts (Whisper's one real recovery
 path, retrying at higher temperature on hard audio, is now disabled).
+
+**That trade-off had a real, visible cost — found and fixed 2026-09-10**,
+via real Movie-MUSNOMIX movie-dialogue clips fed through the deployed
+dashboard: with the retry path disabled, greedy decoding on hard audio
+(background music, overlapping voices) can lock into a degenerate
+REPETITION LOOP ("तो तो तो तो..." repeated 30+ times, observed verbatim)
+that Whisper's own model is confident about (avg_logprob -0.16, not
+obviously low) even though it's nonsense — and that nonsense then fed
+Intent's zero-shot classifier, which scored the repeated word 96%
+"creating urgency", a fabricated high-risk signal from garbage text, not
+a real judgement. Fixed WITHOUT reintroducing the non-determinism above:
+Whisper computes `compression_ratio` (text-bytes / zlib-compressed-bytes)
+per segment regardless of temperature mode — a repetition loop compresses
+extremely well (the real degenerate clip measured 21.71; a real, correct
+transcript from the same corpus measured 1.40) — so `whisper_transcriber.py`
+now checks this itself (Whisper's own default threshold, 2.4) and
+discards the whole transcript if any segment exceeds it, rather than
+retrying at a higher (non-deterministic) temperature.
 
 **Authority-claim detection and the combined-pressure rule (added
 2026-09-08)**: `urgency_language.py` also scans for a third category —

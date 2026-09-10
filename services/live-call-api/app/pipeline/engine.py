@@ -72,17 +72,24 @@ class SessionStore:
     """
 
     def __init__(self) -> None:
-        self._last_smoothed: dict[str, float] = {}
+        # Per-COMPONENT smoothed state as of 2026-09-10 (was a single
+        # float per session) — see WeightedSumFusion's own docstring for
+        # the real bug this fixes: a component that abstains for one
+        # window must be able to carry forward its OWN last smoothed
+        # value, not have the whole session's smoothing collapse to one
+        # scalar that can't distinguish "acoustic just abstained" from
+        # "prosodic just abstained".
+        self._last_component_smoothed: dict[str, dict[str, float]] = {}
         self._sticky_flags: dict[str, dict[str, Any]] = {}
 
-    def get_previous(self, session_id: str) -> Optional[float]:
-        return self._last_smoothed.get(session_id)
+    def get_previous(self, session_id: str) -> dict[str, float]:
+        return self._last_component_smoothed.get(session_id, {})
 
-    def update(self, session_id: str, smoothed_score: float) -> None:
-        self._last_smoothed[session_id] = smoothed_score
+    def update(self, session_id: str, component_smoothed: dict[str, float]) -> None:
+        self._last_component_smoothed[session_id] = component_smoothed
 
     def reset(self, session_id: str) -> None:
-        self._last_smoothed.pop(session_id, None)
+        self._last_component_smoothed.pop(session_id, None)
         self._sticky_flags.pop(session_id, None)
 
     def apply_sticky_flags(self, session_id: str, context: dict[str, Any]) -> dict[str, Any]:
@@ -206,10 +213,13 @@ class Engine:
             seq=window.seq,
             window_start_ms=window.window_start_ms,
             results=results,
-            previous_smoothed_score=previous,
+            previous_component_smoothed=previous,
             config=self.pipeline.config,
         )
-        self.sessions.update(window.session_id, fused.smoothed_score_0_100)
+        self.sessions.update(
+            window.session_id,
+            {c.name: c.smoothed_score for c in fused.components if c.smoothed_score is not None},
+        )
 
         logger.info(
             "risk_score_computed",

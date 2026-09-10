@@ -31,11 +31,21 @@
 # evidence in hand.
 name: CI
 
+# DISABLED 2026-09-10 (out of GitHub-hosted runner minutes): automatic
+# push/pull_request triggers commented out below — nothing runs on
+# GitHub Actions until they're restored. `workflow_dispatch` is kept so
+# this can still be run manually (Actions tab -> CI -> "Run workflow")
+# on the rare occasion runner minutes are available again. Everything
+# this workflow does mirrors a local command 1:1 — see docs/testing.md
+# ("pytest tests/unit -v" / "pytest tests/integration -v") and
+# docs/running-locally.md ("docker compose build/up") — run those
+# locally instead; this is not a reduction in what gets verified, just
+# where.
 on:
-  push:
-    branches: [master]
-  pull_request:
-    branches: [master]
+  # push:
+  #   branches: [master]
+  # pull_request:
+  #   branches: [master]
   workflow_dispatch:
 
 concurrency:

@@ -9,7 +9,7 @@ to change.
 """
 from __future__ import annotations
 
-from typing import Any, Optional, Protocol
+from typing import Any, Protocol
 
 from app.domain.models import DetectorResult, FusedScore
 
@@ -25,15 +25,20 @@ class FusionPort(Protocol):
         seq: int,
         window_start_ms: int,
         results: list[DetectorResult],
-        previous_smoothed_score: Optional[float],
+        previous_component_smoothed: dict[str, float],
         config: dict[str, Any],
     ) -> FusedScore:
         """Produce a FusedScore for one window.
 
-        `previous_smoothed_score` is this session's last smoothed score (or
-        None for the first window) — how it's used (EMA, plain average, or
-        ignored) is entirely up to the fusion implementation, but it must be
-        the ONLY piece of cross-window state a fusion strategy is given, so
-        that reproducing a score never depends on hidden mutable state.
+        `previous_component_smoothed` maps each config detector NAME to its
+        last smoothed score in this session (missing key = never scored
+        yet) — how it's used (EMA, plain average, or ignored) is entirely
+        up to the fusion implementation, but it must be the ONLY piece of
+        cross-window state a fusion strategy is given, so that reproducing
+        a score never depends on hidden mutable state. Per-COMPONENT (not
+        just a single overall float) as of 2026-09-10, so a component that
+        abstains for one window can still carry forward its own recent
+        history instead of dropping out of the formula entirely — see
+        WeightedSumFusion's own docstring for the real problem this fixes.
         """
         ...

@@ -106,8 +106,28 @@ Run just one file while iterating: `pytest tests/unit/test_fusion_weighted_sum.p
 
 ## Continuous integration
 
-`.github/workflows/ci.yml` runs on every push/PR to `master` (and
-manually, via workflow_dispatch), three jobs:
+**DISABLED 2026-09-10** (out of GitHub-hosted runner minutes) — the
+push/pull_request triggers in `.github/workflows/ci.yml` are commented
+out, so nothing runs automatically. It can still be run manually
+(Actions tab -> CI -> "Run workflow", `workflow_dispatch`) on the rare
+occasion runner minutes are available. Until it's re-enabled, run the
+same three jobs locally before pushing — nothing below changed, this is
+where it runs, not what runs:
+
+```bash
+# test-unit and test-integration, from services/live-call-api with its venv active
+pytest tests/unit -v
+pytest tests/integration -v
+
+# docker-compose-build, from the repo root
+docker compose build
+docker compose up -d
+curl -sf http://localhost:8020/healthz
+curl -sf -F "file=@services/live-call-api/samples/genuine_tone.wav" http://localhost:8020/v1/score/file
+```
+
+`.github/workflows/ci.yml` describes three jobs (unchanged, just not
+auto-triggered):
 
 - **`test-unit`** — the FAST job: `pytest tests/unit -v` on a plain
   Python 3.12 venv (not Docker). Installs CPU-only torch/torchaudio first

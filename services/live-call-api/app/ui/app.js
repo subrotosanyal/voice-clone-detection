@@ -177,8 +177,35 @@ function helpIcon(text) {
   return span;
 }
 
-let traceScores = []; // rolling [0-100] scores for the current session/analysis, drives the chart
+let traceScores = []; // rolling [0-100] OVERALL fused scores for the current session/analysis, drives the chart
+let traceComponents = {}; // { [detectorName]: (number|null)[] } — each detector's own smoothed_score*100 per window, same index alignment as traceScores; null where that detector had no value yet (never scored, no history to carry forward)
+let traceTimestamps = []; // window_start_ms per point, same index alignment as traceScores — drives the x-axis
+let chartFactorEnabled = {}; // { [detectorName]: boolean } — chart-legend toggle state, defaults to true the first time a name is seen; persists across re-analyses in this page session
 let lastConfig = null; // most recent /v1/config response, cached so other UI text (e.g. the analysing message) can name the actual configured detectors instead of a hardcoded, driftable list
+
+// Fixed categorical palette for the per-factor chart lines — distinct
+// hues, chosen to read on both light and dark backgrounds (see
+// index.html's :root / dark-media color tokens for the rest of the
+// page's palette; these are deliberately NOT theme-swapped, since a
+// stable identity per detector matters more here than exact contrast
+// optimization, and all are mid-brightness/saturated enough for either
+// ground). COMPONENT_CHART_FALLBACK_COLORS cycles for any detector name
+// not listed (e.g. a custom one added via config swap).
+const COMPONENT_CHART_COLOR = {
+  acoustic: "#e0763a",
+  prosodic: "#4f8fe0",
+  third_signal: "#a367d9",
+  intent: "#3aa89a",
+  perth_watermark: "#d9457a",
+  phase_incoherence: "#9ab83a",
+  semantic_risk: "#d9b83a",
+};
+const COMPONENT_CHART_FALLBACK_COLORS = ["#888888", "#c76b3d", "#3d7bc7", "#7dbf5f"];
+function componentChartColor(name) {
+  if (COMPONENT_CHART_COLOR[name]) return COMPONENT_CHART_COLOR[name];
+  const idx = Object.keys(COMPONENT_CHART_COLOR).length % COMPONENT_CHART_FALLBACK_COLORS.length;
+  return COMPONENT_CHART_FALLBACK_COLORS[idx];
+}
 
 // ---------- "How this score is calculated" modal ----------
 // Renders live from whatever /v1/config actually returns — if
@@ -227,12 +254,17 @@ function renderHowItWorks(cfg) {
     const terms = detectors
       .map((d) => `${((d.weight / weightSum) * 100).toFixed(0)}%×${COMPONENT_LABEL[d.name] || d.name}`)
       .join(" + ");
-    eqEl.textContent = `fused = ${terms}  (renormalized to 100% over signals that didn't abstain)`;
+    eqEl.textContent = `fused = ${terms}  (renormalized to 100% over signals with a usable value — including one carried forward from an earlier window if this one abstained)`;
   }
 
   const smoothEl = document.getElementById("hiwSmoothingEq");
   if (smoothEl && alpha != null) {
-    smoothEl.textContent = `smoothed = ${alpha} × raw_this_window + ${(1 - alpha).toFixed(2)} × smoothed_previous_window`;
+    // Updated 2026-09-10: smoothing moved to PER-detector (was a single
+    // EMA on the combined total) — see WeightedSumFusion's own docstring.
+    // Each detector keeps its own smoothed value across windows; the
+    // fused score above is the weighted combination of those, not a
+    // second smoothing pass on top.
+    smoothEl.textContent = `each detector: smoothed = ${alpha} × its own raw_this_window + ${(1 - alpha).toFixed(2)} × its own smoothed_previous_window (unchanged if it abstains this window) — fused above combines these smoothed values directly`;
   }
 
   const bandsEl = document.getElementById("hiwBands");
@@ -348,6 +380,8 @@ function readContext(scopeEl) {
 // ---------- results rendering (shared by both modes) ----------
 function resetResults() {
   traceScores = [];
+  traceComponents = {};
+  traceTimestamps = [];
   document.getElementById("resultsEmpty").style.display = "flex";
   document.getElementById("results").classList.remove("show");
   document.getElementById("speakersSection").style.display = "none";
@@ -418,6 +452,8 @@ function renderSpeakers(speakers) {
 
 function resetResultsKeepSpeakers() {
   traceScores = [];
+  traceComponents = {};
+  traceTimestamps = [];
   document.getElementById("resultsEmpty").style.display = "none";
 }
 
@@ -447,16 +483,26 @@ function renderFusedScore(fs) {
   const compEl = document.getElementById("components");
   compEl.innerHTML = "";
   fs.components.forEach((c) => {
+    // 2026-09-10: the primary displayed number is now smoothed_score — the
+    // per-component EMA aggregate that ACTUALLY fed the fusion formula
+    // (see WeightedSumFusion's own docstring) — not raw_score (this
+    // window alone). A component can show a real number here even while
+    // `abstained` is true for this specific window, as long as it has
+    // carried-forward history; only a component that has NEVER produced a
+    // score this session shows the flat "abstained" state.
+    const hasValue = c.smoothed_score !== null && c.smoothed_score !== undefined;
+    const pct = hasValue ? Math.round(c.smoothed_score * 100) : 0;
     const row = document.createElement("div");
-    row.className = "component-row" + (c.abstained ? " abstained" : "");
-    const pct = c.abstained ? 0 : Math.round((c.raw_score || 0) * 100);
+    row.className = "component-row" + (!hasValue ? " abstained" : "");
     row.innerHTML = `
       <div class="top-line">
         <span class="name">${COMPONENT_LABEL[c.name] || c.name}</span>
-        <span class="value mono">${c.abstained ? "abstained" : pct + "%"}</span>
+        <span class="value mono">${hasValue ? pct + "%" : "abstained"}</span>
       </div>
-      <div class="bar-track"><div class="bar-fill" style="width:${c.abstained ? 100 : pct}%"></div></div>
-      ${c.abstained ? `<div class="abstain-note">${c.detail && c.detail.abstain_reason ? c.detail.abstain_reason : "no signal for this window"}</div>` : renderExplanationNote(c.detail)}
+      <div class="bar-track"><div class="bar-fill" style="width:${hasValue ? pct : 100}%"></div></div>
+      ${c.abstained
+        ? `<div class="abstain-note">${hasValue ? "carried forward from an earlier window — " : ""}${c.detail && c.detail.abstain_reason ? c.detail.abstain_reason : "no signal for this window"}</div>`
+        : renderExplanationNote(c.detail)}
       ${renderTranscriptNote(c.detail)}
       ${renderIntentBreakdown(c.detail)}
     `;
@@ -465,30 +511,205 @@ function renderFusedScore(fs) {
   });
 
   traceScores.push(score);
-  if (traceScores.length > 80) traceScores.shift(); // cap for live mode so the chart stays readable
+  traceTimestamps.push(fs.window_start_ms);
+  if (traceScores.length > 80) { traceScores.shift(); traceTimestamps.shift(); } // cap for live mode so the chart stays readable
+  fs.components.forEach((c) => {
+    if (!(c.name in traceComponents)) traceComponents[c.name] = [];
+    if (!(c.name in chartFactorEnabled)) chartFactorEnabled[c.name] = true; // default on, first time this factor is seen
+    const arr = traceComponents[c.name];
+    arr.push(c.smoothed_score === null || c.smoothed_score === undefined ? null : c.smoothed_score * 100);
+    if (arr.length > 80) arr.shift(); // same rolling cap as traceScores, kept index-aligned
+  });
+  renderChartLegend();
   drawTraceChart();
 
   document.getElementById("rawJson").textContent = JSON.stringify(fs, null, 2);
 }
 
+// One chip per factor seen so far, in first-seen (== config) order.
+// Clicking toggles that factor's line on/off and redraws immediately.
+function renderChartLegend() {
+  const el = document.getElementById("chartLegend");
+  el.innerHTML = "";
+  const overallChip = document.createElement("button");
+  overallChip.className = "chip" + (chartFactorEnabled["__overall__"] === false ? " off" : "");
+  overallChip.innerHTML = `<span class="dot" style="background:var(--ink)"></span>Overall`;
+  overallChip.addEventListener("click", () => {
+    chartFactorEnabled["__overall__"] = chartFactorEnabled["__overall__"] === false ? true : false;
+    renderChartLegend();
+    drawTraceChart();
+  });
+  el.appendChild(overallChip);
+
+  Object.keys(traceComponents).forEach((name) => {
+    const chip = document.createElement("button");
+    chip.className = "chip" + (chartFactorEnabled[name] ? "" : " off");
+    chip.innerHTML = `<span class="dot" style="background:${componentChartColor(name)}"></span>${COMPONENT_LABEL[name] || name}`;
+    chip.addEventListener("click", () => {
+      chartFactorEnabled[name] = !chartFactorEnabled[name];
+      renderChartLegend();
+      drawTraceChart();
+    });
+    el.appendChild(chip);
+  });
+}
+
+// Splits a (number|null)[] series into contiguous non-null runs, each
+// rendered as its own <polyline> — a gap (a factor with no value at that
+// point, e.g. never scored yet) is a genuine visual break, not
+// interpolated across, so the chart never implies a reading that was
+// never actually produced.
+function seriesToPolylines(series, stepX, h, pad, leftPad) {
+  const runs = [];
+  let current = [];
+  series.forEach((v, i) => {
+    if (v === null || v === undefined) {
+      if (current.length) runs.push(current);
+      current = [];
+      return;
+    }
+    const x = leftPad + i * stepX;
+    const y = h - pad - (Math.min(Math.max(v, 0), 100) / 100) * (h - pad * 2);
+    current.push(`${x.toFixed(1)},${y.toFixed(1)}`);
+  });
+  if (current.length) runs.push(current);
+  return runs;
+}
+
+// Chart layout constants — shared between drawTraceChart() (which lays
+// out the SVG) and the hover handlers below (which must map a mouse
+// pixel position back to the same coordinate space) so the two never
+// drift out of sync.
+const CHART_W = 600, CHART_H = 140;
+const CHART_TOP_PAD = 8, CHART_BOTTOM_PAD = 22, CHART_LEFT_PAD = 34, CHART_RIGHT_PAD = 8;
+const CHART_PLOT_H = CHART_H - CHART_TOP_PAD - CHART_BOTTOM_PAD;
+
+function chartStepX() {
+  return (CHART_W - CHART_LEFT_PAD - CHART_RIGHT_PAD) / Math.max(traceScores.length - 1, 1);
+}
+
+function formatSeconds(ms) {
+  const s = ms / 1000;
+  return (s < 10 ? s.toFixed(1) : Math.round(s)) + "s";
+}
+
 function drawTraceChart() {
   const svg = document.getElementById("traceChart");
-  const w = 560, h = 110, pad = 6;
-  if (traceScores.length < 2) { svg.innerHTML = ""; return; }
-  const stepX = (w - pad * 2) / (traceScores.length - 1);
-  const points = traceScores.map((s, i) => {
-    const x = pad + i * stepX;
-    const y = h - pad - (Math.min(s, 100) / 100) * (h - pad * 2);
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  if (traceScores.length < 2) { svg.innerHTML = ""; hideHover(); return; }
+  const stepX = chartStepX();
+  const h = CHART_H, pad = CHART_TOP_PAD, leftPad = CHART_LEFT_PAD, rightEdge = CHART_W - CHART_RIGHT_PAD;
+
+  let linesHtml = "";
+  Object.keys(traceComponents).forEach((name) => {
+    if (!chartFactorEnabled[name]) return;
+    seriesToPolylines(traceComponents[name], stepX, h, pad, leftPad).forEach((run) => {
+      linesHtml += `<polyline points="${run.join(" ")}" fill="none" stroke="${componentChartColor(name)}" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" opacity="0.85"/>`;
+    });
   });
-  const last = traceScores[traceScores.length - 1];
-  const color = last <= 34 ? "var(--risk-low)" : last <= 69 ? "var(--risk-med)" : "var(--risk-high)";
+  // Overall drawn LAST (on top of the per-factor lines) and noticeably
+  // thicker, so it reads as the "headline" line the others sit alongside.
+  if (chartFactorEnabled["__overall__"] !== false) {
+    const last = traceScores[traceScores.length - 1];
+    const overallColor = last <= 34 ? "var(--risk-low)" : last <= 69 ? "var(--risk-med)" : "var(--risk-high)";
+    seriesToPolylines(traceScores, stepX, h, pad, leftPad).forEach((run) => {
+      linesHtml += `<polyline points="${run.join(" ")}" fill="none" stroke="${overallColor}" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/>`;
+    });
+  }
+
+  // Y-axis: 0%/50%/100% gridlines + labels, plus the existing low/elevated
+  // band-boundary reference lines (34%, 69%) kept as lighter dashed lines.
+  let axisHtml = "";
+  [0, 50, 100].forEach((pct) => {
+    const y = h - pad - (pct / 100) * (h - pad * 2);
+    axisHtml += `<line x1="${leftPad}" y1="${y.toFixed(1)}" x2="${rightEdge}" y2="${y.toFixed(1)}" stroke="var(--line-soft)" stroke-width="1"/>`;
+    axisHtml += `<text x="${leftPad - 6}" y="${(y + 3).toFixed(1)}" text-anchor="end">${pct}%</text>`;
+  });
+  [34, 69].forEach((pct) => {
+    const y = h - pad - (pct / 100) * (h - pad * 2);
+    axisHtml += `<line x1="${leftPad}" y1="${y.toFixed(1)}" x2="${rightEdge}" y2="${y.toFixed(1)}" stroke="var(--line-soft)" stroke-width="1" stroke-dasharray="3 3"/>`;
+  });
+  // X-axis: a handful of evenly-spaced time labels (window_start_ms -> s).
+  const nLabels = Math.min(5, traceTimestamps.length);
+  for (let i = 0; i < nLabels; i++) {
+    const idx = Math.round((i / Math.max(nLabels - 1, 1)) * (traceTimestamps.length - 1));
+    const x = leftPad + idx * stepX;
+    axisHtml += `<text x="${x.toFixed(1)}" y="${h - 6}" text-anchor="middle">${formatSeconds(traceTimestamps[idx])}</text>`;
+  }
+
   svg.innerHTML = `
-    <line x1="${pad}" y1="${h - pad - (h - pad * 2) * 0.34}" x2="${w - pad}" y2="${h - pad - (h - pad * 2) * 0.34}" stroke="var(--line-soft)" stroke-width="1" stroke-dasharray="3 3"/>
-    <line x1="${pad}" y1="${h - pad - (h - pad * 2) * 0.69}" x2="${w - pad}" y2="${h - pad - (h - pad * 2) * 0.69}" stroke="var(--line-soft)" stroke-width="1" stroke-dasharray="3 3"/>
-    <polyline points="${points.join(" ")}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+    ${axisHtml}
+    ${linesHtml}
+    <rect id="hoverCapture" x="${leftPad}" y="${pad}" width="${rightEdge - leftPad}" height="${h - pad - CHART_BOTTOM_PAD}" fill="transparent" style="cursor:crosshair"/>
+    <g id="hoverLayer"></g>
   `;
 }
+
+// --- hover tooltip: attached ONCE to the outer <svg> element (which
+// persists across drawTraceChart()'s innerHTML rewrites of its
+// children), reading whatever traceScores/traceComponents/traceTimestamps
+// currently hold — no need to re-attach on every redraw. ---------------
+function nearestIndexForX(svgX) {
+  if (traceScores.length < 2) return null;
+  const stepX = chartStepX();
+  const idx = Math.round((svgX - CHART_LEFT_PAD) / stepX);
+  return idx >= 0 && idx < traceScores.length ? idx : null;
+}
+
+function hideHover() {
+  const layer = document.getElementById("hoverLayer");
+  if (layer) layer.innerHTML = "";
+  document.getElementById("chartTooltip").style.display = "none";
+}
+
+function showHoverAt(idx, clientX, clientY) {
+  const svg = document.getElementById("traceChart");
+  const wrap = svg.closest(".chart-wrap");
+  const layer = document.getElementById("hoverLayer");
+  if (!layer) return;
+  const stepX = chartStepX();
+  const x = CHART_LEFT_PAD + idx * stepX;
+  const yFor = (v) => CHART_H - CHART_TOP_PAD - (Math.min(Math.max(v, 0), 100) / 100) * (CHART_H - CHART_TOP_PAD * 2);
+
+  let dotsHtml = `<line x1="${x.toFixed(1)}" y1="${CHART_TOP_PAD}" x2="${x.toFixed(1)}" y2="${CHART_H - CHART_BOTTOM_PAD}" stroke="var(--slate-soft)" stroke-width="1" stroke-dasharray="2 2"/>`;
+  let rows = "";
+  if (chartFactorEnabled["__overall__"] !== false) {
+    const v = traceScores[idx];
+    dotsHtml += `<circle cx="${x.toFixed(1)}" cy="${yFor(v).toFixed(1)}" r="3.5" fill="var(--ink)"/>`;
+    rows += `<div class="tt-row"><span class="dot" style="background:var(--ink)"></span>Overall: ${Math.round(v)}%</div>`;
+  }
+  Object.keys(traceComponents).forEach((name) => {
+    if (!chartFactorEnabled[name]) return;
+    const v = traceComponents[name][idx];
+    if (v === null || v === undefined) return;
+    dotsHtml += `<circle cx="${x.toFixed(1)}" cy="${yFor(v).toFixed(1)}" r="3" fill="${componentChartColor(name)}"/>`;
+    rows += `<div class="tt-row"><span class="dot" style="background:${componentChartColor(name)}"></span>${COMPONENT_LABEL[name] || name}: ${Math.round(v)}%</div>`;
+  });
+  layer.innerHTML = dotsHtml;
+
+  const tooltip = document.getElementById("chartTooltip");
+  tooltip.innerHTML = `<div class="tt-time">${formatSeconds(traceTimestamps[idx])}</div>${rows}`;
+  tooltip.style.display = "block";
+  const wrapRect = wrap.getBoundingClientRect();
+  let left = clientX - wrapRect.left + 14;
+  if (left + tooltip.offsetWidth > wrapRect.width) left = clientX - wrapRect.left - tooltip.offsetWidth - 14;
+  tooltip.style.left = left + "px";
+  tooltip.style.top = (clientY - wrapRect.top - tooltip.offsetHeight / 2) + "px";
+}
+
+function initChartHover() {
+  const svg = document.getElementById("traceChart");
+  svg.addEventListener("mousemove", (e) => {
+    const capture = document.getElementById("hoverCapture");
+    if (!capture) return;
+    const rect = svg.getBoundingClientRect();
+    const svgX = ((e.clientX - rect.left) / rect.width) * CHART_W;
+    const idx = nearestIndexForX(svgX);
+    if (idx === null) { hideHover(); return; }
+    showHoverAt(idx, e.clientX, e.clientY);
+  });
+  svg.addEventListener("mouseleave", hideHover);
+}
+initChartHover();
 
 document.getElementById("rawToggle").addEventListener("click", (e) => {
   const el = document.getElementById("rawJson");

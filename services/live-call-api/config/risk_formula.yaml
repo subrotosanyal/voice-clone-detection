@@ -12,7 +12,7 @@
 # every log line so a score can always be tied back to the exact config
 # that produced it (see docs/risk-model.md, "Reproducibility").
 
-formula_version: "2026.09.13"
+formula_version: "2026.09.15"
 
 detectors:
   # Real pretrained countermeasure (AASIST, ASVspoof2019 LA, MIT licensed —
@@ -43,7 +43,14 @@ detectors:
     params:
       checkpoint_path: app/adapters/detectors/vendor/checkpoints/AASIST.pth
       finetuned_out_layer_path: app/adapters/detectors/vendor/checkpoints/AASIST_hindi_finetuned_out_layer.pth
-      floor_rms: 0.0001
+      # Raised 2026-09-09 from 0.0001, then lowered from 0.03 to 0.01 the
+      # same day — see acoustic_aasist.py's own REAL BUG notes: 0.0001
+      # only caught literal digital silence; 0.03 (chosen from spoof-side
+      # evidence only) turned out to ALSO gate out genuine audio in the
+      # same RMS band, where AASIST is actually correct. 0.01 catches the
+      # clearest confirmed-wrong near-silence cases without excluding
+      # that ambiguous middle band.
+      floor_rms: 0.01
 
   - name: prosodic
     # Real Praat-derived jitter/shimmer/HNR (see

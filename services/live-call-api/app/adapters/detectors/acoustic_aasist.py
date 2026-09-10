@@ -43,6 +43,50 @@ trials with `logits[:, 1]` directly (higher = more bonafide-like, the
 ASVspoof CM convention). We take softmax(logits)[:, 0] as our
 "probability this is synthetic" risk contribution — the same information,
 inverted and bounded to [0, 1] for this project's fusion formula.
+
+REAL BUG found and fixed 2026-09-09/10: `floor_rms` (the near-silence
+abstain guard, same pattern as prosody_parselmouth.py/perth_watermark.py)
+was left at 1e-4 — permissive enough to only catch literal digital
+silence. Found by manually tracing a real fine-tuned run's per-window
+scores over three real spoof files (POST /v1/score/file's full `trace`,
+not just the final smoothed number): every window with rms below
+roughly 0.03-0.07 scored confidently WRONG (near-0 spoof probability on
+genuinely synthetic audio) instead of abstaining — e.g. a Chatterbox
+clone scored 0.80/0.79/0.67 spoof-probability on its actual spoken
+content, then 0.10/0.06/0.00/0.00 on its last four, progressively
+quieter windows (rms 0.067 -> 0.0026), dragging the file's EMA-smoothed
+FINAL score down into the "low" risk band despite the model correctly
+flagging the spoken content throughout. Raised to 0.03 — high enough to
+catch the clearest quiet-tail cases observed, kept below the existing
+test suite's ~0.05-rms synthetic fixture audio so genuinely analysable
+signal isn't over-abstained.
+HONESTY NOTE, not fully solved by this fix: at least two windows in
+the same real traces scored wrong despite NORMAL loudness (rms 0.12-0.16,
+comparable to correctly-scored neighboring windows) — genuine per-window
+volatility in AASIST's own predictions, not a silence artifact. No RMS
+threshold fixes that; it would need either a different aggregation
+across the whole trace (not just the last window) or a probability-
+margin-based abstain, neither implemented here.
+
+REAL BUG in the fix above, found and fixed the same day (2026-09-10),
+via a real GENUINE Movie-MUSNOMIX clip (39 windows, rms 0.0038-0.029
+throughout, never once crossing 0.03): the 0.03 threshold was chosen
+after checking ONLY its effect on the three SPOOF files above — never
+checked whether the same RMS band is also where AASIST correctly
+recognises genuine audio. It is: run by hand with the gate bypassed,
+this real genuine clip's quiet windows scored 0.000-0.020 spoof-
+probability throughout — correctly bonafide, not a coin flip. So the
+SAME rms 0.01-0.03 band is unreliable on spoof audio but reliable on
+genuine audio — meaning floor_rms cannot cleanly separate "trustworthy"
+from "not" in that range at all, in either direction, and gating the
+whole band out costs real correct signal on genuine calls without a
+comparably clean win on spoof ones (recall the HONESTY NOTE above: even
+some LOUDER spoof windows, rms 0.12-0.16, were already wrong — the
+failure was never cleanly RMS-bounded to begin with). Lowered back to
+0.01 — comfortably above true silence and below the clearest confirmed-
+wrong spoof cases (rms 0.0026-0.0067), but no longer excluding the
+0.01-0.03 band this second investigation showed is genuinely ambiguous,
+not reliably wrong.
 """
 from __future__ import annotations
 
@@ -90,7 +134,7 @@ class AasistAcousticDetector:
     def __init__(
         self,
         checkpoint_path: str,
-        floor_rms: float = 1e-4,
+        floor_rms: float = 0.01,
         device: str = "cpu",
         finetuned_out_layer_path: Optional[str] = None,
     ) -> None:

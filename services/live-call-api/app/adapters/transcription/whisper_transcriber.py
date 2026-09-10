@@ -94,6 +94,44 @@ back to an empty transcript, same as "no speech found" — transcription
 failing is always recoverable (the rest of the pipeline still scores
 the call, just without transcript-derived signals), a crash never is.
 
+REAL BUG found and fixed 2026-09-10, via real Movie-MUSNOMIX movie-
+dialogue clips (see eval/indian_language/README.md's "Datasets" table):
+`temperature=0.0` above (the REPRODUCIBILITY FIX's deliberate trade-off)
+disables Whisper's own compression_ratio-triggered retry-at-higher-
+temperature fallback — which exists specifically to catch this: on hard
+audio (background music, overlapping voices), greedy decoding can lock
+into a degenerate REPETITION LOOP ("तो तो तो तो..." repeated 30+ times,
+observed verbatim through the live dashboard on a real clip), which
+Whisper's own model is confident about (avg_logprob -0.16, not obviously
+low) even though it's nonsense — and that nonsense then fed Intent's
+zero-shot classifier, which scored the repeated word as 96% "creating
+urgency", a fabricated high-risk signal from garbage text, not a real
+judgement. Whisper computes `compression_ratio` (text-bytes /
+zlib-compressed-bytes) per segment regardless of temperature mode — a
+repetitive loop compresses extremely well, so this is a real, already-
+computed signal, not a new heuristic: the degenerate clip above measured
+21.71, a real, clean genuine transcript from the same corpus measured
+1.40. Fixed by checking this ourselves (Whisper's own default
+`compression_ratio_threshold`, 2.4) — same "abstain rather than
+manufacture a signal from a failure" discipline as the semantic-risk
+LLM's malformed-JSON fallback, and deliberately NOT retrying at a higher
+temperature (that would reintroduce the exact non-determinism the REPRODUCIBILITY
+FIX above was written to eliminate).
+
+REAL BUG in the fix above, found and fixed the same day: the first
+version discarded the WHOLE transcript if ANY segment exceeded the
+threshold — fine for the repetition-loop clip above (degenerate
+throughout), but wrong for a real 52.9s movie-dialogue clip that was
+genuinely mostly-coherent Hindi speech across 11 segments, 2 of which
+measured compression_ratio 2.83 (not the segment with the most visually
+obvious glitch to a human eye, which measured 2.34 and was correctly
+kept — this metric isn't a perfect proxy for "looks garbled to a
+person"). That all-or-nothing check threw away the other 10 good
+segments too, silently blinding Intent/semantic-risk on a call that
+actually had real, usable content. Fixed by discarding only the
+degenerate SEGMENTS and reassembling the transcript from what's left —
+a call is only fully blank if every segment was bad.
+
 REAL BUG found and fixed 2026-09-10, while building "diarize on hangup"
 (app/api/ws_router.py): two overlapping calls into the SAME shared
 Whisper model instance (one from a live session's still-finishing
@@ -134,6 +172,13 @@ _DOWNLOAD_ROOT = "app/adapters/transcription/.cache"
 # lengths observed to trigger it — comfortably below any window length
 # that could carry a recognisable word, so nothing usable is lost.
 _MIN_DURATION_S = 0.1
+
+# Whisper's own default `compression_ratio_threshold` (see openai/whisper's
+# transcribe.py) — reused verbatim, not invented here. A real degenerate
+# repetition-loop transcript ("तो तो तो..." x30) measured 21.71 on this
+# metric; a real, correctly-transcribed clip from the same corpus measured
+# 1.40 — see this module's own REAL BUG note (2026-09-10) for the account.
+_DEGENERATE_COMPRESSION_RATIO_THRESHOLD = 2.4
 
 
 class WhisperTranscriber:
@@ -183,8 +228,49 @@ class WhisperTranscriber:
             logger.exception("whisper_transcription_failed", duration_s=duration_s)
             return TranscriptResult(text="", language=None, detector_name=self.name, detector_version=self.version)
 
+        # See this module's own REAL BUG note (2026-09-10, "Movie-MUSNOMIX
+        # movie-dialogue clips"): temperature=0.0 above means Whisper never
+        # retries a degenerate repetition-loop output — it's still
+        # COMPUTED (per segment, regardless of temperature mode), just not
+        # ACTED on without the fallback tuple. Checking it ourselves here
+        # is the same "abstain rather than manufacture a signal from a
+        # failure" move as the except block above, just for a decode that
+        # succeeded but produced nonsense rather than one that raised.
+        #
+        # REAL BUG, found and fixed the same day: the FIRST version of
+        # this checked whether ANY segment exceeded the threshold and
+        # discarded the WHOLE transcript if so — fine for a short clip
+        # that's degenerate throughout, but wrong for a real 52.9s movie-
+        # dialogue clip that was genuinely mostly-coherent Hindi speech:
+        # 2 of 11 segments measured compression_ratio 2.83 (vs. the 2.4
+        # threshold) — NOT the segment with the most visually-obvious
+        # glitch to a human eye ("जाँँँँँँँ", a repeated-diacritic
+        # artifact, actually measured 2.34 and was correctly kept — this
+        # metric flags a different, less obvious kind of repetition, and
+        # is not a perfect proxy for "looks garbled to a person"; it's
+        # Whisper's own established heuristic, reused as-is, not
+        # rebuilt). That all-or-nothing check threw away the other 10
+        # good segments too, silently blinding Intent/semantic-risk on a
+        # call that actually had real, usable transcript content. Fixed
+        # by discarding only the DEGENERATE SEGMENTS and keeping the rest
+        # — a call is only fully blank if every segment was bad.
+        segments = result.get("segments") or []
+        good_segments = [
+            seg for seg in segments if seg.get("compression_ratio", 0.0) <= _DEGENERATE_COMPRESSION_RATIO_THRESHOLD
+        ]
+        if len(good_segments) < len(segments):
+            logger.warning(
+                "whisper_discarded_some_degenerate_segments",
+                duration_s=duration_s,
+                total_segments=len(segments),
+                discarded_segments=len(segments) - len(good_segments),
+                max_compression_ratio=max((seg.get("compression_ratio", 0.0) for seg in segments), default=0.0),
+            )
+
+        text = "".join(seg.get("text", "") for seg in good_segments).strip() if segments else result["text"].strip()
+
         return TranscriptResult(
-            text=result["text"].strip(),
+            text=text,
             language=result.get("language"),
             detector_name=self.name,
             detector_version=self.version,

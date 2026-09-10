@@ -70,6 +70,7 @@ class SqliteHistoryStore:
                 {
                     "name": c.name,
                     "raw_score": c.raw_score,
+                    "smoothed_score": c.smoothed_score,
                     "weight_configured": c.weight_configured,
                     "weight_effective": c.weight_effective,
                     "contribution": c.contribution,
@@ -203,6 +204,12 @@ def _row_to_fused_score(row: tuple) -> FusedScore:
         ComponentContribution(
             name=c["name"],
             raw_score=c["raw_score"],
+            # .get(), not [] — real rows saved before 2026-09-10 (this
+            # field's introduction) won't have this key at all; None here
+            # matches "abstained with no history" exactly, which is a
+            # reasonable, honest read for pre-existing history rows that
+            # genuinely never computed a per-component smoothed value.
+            smoothed_score=c.get("smoothed_score"),
             weight_configured=c["weight_configured"],
             weight_effective=c["weight_effective"],
             contribution=c["contribution"],

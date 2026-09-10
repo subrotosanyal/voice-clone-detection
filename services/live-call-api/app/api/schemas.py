@@ -28,6 +28,7 @@ class CallContext(BaseModel):
 class ComponentContributionOut(BaseModel):
     name: str
     raw_score: Optional[float]
+    smoothed_score: Optional[float]
     weight_configured: float
     weight_effective: float
     contribution: float
@@ -85,6 +86,7 @@ class FusedScoreOut(BaseModel):
                 ComponentContributionOut(
                     name=c.name,
                     raw_score=c.raw_score,
+                    smoothed_score=c.smoothed_score,
                     weight_configured=c.weight_configured,
                     weight_effective=c.weight_effective,
                     contribution=c.contribution,

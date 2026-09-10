@@ -1,16 +1,43 @@
 """WeightedSumFusion — the default risk formula.
 
-    fused = sum(weight_effective[i] * score[i]) for every non-abstaining
-            detector i, where weight_effective renormalises the configured
-            weights of the detectors that DID produce a score, so they
-            always sum to 1.0 — an abstained signal never silently drags
-            the score toward zero.
+    fused = sum(weight_effective[i] * smoothed_score[i]) for every
+            component that has EVER produced a score this session, where
+            weight_effective renormalises the configured weights of the
+            components that currently HAVE a usable value, so they
+            always sum to 1.0 — a component with no value yet never
+            silently drags the score toward zero.
 
-Then: EMA-smoothed across the session's windows, banded per the
-configured thresholds. Every number in the returned FusedScore is derived
-only from `results`, `previous_smoothed_score`, and `config` — nothing
-hidden, nothing time-dependent — so re-running fuse() with the same three
-inputs always reproduces the same FusedScore.
+Then: banded per the configured thresholds. Every number in the returned
+FusedScore is derived only from `results`, `previous_component_smoothed`,
+and `config` — nothing hidden, nothing time-dependent — so re-running
+fuse() with the same three inputs always reproduces the same FusedScore.
+
+PER-COMPONENT EMA, added 2026-09-10 (real bug this fixes — reported by a
+user testing a real ~53s movie-dialogue clip through the dashboard):
+smoothing used to happen ONLY on the final combined number
+(`smoothed_score_0_100`) — each component's own `raw_score` was always
+just that single window's instantaneous reading, and a component that
+abstained for one window dropped OUT of the weighted sum entirely for
+that window (its configured weight renormalised away across whoever
+else was still active), even if it had scored confidently on every
+prior window. For a real per-window dashboard display, this meant
+"what does this detector currently think" was answered by whichever
+window happened to be showing — often the LAST one, which for a short
+trailing clip can be an unrepresentative near-silent tail (see
+acoustic_aasist.py's and prosody_parselmouth.py's own REAL BUG notes on
+exactly that failure mode). Fixed by moving the EMA to each component
+individually: a component that scores this window updates its own
+smoothed value (`alpha * raw + (1-alpha) * previous`, or just `raw` on
+its first-ever score); a component that abstains this window CARRIES
+FORWARD its last smoothed value unchanged, rather than vanishing. The
+fused `smoothed_score_0_100` (the number that actually determines
+`band`/`recommended_action`) is now the weighted combination of these
+per-component smoothed values directly — i.e. each component's own
+displayed number genuinely IS what fed the formula, not a separate,
+disconnected instantaneous reading. `raw_score_0_100` is kept, unchanged
+in meaning, as the "this window alone, before any smoothing" figure —
+still useful for seeing an instantaneous spike, just no longer what
+drives the recommended action.
 
 To change the formula itself (different smoothing, non-linear combination,
 a learned meta-model), write a new class against FusionPort and point
@@ -19,13 +46,13 @@ a learned meta-model), write a new class against FusionPort and point
 """
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from app.domain.models import Band, ComponentContribution, DetectorResult, FusedScore
 
 
 class WeightedSumFusion:
-    version = "0.1.0"
+    version = "0.2.0"
 
     def fuse(
         self,
@@ -33,7 +60,7 @@ class WeightedSumFusion:
         seq: int,
         window_start_ms: int,
         results: list[DetectorResult],
-        previous_smoothed_score: Optional[float],
+        previous_component_smoothed: dict[str, float],
         config: dict[str, Any],
     ) -> FusedScore:
         detector_entries = config["detectors"]
@@ -56,16 +83,42 @@ class WeightedSumFusion:
         ]
         configured_weight_sum = sum(w for _, _, w in active) or 1.0
 
-        non_abstained_weight = sum(w for r, _, w in active if r.score is not None)
-        renorm_factor = (1.0 / non_abstained_weight) if non_abstained_weight > 0 else 0.0
+        smoothing_alpha = float(config["fusion"].get("smoothing_alpha", 0.35))
+
+        # --- this window's raw (unsmoothed) combination — unchanged from
+        # before 2026-09-10, still "what did just this instant say" -------
+        raw_active_weight = sum(w for r, _, w in active if r.score is not None)
+        raw_renorm_factor = (1.0 / raw_active_weight) if raw_active_weight > 0 else 0.0
+        raw_score = sum(
+            (w * raw_renorm_factor) * r.score for r, _, w in active if r.score is not None
+        )
+        raw_score_0_100 = round(raw_score * 100, 2)
+
+        # --- per-component smoothed values (EMA, carried forward across
+        # abstains) — this is the NEW state that actually drives the fused
+        # smoothed_score_0_100 below ----------------------------------------
+        component_smoothed: dict[str, float] = {}
+        for result, config_name, _ in active:
+            previous = previous_component_smoothed.get(config_name)
+            if result.score is not None:
+                component_smoothed[config_name] = (
+                    result.score if previous is None else smoothing_alpha * result.score + (1 - smoothing_alpha) * previous
+                )
+            elif previous is not None:
+                component_smoothed[config_name] = previous  # abstained this window — carry forward, don't drop out
+            # else: never scored yet this session AND abstaining now — stays absent (no key)
+
+        usable_weight = sum(w for _, config_name, w in active if config_name in component_smoothed)
+        smoothed_renorm_factor = (1.0 / usable_weight) if usable_weight > 0 else 0.0
 
         components: list[ComponentContribution] = []
-        raw_score = 0.0
+        smoothed_total = 0.0
         for result, config_name, configured_weight in active:
-            abstained = result.score is None
-            weight_effective = 0.0 if abstained else configured_weight * renorm_factor
-            contribution = 0.0 if abstained else weight_effective * result.score
-            raw_score += contribution
+            smoothed_value = component_smoothed.get(config_name)
+            has_value = smoothed_value is not None
+            weight_effective = (configured_weight * smoothed_renorm_factor) if has_value else 0.0
+            contribution = (weight_effective * smoothed_value) if has_value else 0.0
+            smoothed_total += contribution
             components.append(
                 ComponentContribution(
                     # `name` is the stable config-entry name (what you'd set
@@ -75,10 +128,11 @@ class WeightedSumFusion:
                     # exact code that produced it.
                     name=config_name,
                     raw_score=result.score,
+                    smoothed_score=smoothed_value,
                     weight_configured=configured_weight / configured_weight_sum,
                     weight_effective=weight_effective,
                     contribution=contribution,
-                    abstained=abstained,
+                    abstained=result.score is None,
                     detail={
                         "detector_name": result.detector_name,
                         "detector_version": result.detector_version,
@@ -88,15 +142,7 @@ class WeightedSumFusion:
                 )
             )
 
-        raw_score_0_100 = round(raw_score * 100, 2)
-
-        smoothing_alpha = float(config["fusion"].get("smoothing_alpha", 0.35))
-        if previous_smoothed_score is None:
-            smoothed_score_0_100 = raw_score_0_100
-        else:
-            smoothed_score_0_100 = round(
-                smoothing_alpha * raw_score_0_100 + (1 - smoothing_alpha) * previous_smoothed_score, 2
-            )
+        smoothed_score_0_100 = round(smoothed_total * 100, 2)
 
         bands_cfg = config["bands"]
         if smoothed_score_0_100 <= bands_cfg["low_max"]:

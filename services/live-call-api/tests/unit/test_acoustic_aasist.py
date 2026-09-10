@@ -40,6 +40,51 @@ def test_abstains_on_near_silence(aasist_checkpoint):
     assert result.abstain_reason is not None
 
 
+def test_abstains_on_the_clearest_near_silence_case(aasist_checkpoint):
+    """Regression test for a real bug found 2026-09-09/10 (see this
+    module's own REAL BUG note): the OLD default floor_rms (1e-4) only
+    caught literal digital silence, letting quiet-but-not-silent windows
+    — like a short clip's trailing fade-out — through to the model,
+    which then confidently mis-scored them instead of abstaining. This
+    rms (~0.004) matches the clearest observed failure case (a
+    Chatterbox clip's trailing window, rms 0.0026-0.0034) — comfortably
+    below the current 0.01 default, unlike the 0.01-0.03 band a SECOND
+    real investigation (2026-09-10, see the REAL BUG note's follow-up)
+    showed is genuinely ambiguous, not reliably wrong."""
+    detector = AasistAcousticDetector(checkpoint_path=aasist_checkpoint)
+    rng = np.random.default_rng(5)
+    quiet_tail = rng.normal(0, 0.004, SR * 2).astype(np.float32)
+
+    result = detector.score(_window(quiet_tail), context={})
+
+    assert result.score is None
+    assert result.abstain_reason is not None
+
+
+def test_does_not_over_abstain_on_real_genuine_quiet_speech(aasist_checkpoint):
+    """Regression test for a real bug found 2026-09-10, via a real genuine
+    Movie-MUSNOMIX clip (39 windows, rms 0.0038-0.029 throughout — never
+    once crossing the THEN-current 0.03 floor_rms): raising floor_rms
+    after only checking its effect on SPOOF audio (the fix above) turned
+    out to ALSO gate out genuine audio in the same RMS range — verified
+    by hand that AASIST, if not gated, correctly scored that real clip's
+    quiet windows at 0.000-0.020 spoof-probability (correctly bonafide),
+    not wrong the way the spoof-side investigation found. The same RMS
+    band is unreliable on spoof but RELIABLE on genuine — floor_rms alone
+    can't cleanly separate "trustworthy" from "not" in that band, so it
+    was lowered back to 0.01 rather than left at 0.03. This uses a real
+    RMS from that investigation (0.02) that must NOT abstain at the
+    current default."""
+    detector = AasistAcousticDetector(checkpoint_path=aasist_checkpoint)
+    rng = np.random.default_rng(6)
+    quiet_but_real = rng.normal(0, 0.02, SR * 2).astype(np.float32)
+
+    result = detector.score(_window(quiet_but_real), context={})
+
+    assert result.score is not None
+    assert result.abstain_reason is None
+
+
 def test_scores_real_audio_and_returns_full_breakdown(aasist_checkpoint):
     detector = AasistAcousticDetector(checkpoint_path=aasist_checkpoint)
     rng = np.random.default_rng(0)

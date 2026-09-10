@@ -144,6 +144,111 @@ def test_falls_back_to_empty_transcript_instead_of_crashing_on_model_failure(tra
     assert result.language is None
 
 
+def test_discards_a_degenerate_repetition_loop_transcript(transcriber, monkeypatch):
+    """Regression test for a real bug found 2026-09-10, via real Movie-
+    MUSNOMIX movie-dialogue clips fed through the deployed dashboard: on
+    hard audio, greedy decoding (temperature=0.0, see this module's
+    REPRODUCIBILITY FIX note) can lock into a repetition loop
+    ("तो तो तो तो..." repeated 30+ times, observed verbatim) that Whisper's
+    own model is confident about (a real clip measured avg_logprob -0.16)
+    even though it's nonsense — and that nonsense then fed Intent's
+    zero-shot classifier, which scored it 96% "creating urgency", a
+    fabricated signal from garbage text. Whisper's own compression_ratio
+    metric (already computed per segment regardless of temperature mode)
+    catches this cleanly: the real degenerate clip measured 21.71, a
+    real correctly-transcribed clip from the same corpus measured 1.40 —
+    this test pins the discard behavior at that threshold with a fake
+    model, no real audio needed."""
+    monkeypatch.setattr(
+        transcriber._model,
+        "transcribe",
+        lambda *a, **k: {
+            "text": " तो तो तो तो तो तो तो तो तो",
+            "language": "hi",
+            "segments": [
+                {
+                    "text": " तो तो तो तो तो तो तो तो तो",
+                    "compression_ratio": 21.71,
+                    "avg_logprob": -0.16,
+                    "no_speech_prob": 0.02,
+                }
+            ],
+        },
+    )
+    loud_enough = np.random.default_rng(0).uniform(-0.5, 0.5, size=SR).astype(np.float32)
+
+    result = transcriber.transcribe(loud_enough, SR)
+
+    assert result.text == ""
+
+
+def test_keeps_good_segments_and_drops_only_the_degenerate_one(transcriber, monkeypatch):
+    """Regression test for a real bug found 2026-09-10, the same day as
+    the fix above: the FIRST version discarded the WHOLE transcript if
+    ANY segment exceeded the compression_ratio threshold — wrong for a
+    real 52.9s movie-dialogue clip that was genuinely mostly-coherent
+    Hindi speech (11 segments) with ONE brief glitch in a single segment
+    (a repeated-diacritic artifact, "जाँँँँँँँ", compression_ratio 2.83
+    vs. the 2.4 threshold): that all-or-nothing check threw away the
+    other 10 good segments too, silently blinding Intent/semantic-risk on
+    a call that actually had real, usable transcript content. This test
+    reproduces the shape of that failure with 3 segments (2 good, 1
+    degenerate) and asserts only the degenerate one is dropped."""
+    monkeypatch.setattr(
+        transcriber._model,
+        "transcribe",
+        lambda *a, **k: {
+            "text": "मेरा गोला हार गया जाँँँँँँँ तुमारे मावी मागने से क्या होता है",
+            "language": "hi",
+            "segments": [
+                {"text": "मेरा गोला हार गया ", "compression_ratio": 1.9, "avg_logprob": -0.3, "no_speech_prob": 0.01},
+                {"text": "जाँँँँँँँ ", "compression_ratio": 2.83, "avg_logprob": -0.2, "no_speech_prob": 0.02},
+                {
+                    "text": "तुमारे मावी मागने से क्या होता है",
+                    "compression_ratio": 1.7,
+                    "avg_logprob": -0.4,
+                    "no_speech_prob": 0.01,
+                },
+            ],
+        },
+    )
+    loud_enough = np.random.default_rng(0).uniform(-0.5, 0.5, size=SR).astype(np.float32)
+
+    result = transcriber.transcribe(loud_enough, SR)
+
+    assert "मेरा गोला हार गया" in result.text
+    assert "तुमारे मावी मागने से क्या होता है" in result.text
+    assert "जाँँँँँँँ" not in result.text
+
+
+def test_keeps_a_normal_transcript_with_a_low_compression_ratio(transcriber, monkeypatch):
+    """The other half of the fix above: a real, non-degenerate transcript
+    (compression_ratio well under Whisper's own 2.4 default threshold —
+    1.40 measured on a real correctly-transcribed clip) must still pass
+    through untouched, not get discarded by an over-eager check."""
+    monkeypatch.setattr(
+        transcriber._model,
+        "transcribe",
+        lambda *a, **k: {
+            "text": "निक्केई पिनेंसिल ताइम्स की मुल कम्पनी भी है",
+            "language": "hi",
+            "segments": [
+                {
+                    "text": "निक्केई पिनेंसिल ताइम्स की मुल कम्पनी भी है",
+                    "compression_ratio": 1.40,
+                    "avg_logprob": -0.51,
+                    "no_speech_prob": 0.01,
+                }
+            ],
+        },
+    )
+    loud_enough = np.random.default_rng(0).uniform(-0.5, 0.5, size=SR).astype(np.float32)
+
+    result = transcriber.transcribe(loud_enough, SR)
+
+    assert result.text == "निक्केई पिनेंसिल ताइम्स की मुल कम्पनी भी है"
+
+
 def test_repeated_calls_on_non_speech_audio_are_deterministic(transcriber):
     """Regression test for a real intermittent bug found 2026-09-08: without
     a fixed temperature, Whisper's default fallback-to-sampling behaviour on

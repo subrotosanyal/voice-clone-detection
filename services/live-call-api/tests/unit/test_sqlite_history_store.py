@@ -17,6 +17,7 @@ def _fused(session_id: str, seq: int, score: float, band: Band = Band.LOW) -> Fu
             ComponentContribution(
                 name="acoustic",
                 raw_score=0.1,
+                smoothed_score=0.1,
                 weight_configured=0.6,
                 weight_effective=0.6,
                 contribution=0.06,
@@ -26,6 +27,7 @@ def _fused(session_id: str, seq: int, score: float, band: Band = Band.LOW) -> Fu
             ComponentContribution(
                 name="prosodic",
                 raw_score=None,
+                smoothed_score=None,
                 weight_configured=0.2,
                 weight_effective=0.0,
                 contribution=0.0,
@@ -52,6 +54,7 @@ def test_save_and_get_session_round_trips_everything(tmp_path):
     assert prosodic.raw_score is None
     acoustic = next(c for c in trace[0].components if c.name == "acoustic")
     assert acoustic.detail == {"spectral_flatness": 0.1}
+    assert acoustic.smoothed_score == 0.1  # the new per-component aggregate round-trips too
 
 
 def test_get_unknown_session_returns_empty_list(tmp_path):

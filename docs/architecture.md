@@ -628,10 +628,16 @@ and what's still missing (scope there is English + Hindi only, for now).
 The result is now wired into this detector itself, not just measured
 offline — `config/risk_formula.yaml`'s `finetuned_out_layer_path` param
 swaps in a small, in-house-produced recalibration of AASIST's final
-layer, cutting the false-positive rate on real, held-out Hindi speech
-from 75% to 20% (see `docs/risk-model.md`, "Hindi recalibration", and
-every score's `detail.hindi_finetuned_out_layer` flag for whether it was
-active). It also has no exposure
+layer. Updated 2026-09-09 to train on a much larger, more diverse corpus
+(1423 genuine / 340 spoof, up from 200/40): EER 36.1% (before) -> 12.0%
+(trained-on) -> 19.5% held out on BOTH the speaker/utterance and
+synthesis-system dimensions at once (see `docs/risk-model.md`, "Hindi
+recalibration", and every score's `detail.hindi_finetuned_out_layer`
+flag for whether it was active). Also fixed 2026-09-10: quiet trailing
+windows (a short clip's natural fade-out) used to be confidently
+mis-scored instead of abstained (`floor_rms` raised 0.0001 -> 0.03) —
+see that same doc section for the real per-window trace that surfaced
+it. It also has no exposure
 to non-speech audio: our own synthetic test fixtures (a sine tone, white
 noise — see `scripts/gen_test_audio.py`) both score as ~99.99% "not
 bonafide", because neither one is real speech to begin with. That's the
@@ -650,24 +656,32 @@ download quick run (see the comment right above that entry in the file).
 swappable back in via config, but is no longer the default — see "The
 prosodic detector: Parselmouth" below.
 
-## The prosodic detector: Parselmouth
+## The prosodic detector: Parselmouth, trained classifier on top
 
-`app/adapters/detectors/prosody_parselmouth.py` (`ParselmouthProsodyDetector`)
-replaced `prosody_pitch_variance.py` as the default `prosodic` class in
-`config/risk_formula.yaml` (the old one is still there, swappable back in
-via the comment above that config entry, for a Praat-free run). It computes
-jitter, shimmer, and harmonics-to-noise ratio via Parselmouth (the official
-Praat Python binding, GPLv3) — the same validated acoustic-phonetic
-algorithms used in clinical voice-quality research, a meaningfully more
-validated *front end* than the previous autocorrelation coefficient-of-
-variation estimate.
+`app/adapters/detectors/prosody_parselmouth.py` computes jitter, shimmer,
+and harmonics-to-noise ratio via Parselmouth (the official Praat Python
+binding, GPLv3) — the same validated acoustic-phonetic algorithms used in
+clinical voice-quality research. The module holds two classes:
+`ParselmouthProsodyDetector` (the original hand-tuned heuristic — three
+independent thresholds, `_JITTER_FLOOR`/`_SHIMMER_FLOOR`/`_HNR_CEILING`)
+and, as of 2026-09-09, `ParselmouthProsodyMLDetector` (a logistic
+regression over the same three features) — the default `prosodic` class
+in `config/risk_formula.yaml` is now the latter (the old heuristic class
+and `prosody_pitch_variance.py`, the pre-Parselmouth autocorrelation
+heuristic, are both still there, swappable back in via the comments
+above that config entry).
 
-**Honesty note**: the jitter/shimmer/HNR features themselves are real and
-Praat-validated; the risk-score MAPPING built on top of them
-(`_JITTER_FLOOR`/`_SHIMMER_FLOOR`/`_HNR_CEILING` in the module) is still an
-unvalidated heuristic hypothesis ("unnaturally smooth voice = suspicious"),
-not a trained classifier — same caveat class as everywhere else in this
-repo that says so.
+**Honesty note, updated 2026-09-09**: the jitter/shimmer/HNR features
+themselves are real and Praat-validated. `ParselmouthProsodyDetector`'s
+three-threshold heuristic was finally validated against 1423 genuine +
+340 spoof Hindi examples and scored exactly 50% balanced accuracy —
+chance level — it never fires against real audio (see
+`eval/indian_language/README.md`'s "Prosodic detector calibration"
+section). `ParselmouthProsodyMLDetector`, the class actually deployed
+now, reaches 82.5% balanced accuracy on genuinely held-out data — a
+real, substantial improvement, though still a 3-feature classifier
+validated on a calibration-scale (140-example) held-out set, not a large
+benchmark.
 
 ## What's not built yet
 
@@ -683,24 +697,28 @@ repo that says so.
   there is deliberately **English and Hindi only, for now** — Marathi and
   Malvi were dropped as required deliverables (see the scope note in
   `eval/indian_language/README.md`). The pipeline itself is built and has
-  run end to end (`eval/indian_language/`): real, license-verified CC BY
-  4.0 Hindi genuine speech, real XTTS-v2-cloned Hindi spoof audio, and an
-  actual fine-tune of AASIST's final layer — **17.75% → 3.0% EER** on the
-  trained-on synthesis system (XTTS-v2), plus a SECOND, genuinely held-out
-  synthesis system never used in training (Resemble AI's Chatterbox)
-  confirming this generalises rather than just memorising XTTS-v2:
-  **17.75% → 10.25% EER** held-out. What's still missing: the English
-  baseline above, and more held-out spoof volume (currently 40 examples,
-  a calibration-scale sample, not yet a statistically solid one). See
-  `eval/indian_language/README.md`.
+  run end to end (`eval/indian_language/`): real, license-verified genuine
+  Hindi speech (IndicTTS-Hindi + Kathbath + Movie-MUSNOMIX + 100 local
+  speakers, 1423 total as of 2026-09-09) and real spoof audio (XTTS-v2 +
+  per-speaker clones, 340 total), and an actual fine-tune of AASIST's
+  final layer — **36.1% → 12.0% EER** on the trained-on synthesis system,
+  plus **36.1% → 19.5% EER held out on BOTH the speaker/utterance AND
+  synthesis-system dimensions at once** (never-seen local-speaker test
+  clips x Resemble AI's Chatterbox, never used in training) — the most
+  rigorous check available, confirming this generalises rather than just
+  memorising the trained-on data. What's still missing: the English
+  baseline above, and more held-out spoof volume (currently 40 Chatterbox
+  examples, a calibration-scale sample, not yet a statistically solid
+  one). See `eval/indian_language/README.md`'s "2026-09-09 update".
 - The mock banking approval flow (the dashboard UI itself is built —
   see above).
 - Calibrated risk thresholds for voiceprint consistency, diarization
-  clustering (both file-upload and live), the Parselmouth prosodic
-  mapping, and the semantic-risk LLM's own risk mapping (`max(urgency_
-  level, flags_present / 3)`) — all real signal-processing/model
-  pipelines with honestly-documented placeholder heuristic score
-  mappings, not yet tuned against a labeled dataset.
+  clustering (both file-upload and live), and the semantic-risk LLM's own
+  risk mapping (`max(urgency_level, flags_present / 3)`) — all real
+  signal-processing/model pipelines with honestly-documented placeholder
+  heuristic score mappings, not yet tuned against a labeled dataset. The
+  Parselmouth prosodic mapping is the one exception, as of 2026-09-09 —
+  see "The prosodic detector" above.
 
 None of this changes the shape of `services/live-call-api/app/` — each
 item above is a new adapter (or a new service) behind an existing or new
