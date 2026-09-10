@@ -1,0 +1,13 @@
+{
+  "name": "Satya-Vani — Live Call Risk",
+  "short_name": "Satya-Vani",
+  "description": "Live voice-clone risk detection for phone calls.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f3f4ef",
+  "theme_color": "#0f6e6a",
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/apple-touch-icon.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
