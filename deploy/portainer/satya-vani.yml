@@ -75,14 +75,32 @@ services:
       HISTORY_DB_PATH: data/sessions.db
       LOG_LEVEL: INFO
     volumes:
-      # Config tracks whatever the git-stack clone has checked out — editing
-      # risk_formula.yaml and redeploying is enough to try a new formula,
-      # same as the local read-only mount.
-      - ../../services/live-call-api/config:/app/config:ro
       # Session history AND enrolled voiceprints (both SQLite, under this
       # one directory) — must survive `pull_policy: build` recreating the
       # container on every redeploy, so this is a real host-backed volume,
       # not a path relative to the (disposable) git clone.
+      #
+      # REAL ISSUE found on Unraid/Portainer: there used to be a second bind
+      # mount here for config (`../../services/live-call-api/config:
+      # /app/config:ro`), matching docker-compose.yml's own local mount. On
+      # a Portainer Git-repository stack, that relative host path is
+      # resolved by whatever process actually runs `docker compose up` —
+      # Portainer's own container, working from ITS OWN internal clone of
+      # this repo, not the true host filesystem the way a plain `docker
+      # compose up` run from an SSH shell would. When the resolved absolute
+      # path doesn't exist on the real host, Docker silently creates an
+      # empty directory there and bind-mounts THAT over `/app/config` —
+      # shadowing the `config/risk_formula.yaml` the Dockerfile already
+      # bakes into the image (`COPY config ./config`), with no error until
+      # the app's own startup code tries to open the now-missing file
+      # (`FileNotFoundError: 'config/risk_formula.yaml'`). Same root cause
+      # as the hf_token secret issue above — a path in this file resolved
+      # from Portainer's own vantage point, not the true host's. Dropping
+      # the mount and relying purely on the image's baked-in config avoids
+      # it entirely; the cost is that tuning risk_formula.yaml now needs a
+      # git push + redeploy instead of an in-place edit + restart, which
+      # this stack already requires for any other change anyway
+      # (`pull_policy: build`).
       - satya-vani-data:/app/data
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
