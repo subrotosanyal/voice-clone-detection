@@ -75,11 +75,27 @@ async def score_file(
     # it once here means every score_call below — whole-call and every
     # per-speaker one — shares the same transcript instead of each
     # re-running ASR from scratch.
+    #
+    # REAL BUG found 2026-09-10: `if transcript_result.text:` guarding the
+    # write below meant an EMPTY transcript (real speech genuinely wasn't
+    # found — e.g. non-speech/synthetic audio, or silence) never set the
+    # `transcript` key at all, so it looked identical to "never attempted"
+    # to every downstream guard checking it — this method's own re-check,
+    # PLUS engine.py's score_call() re-checking the SAME thing for the
+    # whole-call score AND for every per-speaker score_call() under
+    # diarize=true. A 2-speaker call with an empty transcript ran
+    # transcription 1 (here) + 1 (whole-call) + 2 (one per speaker) = 4
+    # times, not once (see test_diarized_multi_speaker_call_transcribes_
+    # only_once). Always recording the attempt — context_dict["transcript"]
+    # = transcript_result.text, even "" — fixes it; transcript_source/
+    # transcript_language still only get set when text is non-empty, so
+    # FusedScore.transcript_source/transcript_language stay correctly None
+    # when no speech was found (see that dataclass's own documented
+    # contract, unchanged).
     transcriber = request.app.state.engine.transcriber
-    if transcriber is not None and not context_dict.get("transcript"):
+    if transcriber is not None and "transcript" not in context_dict:
         transcript_result = await run_in_threadpool(transcriber.transcribe, samples, sample_rate)
-        if transcript_result.text:
-            context_dict["transcript"] = transcript_result.text
+        context_dict["transcript"] = transcript_result.text
 
     # Same one-time-per-call reasoning as transcription above: this is
     # enabled by default (config/risk_formula.yaml's `intent` detector —

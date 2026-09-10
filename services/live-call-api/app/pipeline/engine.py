@@ -315,7 +315,7 @@ class Engine:
         """
         self.sessions.reset(session_id)
 
-        if self.transcriber is not None and not context.get("transcript"):
+        if self.transcriber is not None and "transcript" not in context:
             transcript_result = self.transcriber.transcribe(samples, sample_rate)
             logger.info(
                 "transcript_computed",
@@ -324,10 +324,27 @@ class Engine:
                 language=transcript_result.language,
                 transcript_length=len(transcript_result.text),
             )
+            # REAL BUG found 2026-09-10: this guard used to be `not
+            # context.get("transcript")`, with "transcript" only ever
+            # written `if transcript_result.text:` below — so an EMPTY
+            # transcript (real speech genuinely wasn't found, e.g. non-
+            # speech/synthetic audio, or silence) looked identical to
+            # "never attempted" to this same guard on the NEXT
+            # score_call() sharing this context — which is exactly what
+            # happens once per detected speaker under diarize=true (see
+            # diarize_and_score() below). http_router.py's own
+            # pre-computation has the matching fix and the full account of
+            # the resulting 1+1+N transcription count (see
+            # test_diarized_multi_speaker_call_transcribes_only_once).
+            # Always recording the attempt fixes it; transcript_source/
+            # transcript_language are still only merged in when text is
+            # non-empty, so FusedScore.transcript_source/transcript_language
+            # stay correctly None when no speech was found (see that
+            # dataclass's own documented contract, unchanged).
+            context = {**context, "transcript": transcript_result.text}
             if transcript_result.text:
                 context = {
                     **context,
-                    "transcript": transcript_result.text,
                     "transcript_language": transcript_result.language,
                     # Which transcriber actually produced this transcript —
                     # see FusedScore's own docstring note (2026-09-10) for
