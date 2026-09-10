@@ -74,6 +74,47 @@ def _build_diarizer(config: dict[str, Any]) -> DiarizerPort | None:
     return cls(**diarization_cfg.get("params", {}))
 
 
+_ROUTING_TRANSCRIBER_CLASS = "app.adapters.transcription.routing_transcriber:RoutingTranscriber"
+
+
+def _build_transcriber_entry(entry: dict[str, Any]) -> TranscriberPort:
+    """Builds one `transcription:`/`live_transcription:` config entry.
+    Shared by _build_transcriber and _build_live_transcriber below since
+    both sections have the same shape and both need the same
+    RoutingTranscriber special-case: that class composes two ALREADY-BUILT
+    TranscriberPort adapters rather than doing its own dotted-path
+    loading (see its own SCOPE NOTE for why) — same reasoning as
+    _build_detector's `third_signal` special-case just above, which
+    builds ThirdSignalRouter's two sub-detectors before constructing it.
+    A plain (non-routing) entry behaves exactly as before this existed:
+    `class` gets loaded and called with `params` directly."""
+    params = dict(entry.get("params", {}))
+
+    if entry["class"] == _ROUTING_TRANSCRIBER_CLASS:
+        indic_cls = _load_class(params.pop("indic_class"))
+        fallback_cls = _load_class(params.pop("fallback_class"))
+        indic_transcriber = indic_cls(**params.pop("indic_params", {}))
+        fallback_transcriber = fallback_cls(**params.pop("fallback_params", {}))
+        # Optional third sub-adapter, only needed when fallback_transcriber
+        # itself can't do cheap language ID (e.g. WhisperLiveTranscriber on
+        # the live path, which has no local model) — see
+        # routing_transcriber.py's own REAL GAP note for why this exists
+        # and RoutingTranscriber.__init__'s own check for what happens if
+        # it's needed but omitted.
+        lid_class_path = params.pop("lid_class", None)
+        lid_transcriber = _load_class(lid_class_path)(**params.pop("lid_params", {})) if lid_class_path else None
+        cls = _load_class(entry["class"])
+        return cls(
+            indic_transcriber=indic_transcriber,
+            fallback_transcriber=fallback_transcriber,
+            lid_transcriber=lid_transcriber,
+            **params,
+        )
+
+    cls = _load_class(entry["class"])
+    return cls(**params)
+
+
 def _build_transcriber(config: dict[str, Any]) -> TranscriberPort | None:
     """Transcription is optional, same reasoning as diarization above — no
     `transcription:` section means Engine.score_call() just never sets
@@ -83,8 +124,7 @@ def _build_transcriber(config: dict[str, Any]) -> TranscriberPort | None:
     transcription_cfg = config.get("transcription")
     if transcription_cfg is None:
         return None
-    cls = _load_class(transcription_cfg["class"])
-    return cls(**transcription_cfg.get("params", {}))
+    return _build_transcriber_entry(transcription_cfg)
 
 
 def _build_live_transcriber(config: dict[str, Any]) -> TranscriberPort | None:
@@ -105,8 +145,7 @@ def _build_live_transcriber(config: dict[str, Any]) -> TranscriberPort | None:
     live_transcription_cfg = config.get("live_transcription")
     if live_transcription_cfg is None:
         return None
-    cls = _load_class(live_transcription_cfg["class"])
-    return cls(**live_transcription_cfg.get("params", {}))
+    return _build_transcriber_entry(live_transcription_cfg)
 
 
 def _build_intent_classifier(config: dict[str, Any]) -> IntentClassifierPort | None:

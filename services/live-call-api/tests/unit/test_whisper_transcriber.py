@@ -83,6 +83,38 @@ def test_transcribes_real_speech_and_detects_language(transcriber, spoken_urgenc
     assert "urgent" in lowered or "immediately" in lowered
 
 
+def test_detect_language_on_real_english_speech(transcriber, spoken_urgency_wav):
+    """routing_transcriber.py's whole design depends on this being cheap
+    AND correct — verified here against the same real spoken fixture
+    test_transcribes_real_speech_and_detects_language above already
+    confirms full transcribe() detects as "en"."""
+    lang = transcriber.detect_language(spoken_urgency_wav, SR)
+    assert lang == "en"
+
+
+def test_detect_language_returns_none_on_empty_audio(transcriber):
+    lang = transcriber.detect_language(np.array([], dtype=np.float32), SR)
+    assert lang is None
+
+
+def test_detect_language_never_raises_on_failure(transcriber, monkeypatch):
+    """Same 'abstain, don't crash' discipline as transcribe()'s own
+    model-failure test above — routing_transcriber.py must never see an
+    exception propagate out of the cheap LID step it depends on."""
+    import whisper
+
+    monkeypatch.setattr(
+        whisper,
+        "detect_language",
+        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("encoder forward pass failed")),
+    )
+    speech_length = np.random.default_rng(0).uniform(-0.5, 0.5, size=SR * 2).astype(np.float32)
+
+    lang = transcriber.detect_language(speech_length, SR)
+
+    assert lang is None
+
+
 def test_result_carries_detector_identity(transcriber):
     silence = np.zeros(SR * 2, dtype=np.float32)
     result = transcriber.transcribe(silence, SR)

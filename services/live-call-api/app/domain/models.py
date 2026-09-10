@@ -104,9 +104,22 @@ class FusedScore:
     Every field here is either a direct input or something reproducibly
     derived from those inputs plus the config in risk_formula.yaml — nothing
     here is computed off any state that isn't itself in `components` or
-    `formula_version`. The one exception is `live_speaker` (see its own
-    docstring): it doesn't feed the formula at all, purely informational.
-    """
+    `formula_version`. The exceptions are `live_speaker` (see its own
+    docstring) and `transcript_source`/`transcript_language` below: none of
+    these feed the formula at all, purely informational.
+
+    `transcript_source`/`transcript_language` — added 2026-09-10 after a
+    real question ("how do I know if Whisper or vexyl-stt was used?") that
+    the answer, until this, was "grep the logs" — a real transparency gap
+    for a project whose whole point is explainable scoring. `transcript_source`
+    is the transcriber's own `detector_name` (e.g. "vexyl_stt_transcriber"
+    or "whisper_transcriber" — see app/adapters/transcription/
+    routing_transcriber.py for how a single call can end up at either
+    one), `transcript_language` is the language it detected. Both None
+    when no transcriber is configured, no speech was found, or a session
+    is read back from history (see SqliteHistoryStore — deliberately not
+    persisted there, same choice already made for `live_speaker`, to avoid
+    a schema migration for two purely-informational fields)."""
 
     session_id: str
     seq: int
@@ -119,6 +132,8 @@ class FusedScore:
     components: list[ComponentContribution]
     recommended_action: str
     live_speaker: Optional[LiveSpeakerInfo] = None
+    transcript_source: Optional[str] = None
+    transcript_language: Optional[str] = None
 
 
 @dataclass(frozen=True)

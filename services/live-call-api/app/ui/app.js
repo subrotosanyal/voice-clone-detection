@@ -15,6 +15,16 @@ const COMPONENT_LABEL = {
   phase_incoherence: "Phase coherence",
   semantic_risk: "Semantic risk (local LLM)",
 };
+// Friendly names for FusedScoreOut.transcript_source (a transcriber's own
+// `detector_name` — see routing_transcriber.py for how a single call can
+// end up at either one). Falls back to the raw value for anything not
+// listed here, so a future transcriber never renders as blank.
+const TRANSCRIBER_LABEL = {
+  whisper_transcriber: "Whisper",
+  vexyl_stt_transcriber: "VEXYL-STT (Indic)",
+  whisperlive_transcriber: "WhisperLive",
+  routing_transcriber: "Routing",
+};
 const GAUGE_CIRCUMFERENCE = 2 * Math.PI * 62;
 
 // ---------- help tooltips — plain-language explanations for jargon in the UI ----------
@@ -180,6 +190,7 @@ function helpIcon(text) {
 let traceScores = []; // rolling [0-100] OVERALL fused scores for the current session/analysis, drives the chart
 let traceComponents = {}; // { [detectorName]: (number|null)[] } — each detector's own smoothed_score*100 per window, same index alignment as traceScores; null where that detector had no value yet (never scored, no history to carry forward)
 let traceTimestamps = []; // window_start_ms per point, same index alignment as traceScores — drives the x-axis
+let traceSignal = []; // (number|null)[] — raw audio-energy intensity per window (see extractSignalIntensityPct below), same index alignment as traceScores. A diagnostic aid, not a risk signal: lets a viewer tell "there was no signal here" apart from "there was signal but nothing was flagged", for both the live-mic and file-upload paths (this same rendering function serves both).
 let chartFactorEnabled = {}; // { [detectorName]: boolean } — chart-legend toggle state, defaults to true the first time a name is seen; persists across re-analyses in this page session
 let lastConfig = null; // most recent /v1/config response, cached so other UI text (e.g. the analysing message) can name the actual configured detectors instead of a hardcoded, driftable list
 
@@ -205,6 +216,36 @@ function componentChartColor(name) {
   if (COMPONENT_CHART_COLOR[name]) return COMPONENT_CHART_COLOR[name];
   const idx = Object.keys(COMPONENT_CHART_COLOR).length % COMPONENT_CHART_FALLBACK_COLORS.length;
   return COMPONENT_CHART_FALLBACK_COLORS[idx];
+}
+const SIGNAL_CHART_COLOR = "#8a97a8"; // deliberately neutral/slate — reads as "diagnostic", not a risk-factor color
+
+// Reuses whichever component's own `detail.rms` is already present (every
+// one of these computes the SAME window's RMS as part of its own scoring
+// — see e.g. acoustic_aasist.py's floor_rms abstain check) rather than
+// asking the backend for a new field: no API change needed for this.
+// Preferred order just picks the first one this fusion config happens to
+// have active; any of them carries the same rms value for a given window.
+const SIGNAL_RMS_SOURCE_ORDER = ["acoustic", "prosodic", "perth_watermark", "phase_incoherence"];
+function extractSignalIntensityPct(components) {
+  for (const name of SIGNAL_RMS_SOURCE_ORDER) {
+    const c = components.find((c) => c.name === name);
+    const rms = c && c.detail && typeof c.detail.rms === "number" ? c.detail.rms : null;
+    if (rms !== null) return rmsToIntensityPct(rms);
+  }
+  return null;
+}
+
+// dB-relative-to-full-scale mapping, not linear: real observed RMS spans
+// roughly two orders of magnitude between "near-silent" (~0.002-0.01) and
+// "clearly present speech" (~0.02-0.1+) — a linear 0-1 scale would
+// compress nearly everything into the bottom few percent, defeating the
+// whole point of a visual "is there signal here" indicator. Clamped
+// range chosen to match those observed values: -60dBFS -> 0%,
+// -10dBFS -> 100%.
+function rmsToIntensityPct(rms) {
+  const db = 20 * Math.log10(Math.max(rms, 1e-6));
+  const pct = ((db + 60) / 50) * 100;
+  return Math.max(0, Math.min(100, pct));
 }
 
 // ---------- "How this score is calculated" modal ----------
@@ -382,6 +423,7 @@ function resetResults() {
   traceScores = [];
   traceComponents = {};
   traceTimestamps = [];
+  traceSignal = [];
   document.getElementById("resultsEmpty").style.display = "flex";
   document.getElementById("results").classList.remove("show");
   document.getElementById("speakersSection").style.display = "none";
@@ -454,6 +496,7 @@ function resetResultsKeepSpeakers() {
   traceScores = [];
   traceComponents = {};
   traceTimestamps = [];
+  traceSignal = [];
   document.getElementById("resultsEmpty").style.display = "none";
 }
 
@@ -479,6 +522,18 @@ function renderFusedScore(fs) {
   if (BAND_HELP[band]) actionBand.appendChild(helpIcon(BAND_HELP[band]));
   actionBand.className = "action-band " + band;
   document.getElementById("actionText").textContent = fs.recommended_action;
+
+  // transcript_source/transcript_language — added 2026-09-10 so "which
+  // transcriber handled this call" is visible here, not just in logs
+  // (see FusedScore's own docstring for the full account).
+  const sourceNote = document.getElementById("transcriptSourceNote");
+  if (fs.transcript_source) {
+    const label = TRANSCRIBER_LABEL[fs.transcript_source] || fs.transcript_source;
+    sourceNote.textContent = `Transcription: ${label}${fs.transcript_language ? ` (detected: ${fs.transcript_language})` : ""}`;
+    sourceNote.style.display = "";
+  } else {
+    sourceNote.style.display = "none";
+  }
 
   const compEl = document.getElementById("components");
   compEl.innerHTML = "";
@@ -512,7 +567,8 @@ function renderFusedScore(fs) {
 
   traceScores.push(score);
   traceTimestamps.push(fs.window_start_ms);
-  if (traceScores.length > 80) { traceScores.shift(); traceTimestamps.shift(); } // cap for live mode so the chart stays readable
+  traceSignal.push(extractSignalIntensityPct(fs.components));
+  if (traceScores.length > 80) { traceScores.shift(); traceTimestamps.shift(); traceSignal.shift(); } // cap for live mode so the chart stays readable
   fs.components.forEach((c) => {
     if (!(c.name in traceComponents)) traceComponents[c.name] = [];
     if (!(c.name in chartFactorEnabled)) chartFactorEnabled[c.name] = true; // default on, first time this factor is seen
@@ -540,6 +596,16 @@ function renderChartLegend() {
     drawTraceChart();
   });
   el.appendChild(overallChip);
+
+  const signalChip = document.createElement("button");
+  signalChip.className = "chip" + (chartFactorEnabled["__signal__"] === false ? " off" : "");
+  signalChip.innerHTML = `<span class="dot" style="background:${SIGNAL_CHART_COLOR}"></span>Signal intensity`;
+  signalChip.addEventListener("click", () => {
+    chartFactorEnabled["__signal__"] = chartFactorEnabled["__signal__"] === false ? true : false;
+    renderChartLegend();
+    drawTraceChart();
+  });
+  el.appendChild(signalChip);
 
   Object.keys(traceComponents).forEach((name) => {
     const chip = document.createElement("button");
@@ -600,6 +666,14 @@ function drawTraceChart() {
   const h = CHART_H, pad = CHART_TOP_PAD, leftPad = CHART_LEFT_PAD, rightEdge = CHART_W - CHART_RIGHT_PAD;
 
   let linesHtml = "";
+  // Signal intensity drawn FIRST (bottom-most, behind everything else) —
+  // it's a diagnostic reference, not a risk factor competing for
+  // attention with the score lines above it.
+  if (chartFactorEnabled["__signal__"] !== false) {
+    seriesToPolylines(traceSignal, stepX, h, pad, leftPad).forEach((run) => {
+      linesHtml += `<polyline points="${run.join(" ")}" fill="none" stroke="${SIGNAL_CHART_COLOR}" stroke-width="1.5" stroke-dasharray="4 3" stroke-linejoin="round" stroke-linecap="round" opacity="0.7"/>`;
+    });
+  }
   Object.keys(traceComponents).forEach((name) => {
     if (!chartFactorEnabled[name]) return;
     seriesToPolylines(traceComponents[name], stepX, h, pad, leftPad).forEach((run) => {
@@ -684,6 +758,13 @@ function showHoverAt(idx, clientX, clientY) {
     dotsHtml += `<circle cx="${x.toFixed(1)}" cy="${yFor(v).toFixed(1)}" r="3" fill="${componentChartColor(name)}"/>`;
     rows += `<div class="tt-row"><span class="dot" style="background:${componentChartColor(name)}"></span>${COMPONENT_LABEL[name] || name}: ${Math.round(v)}%</div>`;
   });
+  if (chartFactorEnabled["__signal__"] !== false) {
+    const v = traceSignal[idx];
+    if (v !== null && v !== undefined) {
+      dotsHtml += `<circle cx="${x.toFixed(1)}" cy="${yFor(v).toFixed(1)}" r="3" fill="${SIGNAL_CHART_COLOR}"/>`;
+      rows += `<div class="tt-row"><span class="dot" style="background:${SIGNAL_CHART_COLOR}"></span>Signal intensity: ${Math.round(v)}%</div>`;
+    }
+  }
   layer.innerHTML = dotsHtml;
 
   const tooltip = document.getElementById("chartTooltip");
@@ -858,6 +939,15 @@ let windowSeq = 0;
 let sessionStartMs = 0;
 let levelRAF = null;
 
+// Opt-in full-session recording (separate from sampleChunks above, which
+// is capped/trimmed for the rolling-window use case — this one is never
+// trimmed, only gated by the checkbox, and exists purely so the user can
+// download what was actually captured). See encodeWav() below.
+let recordFullSession = false;
+let recordedChunks = [];
+const recordCheckbox = document.getElementById("recordMicCheckbox");
+const micRecordingDownload = document.getElementById("micRecordingDownload");
+
 const WINDOW_MS = 2000, HOP_MS = 500; // mirrors config/risk_formula.yaml defaults
 
 micBtn.addEventListener("click", () => { isRecording ? stopMic() : startMic(); });
@@ -896,6 +986,15 @@ async function startMic() {
   windowSeq = 0;
   sessionStartMs = performance.now();
 
+  recordFullSession = !!(recordCheckbox && recordCheckbox.checked);
+  recordedChunks = [];
+  if (micRecordingDownload) {
+    // Release the previous session's recording (if any) before replacing it.
+    if (micRecordingDownload.href) URL.revokeObjectURL(micRecordingDownload.href);
+    micRecordingDownload.removeAttribute("href");
+    micRecordingDownload.style.display = "none";
+  }
+
   audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   const source = audioCtx.createMediaStreamSource(mediaStream);
 
@@ -926,6 +1025,8 @@ async function startMic() {
     sampleChunks.push(new Float32Array(input));
     totalSamples += input.length;
     samplesSinceLastEmit += input.length;
+
+    if (recordFullSession) recordedChunks.push(new Float32Array(input)); // never trimmed — see its own declaration comment
 
     const hopSamples = Math.round(audioCtx.sampleRate * (HOP_MS / 1000));
     const windowSamples = Math.round(audioCtx.sampleRate * (WINDOW_MS / 1000));
@@ -989,11 +1090,64 @@ function stopMic() {
   micStatus.textContent = "Click to start — your browser will ask for microphone permission.";
   levelBar.style.width = "0%";
   if (levelRAF) cancelAnimationFrame(levelRAF);
+  const sampleRateForRecording = audioCtx ? audioCtx.sampleRate : null;
   if (processorNode) { processorNode.disconnect(); processorNode.onaudioprocess = null; }
   if (analyserNode) analyserNode.disconnect();
   if (audioCtx) audioCtx.close();
   if (mediaStream) mediaStream.getTracks().forEach((t) => t.stop());
   if (ws && ws.readyState === WebSocket.OPEN) ws.close();
+
+  if (recordFullSession && recordedChunks.length && sampleRateForRecording && micRecordingDownload) {
+    const blob = encodeWav(recordedChunks, sampleRateForRecording);
+    micRecordingDownload.href = URL.createObjectURL(blob);
+    micRecordingDownload.style.display = "";
+  }
+  recordFullSession = false;
+  recordedChunks = [];
+}
+
+// Encodes raw float32 PCM chunks (as captured from Web Audio's
+// ScriptProcessorNode above) into a standard 16-bit-PCM mono WAV file —
+// no server round-trip, no library: just a 44-byte RIFF/WAVE/fmt/data
+// header written directly into an ArrayBuffer ahead of the sample data.
+// Kept entirely client-side since this is a convenience download of
+// exactly what the browser already captured, not a new server capability.
+function encodeWav(float32Chunks, sampleRate) {
+  const totalLen = float32Chunks.reduce((sum, c) => sum + c.length, 0);
+  const pcm16 = new Int16Array(totalLen);
+  let offset = 0;
+  for (const chunk of float32Chunks) {
+    for (let i = 0; i < chunk.length; i++) {
+      const clamped = Math.max(-1, Math.min(1, chunk[i]));
+      pcm16[offset++] = clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff;
+    }
+  }
+
+  const bytesPerSample = 2, numChannels = 1;
+  const blockAlign = numChannels * bytesPerSample;
+  const byteRate = sampleRate * blockAlign;
+  const dataSize = pcm16.length * bytesPerSample;
+  const buffer = new ArrayBuffer(44 + dataSize);
+  const view = new DataView(buffer);
+
+  const writeStr = (offset, str) => { for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i)); };
+  writeStr(0, "RIFF");
+  view.setUint32(4, 36 + dataSize, true);
+  writeStr(8, "WAVE");
+  writeStr(12, "fmt ");
+  view.setUint32(16, 16, true);       // fmt chunk size
+  view.setUint16(20, 1, true);        // PCM format
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, byteRate, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, bytesPerSample * 8, true); // bits per sample
+  writeStr(36, "data");
+  view.setUint32(40, dataSize, true);
+
+  for (let i = 0; i < pcm16.length; i++) view.setInt16(44 + i * 2, pcm16[i], true);
+
+  return new Blob([buffer], { type: "audio/wav" });
 }
 
 // ---------- history tab ----------

@@ -61,6 +61,12 @@ services:
       # other best-effort adapter here) if it isn't reachable yet on the
       # first live-mic session right after `docker compose up`.
       - whisper-live
+      # Same reasoning, now that config/risk_formula.yaml's
+      # `transcription:`/`live_transcription:` route Indic-language
+      # calls here (2026-09-10) — routing_transcriber.py already
+      # degrades to the Whisper fallback path if vexyl-stt isn't
+      # reachable yet, same "abstain, don't break the call" discipline.
+      - vexyl-stt
 
   # Real-time transcription backend for the LIVE WebSocket path only
   # (see app/adapters/transcription/whisperlive_transcriber.py and
@@ -94,6 +100,33 @@ services:
     platform: linux/amd64
     ports:
       - "9090:9090"
+    restart: unless-stopped
+
+  # Indic-language transcription sidecar — vexyl-ai/vexyl-stt (Apache
+  # 2.0), wrapping the GATED ai4bharat/indic-conformer-600m-multilingual
+  # model. ACTIVE as of 2026-09-10: config/risk_formula.yaml's
+  # `transcription:`/`live_transcription:` now both point at
+  # RoutingTranscriber, which sends Hindi/Marathi/etc. calls here (more
+  # accurate AND faster than Whisper on real audio — see
+  # app/adapters/transcription/vexyl_stt_transcriber.py's own WHY note)
+  # and everything else (English, an undetected language) to Whisper —
+  # see routing_transcriber.py's own docstring for why a plain swap
+  # would have been wrong (this model silently mangles English into
+  # Malayalam-script gibberish, verified by hand).
+  #
+  # REAL EXTRA STEP vs. every other model this project fetches: building
+  # this image needs YOUR OWN HuggingFace account to have requested and
+  # been granted access to the gated model first (a free, one-time
+  # click-through — see services/vexyl-stt/fetch_model.py's own
+  # docstring) — `docker compose build`/`up --build` fails outright
+  # otherwise, no anonymous fallback.
+  vexyl-stt:
+    build:
+      context: ./services/vexyl-stt
+      secrets:
+        - hf_token
+    ports:
+      - "8091:8091"
     restart: unless-stopped
 
   # Central logging: every container's stdout is already JSON (see

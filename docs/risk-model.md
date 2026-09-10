@@ -353,6 +353,59 @@ now checks this itself (Whisper's own default threshold, 2.4) and
 discards the whole transcript if any segment exceeds it, rather than
 retrying at a higher (non-deterministic) temperature.
 
+**Indic-language transcription now routed to vexyl-stt, ACTIVE
+(2026-09-10)**: `app/adapters/transcription/vexyl_stt_transcriber.py`
+wraps vexyl-ai/vexyl-stt (Apache 2.0), a WebSocket STT server around the
+GATED ai4bharat/indic-conformer-600m-multilingual model. Evaluated by
+hand against the previous Whisper-only setup on 4 real Hindi/Marathi
+files plus 2 synthesized English/Hinglish clips: on real Hindi/Marathi
+audio it was both more accurate (Whisper had real word-level errors on
+the same clips; this didn't) and 6-20x faster on CPU (CTC decoding — a
+single forward pass, structurally immune to the repetition-loop failure
+mode documented above). But it only supports 14 Indian languages and
+silently mis-transcribes anything else (English audio came back
+phonetically transliterated into MALAYALAM script, no error, no abstain —
+verified by hand). `app/adapters/transcription/routing_transcriber.py`
+fixes that: a cheap Whisper language-ID pass (one encoder forward pass,
+not a full decode) gates every call to whichever transcriber actually
+handles that language correctly — English/undetected-language calls
+still go to Whisper, verified by hand on all three cases (Hindi, English,
+Hinglish) against the real deployed services, not just unit tests.
+`formula_version` bumped 2026.09.15 -> 2026.09.16 for this switch (it
+changes what transcript-derived detectors see for the same audio).
+`config/risk_formula.yaml` keeps the previous plain-Whisper config
+commented out, and `docker-compose.yml`'s `vexyl-stt` sidecar now starts
+by default alongside `whisper-live`. Caveat: this evaluation was on a
+handful of real/synthesized clips, not a formal benchmark, and building
+the sidecar image needs YOUR OWN HuggingFace account granted access to
+the gated model first — see `services/vexyl-stt/fetch_model.py`'s
+docstring.
+
+**Real regression found and reverted, same day (2026-09-10) — live-mic
+path only**: hours after the switch above, a real user report ("the
+score graph stops updating after 5-7 seconds") plus vexyl-stt's own
+server-side errors ("Failed to transcribe audio chunk") during an actual
+live-mic session, then reproduced by hand with a WS-streaming diagnostic
+script: per-window responses fell 9-13s behind real time by the end of a
+~17s test session — a growing backlog, not a one-off glitch. Root cause:
+on the LIVE path specifically (not file-upload), RoutingTranscriber added
+two real costs the architecture wasn't built to absorb at real-time
+cadence — a THIRD in-process Whisper model (`lid_transcriber`) running a
+forward pass every ~4s, competing for the same CPU/thread pool as
+AASIST/Parselmouth/ECAPA on the per-window path (exactly the contention
+WhisperLive was originally built to eliminate); and VexylSttTranscriber
+opening a brand-new WebSocket connection to vexyl-stt every ~4s cycle,
+which vexyl-stt visibly could not keep up with under real streaming
+load. `config/risk_formula.yaml`'s `live_transcription:` reverted to
+plain `WhisperLiveTranscriber` (formula_version 2026.09.16 -> 2026.09.17);
+`transcription:` (file-upload, one transcription per whole call, no
+real-time constraint) is unaffected by either cost and stays on
+RoutingTranscriber. Not re-enabling live routing without first fixing
+both costs — at minimum, caching the language-ID decision once per
+session instead of every window, and/or a persistent vexyl-stt
+connection per live session instead of one per transcription cycle;
+neither is implemented.
+
 **Authority-claim detection and the combined-pressure rule (added
 2026-09-08)**: `urgency_language.py` also scans for a third category —
 the caller asserting they're a bank, police, or government official

@@ -208,6 +208,22 @@ class LiveTranscriptionBuffer:
             logger.exception("live_transcription_failed")
             return
         if not result.text:
+            # Real gap found and fixed 2026-09-10, during the WhisperLive
+            # early-disconnect investigation (see whisperlive_transcriber.py's
+            # own REAL BUG note): an empty result here used to return
+            # silently, indistinguishable in the logs from "this cycle
+            # never even ran" — the exact ambiguity that made diagnosing
+            # a real live-mic report ("no transcript ever appears") take
+            # much longer than it should have. Logged at INFO, not a
+            # warning: a cycle producing no speech is a completely normal
+            # outcome (silence, or — on a slow/cold backend — simply not
+            # enough wall-clock time for a result to arrive yet), not a
+            # failure.
+            logger.info(
+                "live_transcript_empty",
+                detector_name=result.detector_name,
+                duration_s=round(len(samples) / sample_rate, 2),
+            )
             return
 
         logger.info(

@@ -17,6 +17,7 @@ DetectorPort — nothing else here needs to change.
 from __future__ import annotations
 
 import concurrent.futures
+import dataclasses
 from typing import Any, Iterable, Optional
 
 import numpy as np
@@ -216,6 +217,17 @@ class Engine:
             previous_component_smoothed=previous,
             config=self.pipeline.config,
         )
+        # Purely informational, doesn't touch the fusion math — see
+        # FusedScore's own docstring note on transcript_source/
+        # transcript_language for why this exists. FusionPort.fuse() never
+        # needs to know about transcription at all; this just enriches the
+        # result it already returned with what score_call() put in context.
+        if "transcript_source" in context or "transcript_language" in context:
+            fused = dataclasses.replace(
+                fused,
+                transcript_source=context.get("transcript_source"),
+                transcript_language=context.get("transcript_language"),
+            )
         self.sessions.update(
             window.session_id,
             {c.name: c.smoothed_score for c in fused.components if c.smoothed_score is not None},
@@ -317,6 +329,12 @@ class Engine:
                     **context,
                     "transcript": transcript_result.text,
                     "transcript_language": transcript_result.language,
+                    # Which transcriber actually produced this transcript —
+                    # see FusedScore's own docstring note (2026-09-10) for
+                    # why this exists: which of Whisper/vexyl-stt handled a
+                    # given call (see routing_transcriber.py) was previously
+                    # only visible by grepping logs.
+                    "transcript_source": transcript_result.detector_name,
                 }
 
         if (

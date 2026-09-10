@@ -12,7 +12,7 @@
 # every log line so a score can always be tied back to the exact config
 # that produced it (see docs/risk-model.md, "Reproducibility").
 
-formula_version: "2026.09.15"
+formula_version: "2026.09.17"
 
 detectors:
   # Real pretrained countermeasure (AASIST, ASVspoof2019 LA, MIT licensed —
@@ -222,11 +222,38 @@ diarization:
 # signal (app/adapters/detectors/contextual_rules.py). Omit this whole
 # section to disable transcription entirely; the contextual detector still
 # works from manually-supplied urgency_keywords/is_financial_request.
+# ACTIVE as of 2026-09-10 — RoutingTranscriber, not plain Whisper: see
+# app/adapters/transcription/routing_transcriber.py's own docstring.
+# Evaluated by hand: vexyl-stt's indic-conformer model was both MORE
+# ACCURATE and 6-20x FASTER than Whisper on real Hindi/Marathi audio, but
+# silently produces garbage on English (mis-routes to Malayalam, no
+# error) — RoutingTranscriber gates on a cheap language-ID pass so
+# English still goes to Whisper. Needs docker-compose.yml's `vexyl-stt`
+# sidecar running; routing degrades to the Whisper fallback path if it
+# isn't reachable (same "abstain, don't break the call" discipline as
+# every other best-effort adapter here).
 transcription:
-  class: app.adapters.transcription.whisper_transcriber:WhisperTranscriber
+  class: app.adapters.transcription.routing_transcriber:RoutingTranscriber
   params:
-    model_size: small  # "base" was tested and found unreliable for Hindi — see whisper_transcriber.py
-    floor_rms: 0.0001
+    indic_class: app.adapters.transcription.vexyl_stt_transcriber:VexylSttTranscriber
+    indic_params:
+      host: vexyl-stt  # docker-compose.yml's sidecar service name
+      port: 8091
+    fallback_class: app.adapters.transcription.whisper_transcriber:WhisperTranscriber
+    fallback_params:
+      model_size: small  # "base" was tested and found unreliable for Hindi — see whisper_transcriber.py
+      floor_rms: 0.0001
+
+# PREVIOUS default, not active — plain Whisper only, no Indic routing.
+# Revert to this (and live_transcription: below's own equivalent) by
+# commenting out the RoutingTranscriber block above and uncommenting
+# this one, if vexyl-stt ever needs to be pulled out of the stack.
+#
+# transcription:
+#   class: app.adapters.transcription.whisper_transcriber:WhisperTranscriber
+#   params:
+#     model_size: small
+#     floor_rms: 0.0001
 
 # The LIVE WebSocket path's OWN transcriber — separate from
 # `transcription:` above, which stays local Whisper for POST
@@ -245,13 +272,55 @@ transcription:
 # longer competes for the same CPU/thread pool. Omit this whole section
 # to disable it; app/api/ws_router.py then falls back to `transcription:`
 # above for the live path too (today's pre-WhisperLive behaviour).
+# REVERTED 2026-09-10, hours after switching this on — REAL REGRESSION,
+# found via direct user report ("graph stops updating after 5-7s") plus
+# vexyl-stt's own server-side errors ("Failed to transcribe audio chunk")
+# during a real live-mic session, then reproduced by hand with a
+# WS-streaming diagnostic script: per-window responses fell 9-13s behind
+# real time by the end of a ~17s session, a growing backlog, not a
+# one-off glitch. Root cause, not guessed: on the LIVE path specifically,
+# RoutingTranscriber added TWO real costs the architecture wasn't built
+# to absorb at real-time cadence — (1) `lid_transcriber` runs a THIRD
+# in-process Whisper model's forward pass every ~4s, competing for the
+# same CPU/thread pool as AASIST/Parselmouth/ECAPA on the per-window
+# path (exactly the contention WhisperLive was originally built to
+# eliminate — see that module's own docstring); (2) VexylSttTranscriber
+# opens a brand-new WS connection to vexyl-stt every ~4s cycle (by
+# design — see its own "one connection per call" note), and vexyl-stt
+# visibly could not keep up with that churn under real streaming load.
+# `transcription:` above (file-upload, ONE transcription per whole call,
+# no real-time constraint) is UNAFFECTED by either cost and stays on
+# RoutingTranscriber — this revert is scoped to the live path only.
 live_transcription:
   class: app.adapters.transcription.whisperlive_transcriber:WhisperLiveTranscriber
   params:
     host: whisper-live  # docker-compose.yml's sidecar service name
     port: 9090
-    model: small  # matches transcription:'s model_size — same verified Hindi/Marathi minimum
+    model: small  # matches transcription:'s fallback model_size — same verified Hindi/Marathi minimum
     use_vad: true
+
+# The RoutingTranscriber config this reverted FROM — do not re-enable
+# without first fixing the two real costs the note above documents (at
+# minimum: cache the language-ID decision once per session instead of
+# every ~4s window, and/or keep a persistent vexyl-stt connection per
+# live session instead of one per transcription cycle).
+#
+# live_transcription:
+#   class: app.adapters.transcription.routing_transcriber:RoutingTranscriber
+#   params:
+#     indic_class: app.adapters.transcription.vexyl_stt_transcriber:VexylSttTranscriber
+#     indic_params:
+#       host: vexyl-stt
+#       port: 8091
+#     fallback_class: app.adapters.transcription.whisperlive_transcriber:WhisperLiveTranscriber
+#     fallback_params:
+#       host: whisper-live
+#       port: 9090
+#       model: small
+#       use_vad: true
+#     lid_class: app.adapters.transcription.whisper_transcriber:WhisperTranscriber
+#     lid_params:
+#       model_size: small
 
 # Feeds the `intent` detector above once per call, same "compute once,
 # read many times" pattern as transcription — see Engine.score_call()'s

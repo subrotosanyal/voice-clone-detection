@@ -176,6 +176,84 @@ def test_empty_samples_abstain_without_connecting(transcriber, monkeypatch):
     assert result.text == ""
 
 
+def test_captures_segments_even_when_disconnect_never_arrives(transcriber, monkeypatch):
+    """Regression test for the REAL BUG this module's own docstring
+    documents (2026-09-10): the real collabora/whisper-live server closes
+    the connection almost immediately after END_OF_AUDIO WITHOUT ever
+    sending a DISCONNECT message in the normal (non-timeout) case — the
+    old code, which only stopped collecting on DISCONNECT or a full
+    result_timeout_s of silence AFTER sending END_OF_AUDIO, got nothing
+    in this exact scenario. No _disconnect() in this script at all —
+    matching the real server's actual behaviour, not the old assumption."""
+    connect_fn, ws = _fake_connect([_server_ready(), _language("hi"), _segments("namaste")])
+    monkeypatch.setattr(wl_module, "connect", connect_fn)
+    samples = np.random.default_rng(0).uniform(-0.5, 0.5, size=SR).astype(np.float32)
+
+    result = transcriber.transcribe(samples, SR)
+
+    assert result.text == "namaste"
+    assert result.language == "hi"
+
+
+def test_end_of_audio_is_sent_after_segments_are_collected_not_before(transcriber, monkeypatch):
+    """The actual fix: END_OF_AUDIO must be the LAST thing sent, after
+    whatever segments arrive — sending it first is what let the real
+    server's connection-close race lose the result (see this module's
+    own REAL BUG note)."""
+    connect_fn, ws = _fake_connect([_server_ready(), _segments("please transfer the money")])
+    monkeypatch.setattr(wl_module, "connect", connect_fn)
+    samples = np.random.default_rng(0).uniform(-0.5, 0.5, size=SR).astype(np.float32)
+
+    result = transcriber.transcribe(samples, SR)
+
+    assert result.text == "please transfer the money"
+    assert ws.sent[-1] == b"END_OF_AUDIO"
+
+
+def test_a_failed_end_of_audio_send_does_not_lose_an_already_collected_result(transcriber, monkeypatch):
+    """The connection can legitimately already be gone (server-side
+    closed) by the time we try to send END_OF_AUDIO, now that it's sent
+    LAST — that send failing must not raise past transcribe() or discard
+    whatever was already collected."""
+    connect_fn, ws = _fake_connect([_server_ready(), _segments("ok")])
+    monkeypatch.setattr(wl_module, "connect", connect_fn)
+    real_send = ws.send
+
+    def _send_that_fails_on_eof(data):
+        if data == b"END_OF_AUDIO":
+            raise ConnectionError("connection already closed by server")
+        real_send(data)
+
+    ws.send = _send_that_fails_on_eof
+    samples = np.random.default_rng(0).uniform(-0.5, 0.5, size=SR).astype(np.float32)
+
+    result = transcriber.transcribe(samples, SR)
+
+    assert result.text == "ok"
+
+
+def test_stops_collecting_promptly_once_the_scripted_queue_runs_dry(transcriber, monkeypatch):
+    """Guards against the bounded-deadline collection loop turning into a
+    busy-wait for the full result_timeout_s (20s default) once there's
+    nothing left to read — would make every test using this fixture slow
+    without this. A fake connection's recv() raises immediately (no real
+    delay) once its queue is empty, so this should return well under a
+    second if the loop exits on the first empty read rather than retrying
+    until a real wall-clock deadline elapses."""
+    import time
+
+    connect_fn, ws = _fake_connect([_server_ready(), _segments("done")])
+    monkeypatch.setattr(wl_module, "connect", connect_fn)
+    samples = np.random.default_rng(0).uniform(-0.5, 0.5, size=SR).astype(np.float32)
+
+    start = time.monotonic()
+    result = transcriber.transcribe(samples, SR)
+    elapsed = time.monotonic() - start
+
+    assert result.text == "done"
+    assert elapsed < 2.0, f"took {elapsed:.2f}s — collection loop may be busy-waiting instead of exiting promptly"
+
+
 def test_resamples_non_16k_audio_before_sending(transcriber, monkeypatch):
     """Confirms the resample path runs (real scipy resample_poly, no
     mock) rather than sending audio at the wrong sample rate — the

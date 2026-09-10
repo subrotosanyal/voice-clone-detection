@@ -70,6 +70,15 @@ class FusedScoreOut(BaseModel):
     # fusion". One level deep only (never itself carries a speaker_score);
     # the whole-call score above always reflects the mixed/whole audio.
     speaker_score: Optional["FusedScoreOut"] = None
+    # Which transcriber actually produced this call's transcript (e.g.
+    # "vexyl_stt_transcriber" or "whisper_transcriber" — see
+    # routing_transcriber.py for how a single call can end up at either)
+    # and the language it detected. Purely informational, same as
+    # live_speaker above — see FusedScore's own docstring for why. None
+    # when no transcriber is configured, no speech was found, or this
+    # FusedScore was read back from history (not persisted there).
+    transcript_source: Optional[str] = None
+    transcript_language: Optional[str] = None
 
     @classmethod
     def from_domain(cls, fused: FusedScore, speaker_score: Optional["FusedScoreOut"] = None) -> "FusedScoreOut":
@@ -98,6 +107,8 @@ class FusedScoreOut(BaseModel):
             recommended_action=fused.recommended_action,
             live_speaker=LiveSpeakerInfoOut.from_domain(fused.live_speaker) if fused.live_speaker else None,
             speaker_score=speaker_score,
+            transcript_source=fused.transcript_source,
+            transcript_language=fused.transcript_language,
         )
 
 

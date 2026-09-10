@@ -154,6 +154,7 @@ from __future__ import annotations
 
 import threading
 from math import gcd
+from typing import Optional
 
 import numpy as np
 
@@ -275,6 +276,37 @@ class WhisperTranscriber:
             detector_name=self.name,
             detector_version=self.version,
         )
+
+    def detect_language(self, samples: np.ndarray, sample_rate: int) -> Optional[str]:
+        """Cheap language ID only — ONE encoder forward pass, no
+        autoregressive decoding — for app/adapters/transcription/
+        routing_transcriber.py's language-gated dispatch (see that
+        module's own docstring for why routing needs a language signal
+        BEFORE paying for a full transcription). Reuses this instance's
+        already-loaded model rather than a second one, so routing costs
+        one extra encoder pass, not a whole second Whisper instance in
+        memory.
+
+        Returns None (never raises) on empty audio or any internal
+        failure — same "abstain, don't crash" discipline as transcribe()
+        above; a caller that gets None should treat it as "unknown",
+        not as a specific language."""
+        if samples.size == 0:
+            return None
+
+        import whisper
+
+        try:
+            if sample_rate != _MODEL_SAMPLE_RATE:
+                samples = _resample(samples, sample_rate, _MODEL_SAMPLE_RATE)
+            with self._lock:
+                audio = whisper.pad_or_trim(samples.astype(np.float32))
+                mel = whisper.log_mel_spectrogram(audio, n_mels=self._model.dims.n_mels).to(self._model.device)
+                _, probs = whisper.detect_language(self._model, mel)
+            return max(probs, key=probs.get)
+        except Exception:  # noqa: BLE001 — best-effort, same as transcribe() above
+            logger.exception("whisper_language_detection_failed")
+            return None
 
 
 def _resample(samples: np.ndarray, orig_sr: int, target_sr: int) -> np.ndarray:

@@ -221,6 +221,7 @@ details.context[open] summary::before{content:"▾ ";}
 .explanation-note{font-size:11.5px; color:var(--slate); margin-top:6px; line-height:1.4;}
 .transcript-note{margin-top:8px; padding:8px 10px; border-radius:7px; background:var(--paper); border:1px solid var(--line-soft);}
 .transcript-label{font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:.05em; text-transform:uppercase; color:var(--slate-soft); margin-bottom:5px;}
+.transcript-source-note{font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--slate-soft); margin:6px 0 0;}
 .intent-breakdown{margin-top:8px; padding:8px 10px; border-radius:7px; background:var(--paper); border:1px solid var(--line-soft);}
 .intent-breakdown-label{font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:.05em; text-transform:uppercase; color:var(--slate-soft); margin-bottom:6px;}
 .intent-row{display:flex; align-items:center; gap:8px; margin-top:4px;}
@@ -440,6 +441,11 @@ footer.foot a{color:var(--slate-soft);}
               <div class="level-meter"><div id="levelBar"></div></div>
             </div>
           </div>
+          <div class="field checkbox" style="margin-top:10px;">
+            <input type="checkbox" id="recordMicCheckbox">
+            <label for="recordMicCheckbox">Record this session (download as .wav afterward)</label>
+          </div>
+          <a class="raw-toggle" id="micRecordingDownload" style="display:none; margin-top:8px;" download="live-call-recording.wav">⬇ Download recording (.wav)</a>
           <details class="context" id="ctxMic" open>
             <summary>Call details (optional — feeds the contextual signal)</summary>
             <div class="field-grid"></div>
@@ -508,6 +514,7 @@ footer.foot a{color:var(--slate-soft);}
           <div class="action-block">
             <span class="action-band" id="actionBand"></span>
             <p class="action-text" id="actionText">Run an analysis to see a recommended action here.</p>
+            <p class="transcript-source-note" id="transcriptSourceNote" style="display:none;"></p>
           </div>
         </div>
 

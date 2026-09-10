@@ -56,10 +56,49 @@ malformed server message all return an empty TranscriptResult rather
 than raising — LiveTranscriptionBuffer's own _transcribe() already
 treats an empty transcript as "nothing to report this cycle", the same
 shape as real silence.
+
+REAL BUG found and fixed 2026-09-10, via a real user report ("the
+live-mic transcript never appears") plus vexyl-stt-side connection-churn
+errors during the SAME session, which led here on closer inspection —
+traced directly in the actual collabora/whisperlive-cpu image's own
+source (not guessed), then reproduced and the fix verified by hand
+against the real running sidecar: `server.py`'s main receive loop, on
+seeing our `END_OF_AUDIO` frame, breaks immediately, calls the (no-op,
+for us) end-of-stream finalizer, then `cleanup()` + `websocket.close()`
+in a `finally` block — and `cleanup()` (`backend/base.py`) only sets an
+exit flag and an event; it never `.join()`s the background
+`trans_thread` that's still running real inference and about to call
+`self.websocket.send(...)` with the segment. That send then races
+against (or lands after) the socket already closing, which server-side
+logs as `[ERROR]: Failed to transcribe audio chunk: sent 1000 (OK);
+then received 1000 (OK)` (or `Client gone before the last segments were
+sent`) — and client-side, we get back exactly zero segments, every
+time, regardless of how patiently we wait AFTER sending END_OF_AUDIO
+(verified: even a 20s post-EOF wait finds nothing, because the socket is
+already gone within milliseconds of the server receiving END_OF_AUDIO).
+Confirmed by hand with a raw diagnostic script talking directly to the
+sidecar: waiting up to 15s BEFORE ever sending END_OF_AUDIO reliably
+produced a real segment (`" Hello, this is"`); the old code, waiting the
+same 15s but AFTER sending END_OF_AUDIO, got nothing. Fixed by
+reordering: collect whatever segments/language arrive while the
+connection is still alive on the SERVER's own terms (i.e. before we
+ever signal end-of-stream), bounded to `result_timeout_s` total, THEN
+send END_OF_AUDIO best-effort (its own send wrapped so a
+by-then-already-closing connection can't raise past this method) purely
+to end the exchange cleanly — no longer relying on anything arriving
+after it. HONESTY NOTE, not fully solved: this trades against catching
+the very LAST moment of speech in a window (whatever's said after the
+last chunk we send but before the collection deadline elapses won't be
+captured, since we don't wait for MORE audio here — that's inherent to
+this project's "whole trailing window per call" design, not new here),
+and a genuinely slow/cold model load can still eat into the same
+`result_timeout_s` budget this method now spends BEFORE learning
+anything came back at all, rather than after.
 """
 from __future__ import annotations
 
 import json
+import time
 import uuid
 from math import gcd
 from typing import Any, Optional
@@ -127,9 +166,28 @@ class WhisperLiveTranscriber:
             for offset in range(0, samples.size, _SEND_CHUNK_SAMPLES):
                 chunk = samples[offset : offset + _SEND_CHUNK_SAMPLES]
                 ws.send(chunk.tobytes())
-            ws.send(_END_OF_AUDIO)
 
-            return self._collect_result(ws)
+            # Collect BEFORE sending END_OF_AUDIO — see this module's own
+            # REAL BUG note (2026-09-10) for why: the server closes the
+            # connection almost immediately after receiving END_OF_AUDIO,
+            # without waiting for in-flight transcription to finish, so
+            # anything we'd wait for AFTER sending it is unreliable.
+            segment_texts, detected_language = self._collect_segments(ws)
+
+            try:
+                ws.send(_END_OF_AUDIO)
+            except Exception:  # noqa: BLE001 — connection may already be
+                # finishing up server-side; we already have whatever
+                # we're going to get, this send is just to end cleanly.
+                pass
+
+            text = " ".join(t.strip() for t in segment_texts if t.strip())
+            return TranscriptResult(
+                text=text,
+                language=detected_language,
+                detector_name=self.name,
+                detector_version=self.version,
+            )
 
     def _build_config_message(self) -> dict[str, Any]:
         """Every field WhisperLive's own client always sends on connect —
@@ -163,32 +221,34 @@ class WhisperLiveTranscriber:
         message = self._recv_json(ws, timeout=self.connect_timeout_s)
         return bool(message) and message.get("message") == "SERVER_READY"
 
-    def _collect_result(self, ws) -> TranscriptResult:
+    def _collect_segments(self, ws) -> tuple[list[str], Optional[str]]:
+        """Collects whatever segment/language messages arrive, bounded to
+        `result_timeout_s` TOTAL (not per-message) — a per-message budget
+        that resets on every new message could otherwise let one call run
+        far longer than intended if the server keeps streaming updates
+        steadily, which matters now that this runs BEFORE END_OF_AUDIO
+        (see this module's own REAL BUG note) rather than racing a
+        DISCONNECT that may never come at all pre-EOF."""
+        deadline = time.monotonic() + self.result_timeout_s
         segment_texts: list[str] = []
         detected_language: Optional[str] = None
 
         while True:
-            message = self._recv_json(ws, timeout=self.result_timeout_s)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            message = self._recv_json(ws, timeout=remaining)
             if message is None:
-                break  # timed out or connection closed — return what we have
-
-            if message.get("message") == "DISCONNECT":
+                break  # nothing new before the remaining budget ran out
+            if message.get("status") == "ERROR":
+                logger.warning("whisperlive_server_error", detail=message.get("message"))
                 break
             if "language" in message:
                 detected_language = message.get("language")
             if "segments" in message:
                 segment_texts = [s.get("text", "") for s in message["segments"] if s.get("text")]
-            if message.get("status") == "ERROR":
-                logger.warning("whisperlive_server_error", detail=message.get("message"))
-                break
 
-        text = " ".join(t.strip() for t in segment_texts if t.strip())
-        return TranscriptResult(
-            text=text,
-            language=detected_language,
-            detector_name=self.name,
-            detector_version=self.version,
-        )
+        return segment_texts, detected_language
 
     @staticmethod
     def _recv_json(ws, timeout: float) -> Optional[dict[str, Any]]:
