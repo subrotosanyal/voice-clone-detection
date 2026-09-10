@@ -1,0 +1,160 @@
+# Satya-Vani — Portainer stack for play.sanyal.net/satya-vani
+#
+#   ^^^ change "play.sanyal.net" below (both routers' Host(...) rule) if
+#   that isn't actually the shared domain your other stacks (life-balance,
+#   etc.) sit on — this was carried over from life-balance's own stack file
+#   since Satya-Vani is meant to hang off the same domain, path-routed.
+#
+# Deploy as a Portainer **Git repository** stack:
+#   Repository   git@github.com:subrotosanyal/voice-clone-detection.git
+#   Compose path deploy/portainer/satya-vani.yml
+#   Credentials  a deploy key or PAT with read access — the repository is
+#                private, so Portainer must authenticate to clone
+#
+# Stack environment variables (set in the Portainer UI, never committed):
+#   VOLUME_LOCATION   host path for bind mounts, as the other stacks use
+#   HF_TOKEN          optional. Needed only the FIRST time each of
+#                     live-call-api / vexyl-stt is built without it already
+#                     cached — see each Dockerfile's own HF_TOKEN note.
+#                     vexyl-stt's build fails outright without it, since
+#                     ai4bharat/indic-conformer-600m-multilingual is gated;
+#                     you must have already requested+been granted access to
+#                     it with the account this token belongs to.
+#
+# Create the bind path before the first deploy, or Docker refuses the volume:
+#   mkdir -p ${VOLUME_LOCATION}/satya-vani/data
+#
+# No Dozzle here on purpose — the server already runs one, shared across
+# every stack; every container's stdout is already JSON (see
+# app/logging_setup.py) so that existing Dozzle instance picks these up too,
+# same as any other stack's containers.
+#
+# Deliberately NOT modeled on life-balance's "no stripprefix" choice: that
+# app is a static SPA built once with its base path baked into every asset
+# URL (BASE_PATH build arg). Satya-Vani's UI/API/WebSocket code all uses
+# plain root-relative paths instead — fetch("/v1/..."), <script
+# src="/app.js">, WebSocket(`${location.host}/v1/stream/...`) (see
+# app/ui/app.js, app/main.py's static mount) — so the container must keep
+# seeing requests at its own root. The stripprefix middleware below strips
+# "/satya-vani" back off before Traefik forwards, and applies to the
+# WebSocket upgrade request the same as any other HTTP request, so the live
+# mic path needs no separate router or config.
+
+services:
+  # ---- the only container Traefik talks to -------------------------------
+  live-call-api:
+    build:
+      context: ../../services/live-call-api
+      # See docker-compose.yml's own note: read-only at build time, from
+      # the HF_TOKEN stack env var above, never written into an image layer.
+      secrets:
+        - hf_token
+    # Rebuild on redeploy. Without this, Docker standalone reuses whatever
+    # image is already on the host and a pushed fix silently never runs.
+    pull_policy: build
+    restart: always
+    environment:
+      RISK_CONFIG_PATH: config/risk_formula.yaml
+      HISTORY_DB_PATH: data/sessions.db
+      LOG_LEVEL: INFO
+    volumes:
+      # Config tracks whatever the git-stack clone has checked out — editing
+      # risk_formula.yaml and redeploying is enough to try a new formula,
+      # same as the local read-only mount.
+      - ../../services/live-call-api/config:/app/config:ro
+      # Session history AND enrolled voiceprints (both SQLite, under this
+      # one directory) — must survive `pull_policy: build` recreating the
+      # container on every redeploy, so this is a real host-backed volume,
+      # not a path relative to the (disposable) git clone.
+      - satya-vani-data:/app/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    depends_on:
+      # Start-order only, not health-gated — same reasoning as
+      # docker-compose.yml: whisper-live has no HTTP health endpoint to poll,
+      # and both whisperlive_transcriber.py and routing_transcriber.py
+      # already degrade gracefully (empty transcript / fallback path) if
+      # their sidecar isn't reachable yet on the first session right after
+      # a redeploy.
+      - whisper-live
+      - vexyl-stt
+    networks:
+      - proxy
+      - default
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=proxy"
+
+      # Public route.
+      - "traefik.http.routers.satya-vani-secure.entrypoints=websecure"
+      - "traefik.http.routers.satya-vani-secure.rule=Host(`play.sanyal.net`) && PathPrefix(`/satya-vani`)"
+      - "traefik.http.routers.satya-vani-secure.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.satya-vani-secure.service=satya-vani-service"
+      - "traefik.http.routers.satya-vani-secure.middlewares=satya-vani-stripprefix"
+
+      # LAN route, matching the pattern the other stacks use.
+      - "traefik.http.routers.satya-vani-lan-secure.entrypoints=websecure"
+      - "traefik.http.routers.satya-vani-lan-secure.rule=ClientIP(`192.168.1.0/24`) && PathPrefix(`/satya-vani`)"
+      - "traefik.http.routers.satya-vani-lan-secure.tls=true"
+      - "traefik.http.routers.satya-vani-lan-secure.service=satya-vani-service"
+      - "traefik.http.routers.satya-vani-lan-secure.middlewares=satya-vani-stripprefix"
+
+      - "traefik.http.services.satya-vani-service.loadbalancer.server.port=8000"
+
+      # Strips "/satya-vani" back off before forwarding — see the top-of-file
+      # note on why this app needs it (root-relative asset/API/WS paths),
+      # unlike life-balance's own stack.
+      - "traefik.http.middlewares.satya-vani-stripprefix.stripprefix.prefixes=/satya-vani"
+
+  # Real-time transcription backend for the LIVE WebSocket path only — see
+  # docker-compose.yml's own long-form comment for why this runs as its own
+  # container (CPU contention) and its one known limitation (first-connection
+  # model download). Not reachable from outside the stack: only
+  # live-call-api talks to it, over the default network, by service name.
+  whisper-live:
+    image: ghcr.io/collabora/whisperlive-cpu:latest
+    platform: linux/amd64
+    restart: always
+    networks:
+      - default
+
+  # Indic-language transcription sidecar — see docker-compose.yml's own
+  # comment for what it does and why it needs HF_TOKEN to build (gated
+  # model). Not reachable from outside the stack, same as whisper-live.
+  vexyl-stt:
+    build:
+      context: ../../services/vexyl-stt
+      secrets:
+        - hf_token
+    pull_policy: build
+    restart: always
+    networks:
+      - default
+
+# Nothing is published. Traefik reaches live-call-api over the proxy
+# network; whisper-live and vexyl-stt are reachable only from inside the
+# stack.
+
+networks:
+  proxy:
+    external: true
+
+volumes:
+  satya-vani-data:
+    driver: local
+    driver_opts:
+      o: bind
+      type: none
+      device: ${VOLUME_LOCATION:?set the host path used by your other stacks}/satya-vani/data
+
+# Sourced from the HF_TOKEN stack environment variable above — a
+# build-time-only BuildKit secret, mounted into individual RUN steps in each
+# Dockerfile via `--mount=type=secret,id=hf_token,env=...`, never written
+# into any image layer.
+secrets:
+  hf_token:
+    environment: HF_TOKEN
