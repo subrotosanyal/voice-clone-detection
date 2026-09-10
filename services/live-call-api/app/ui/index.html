@@ -2,13 +2,20 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Satya-Vani — Live Call Path</title>
 <!-- docs/branding/satya-vani-icon.{svg,png} — see that folder's README
      ("mark only, for favicons/app icons"); SVG for modern browsers, PNG
      fallback for the ones that don't support SVG favicons. -->
 <link rel="icon" type="image/svg+xml" href="__SATYA_VANI_BASE_PATH__/favicon.svg">
 <link rel="alternate icon" type="image/png" href="__SATYA_VANI_BASE_PATH__/favicon.png">
+<link rel="apple-touch-icon" href="__SATYA_VANI_BASE_PATH__/apple-touch-icon.png">
+<link rel="manifest" href="__SATYA_VANI_BASE_PATH__/manifest.json">
+<meta name="theme-color" content="#f3f4ef" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#12161a" media="(prefers-color-scheme: dark)">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
 <style>
 :root{
@@ -30,6 +37,7 @@
   --risk-high-tint:#f6e3e1;
   --shadow: 0 1px 2px rgba(18,22,28,.04), 0 8px 24px -12px rgba(18,22,28,.14);
   --radius: 12px;
+  --appbar-h: 56px;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark){
@@ -53,63 +61,122 @@ html,body{height:100%;}
 body{
   margin:0; background:var(--paper); color:var(--ink);
   font-family:'Public Sans', -apple-system, 'Segoe UI', sans-serif; line-height:1.5;
-  overflow-x:hidden; /* belt-and-suspenders: the min-width:0/overflow-wrap fixes
-    above should already stop content from pushing past the viewport, but this
-    keeps a stray unbreakable string from producing a page-wide horizontal
-    scrollbar instead of just being clipped inside its own card. */
+  overflow:hidden; /* the app-shell owns scrolling internally, like a native app */
 }
 h1,h2,h3{font-family:'Public Sans',sans-serif; margin:0; text-wrap:balance;}
 .mono{font-family:'IBM Plex Mono', ui-monospace, monospace;}
 button{font-family:inherit;}
 ::selection{background:var(--accent-tint); color:var(--accent-ink);}
+.sr-only{position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0;}
 
-.shell{max-width:1180px; margin:0 auto; padding:28px 24px 60px 24px;}
+/* ============ APP SHELL ============ */
+.app-shell{height:100dvh; display:flex; flex-direction:column; overflow:hidden;}
 
-header.top{display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:26px; flex-wrap:wrap;}
-.brand{display:flex; align-items:center; gap:12px;}
-.brand svg{width:38px; height:38px; flex-shrink:0;}
-.brand-text{display:flex; flex-direction:column;}
-.brand-name{font-size:19px; font-weight:700; letter-spacing:-0.01em;}
+.appbar{
+  flex:none; height:var(--appbar-h); display:flex; align-items:center; gap:10px;
+  padding:0 14px; border-bottom:1px solid var(--line); background:var(--paper-raised);
+}
+.icon-btn{
+  width:36px; height:36px; border-radius:9px; border:1px solid var(--line); background:var(--paper);
+  display:flex; align-items:center; justify-content:center; cursor:pointer; color:var(--slate); flex-shrink:0;
+  transition:border-color .12s ease, color .12s ease;
+}
+.icon-btn:hover, .icon-btn:focus-visible{border-color:var(--accent); color:var(--accent-ink);}
+.icon-btn svg{width:19px; height:19px;}
+.brand{display:flex; align-items:center; gap:9px; min-width:0;}
+.brand svg{width:28px; height:28px; flex-shrink:0;}
+.brand-name{font-size:16px; font-weight:700; letter-spacing:-0.01em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
 .brand-name .vani{color:var(--accent-ink);}
-.brand-sub{font-size:12px; color:var(--slate-soft); font-family:'IBM Plex Mono',monospace; letter-spacing:.03em;}
+.appbar-spacer{flex:1;}
 .health-chip{
   font-family:'IBM Plex Mono',monospace; font-size:11.5px; padding:5px 10px; border-radius:100px;
-  border:1px solid var(--line); color:var(--slate); display:flex; align-items:center; gap:6px;
+  border:1px solid var(--line); color:var(--slate); display:flex; align-items:center; gap:6px; flex-shrink:0;
 }
 .health-dot{width:7px; height:7px; border-radius:50%; background:var(--slate-soft);}
 .health-chip.ok .health-dot{background:var(--risk-low);}
 .health-chip.ok{color:var(--risk-low); border-color:var(--risk-low-tint); background:var(--risk-low-tint);}
+@media (max-width:520px){ .health-chip span:last-child:not(.health-dot){display:none;} }
 
-.grid{display:grid; grid-template-columns:minmax(320px,420px) 1fr; gap:22px; align-items:start;}
-@media (max-width:860px){ .grid{grid-template-columns:1fr;} }
-/* Grid items default to min-width:auto, sized to their widest UNBREAKABLE
-   content — a long space-less string (a garbled transcript, e.g.) would
-   otherwise force this column past the viewport and drag everything else
-   in it off-screen too. min-width:0 lets the column shrink to the grid
-   track instead, and overflow-wrap below then wraps that content within it. */
-.grid > *{min-width:0;}
+/* ============ BODY: DRAWER + MAIN ============ */
+.body-row{flex:1; min-height:0; display:flex; position:relative;}
+
+.backdrop{display:none; position:fixed; inset:0; background:rgba(10,12,14,.45); z-index:40;}
+
+.drawer{
+  width:242px; flex-shrink:0; background:var(--paper-raised); border-right:1px solid var(--line);
+  display:flex; flex-direction:column; overflow-y:auto;
+  transition:width .18s ease, opacity .12s ease;
+}
+.drawer-nav{padding:12px 8px; display:flex; flex-direction:column; gap:1px;}
+.drawer-section-label{
+  font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:.07em; text-transform:uppercase;
+  color:var(--slate-soft); padding:14px 12px 6px;
+}
+.drawer-section-label:first-child{padding-top:6px;}
+.drawer-nav button.tab-btn, .drawer-nav button.howitworks-btn{
+  display:flex; align-items:center; gap:11px; width:100%; text-align:left;
+  background:transparent; color:var(--slate); border:none; border-radius:8px;
+  padding:10px 12px; font-size:13.5px; font-weight:600; cursor:pointer;
+}
+.drawer-nav button svg{width:17px; height:17px; flex-shrink:0;}
+.drawer-nav button:hover{background:var(--accent-tint); color:var(--accent-ink);}
+.drawer-nav button.tab-btn.active{background:var(--accent); color:#fff;}
+.drawer-footer{
+  margin-top:auto; padding:14px 16px; border-top:1px solid var(--line);
+  font-size:11.5px; color:var(--slate-soft); display:flex; flex-direction:column; gap:8px;
+}
+.drawer-footer a{color:var(--slate-soft);}
+.drawer-footer .links{display:flex; flex-wrap:wrap; gap:4px 8px;}
+
+/* desktop/tablet: hamburger collapses the persistent rail to reclaim width */
+@media (min-width:881px){
+  .app-shell.drawer-toggled .drawer{
+    width:0; border-right-width:0; overflow:hidden; opacity:0; pointer-events:none;
+  }
+}
+
+/* mobile: hamburger opens the rail as an overlay over the content */
+@media (max-width:880px){
+  .drawer{
+    position:fixed; top:0; left:0; bottom:0; z-index:50; width:270px;
+    transform:translateX(-100%); transition:transform .2s ease; box-shadow:var(--shadow);
+  }
+  .app-shell.drawer-toggled .drawer{transform:translateX(0);}
+  .app-shell.drawer-toggled .backdrop{display:block;}
+}
+
+/* ============ MAIN: PANES ============ */
+.main{flex:1; min-width:0; display:flex; flex-direction:column; overflow:hidden;}
+.mobile-switch{display:none; flex:none; gap:8px; padding:8px 12px; border-bottom:1px solid var(--line); background:var(--paper);}
+.mobile-switch button{
+  flex:1; border:1px solid var(--line); border-radius:8px; background:var(--paper-raised);
+  color:var(--slate); font-size:12.5px; font-weight:600; padding:8px; cursor:pointer;
+}
+.mobile-switch button.active{background:var(--accent); color:#fff; border-color:var(--accent);}
+
+.panes{flex:1; min-height:0; display:grid; grid-template-columns:minmax(340px,440px) 1fr;}
+.pane{min-height:0; overflow-y:auto; padding:18px;}
+.pane-input{border-right:1px solid var(--line);}
+
+@media (max-width:880px){
+  .panes{display:block; height:100%;}
+  .pane{display:none; height:100%; flex-direction:column;}
+  .pane.active{display:flex;}
+  .pane-input{border-right:none;}
+  .mobile-switch{display:flex;}
+}
 
 .card{
   background:var(--paper-raised); border:1px solid var(--line); border-radius:var(--radius);
-  padding:22px; box-shadow:var(--shadow); overflow-wrap:break-word;
+  padding:20px; box-shadow:var(--shadow); overflow-wrap:break-word;
 }
-.card + .card{margin-top:18px;}
-.card h2{font-size:15px; margin-bottom:4px;}
 .card .hint{font-size:12.5px; color:var(--slate-soft); margin-bottom:16px;}
-
-/* tabs */
-.tabs{display:flex; gap:4px; background:var(--paper); border:1px solid var(--line); border-radius:10px; padding:4px; margin-bottom:18px;}
-.tab-btn{
-  flex:1; border:none; background:transparent; color:var(--slate); font-size:13.5px; font-weight:600;
-  padding:9px 10px; border-radius:7px; cursor:pointer; transition:background .12s ease, color .12s ease;
-}
-.tab-btn.active{background:var(--accent); color:#fff;}
 .tab-panel{display:none;}
 .tab-panel.active{display:block;}
 
 /* dropzone */
 .dropzone{
-  border:1.5px dashed var(--line); border-radius:10px; padding:26px 16px; text-align:center;
+  border:1.5px dashed var(--line); border-radius:10px; padding:24px 16px; text-align:center;
   color:var(--slate); font-size:13.5px; cursor:pointer; transition:border-color .12s ease, background .12s ease;
 }
 .dropzone:hover, .dropzone.drag{border-color:var(--accent); background:var(--accent-tint);}
@@ -119,14 +186,14 @@ header.top{display:flex; align-items:center; justify-content:space-between; gap:
 /* mic */
 .mic-row{display:flex; align-items:center; gap:14px;}
 .mic-btn{
-  width:64px; height:64px; border-radius:50%; border:none; cursor:pointer; flex-shrink:0;
+  width:60px; height:60px; border-radius:50%; border:none; cursor:pointer; flex-shrink:0;
   background:var(--accent); color:#fff; display:flex; align-items:center; justify-content:center;
   box-shadow:var(--shadow); transition:transform .1s ease;
 }
 .mic-btn:active{transform:scale(0.96);}
 .mic-btn.recording{background:var(--risk-high); animation:pulse 1.4s ease-in-out infinite;}
 @keyframes pulse{ 0%,100%{box-shadow:0 0 0 0 rgba(168,58,58,.35);} 50%{box-shadow:0 0 0 10px rgba(168,58,58,0);} }
-.mic-btn svg{width:24px; height:24px;}
+.mic-btn svg{width:23px; height:23px;}
 .mic-status{font-size:13px; color:var(--slate);}
 .mic-status .mono{color:var(--ink);}
 .level-meter{height:6px; border-radius:4px; background:var(--line-soft); overflow:hidden; margin-top:12px;}
@@ -164,9 +231,9 @@ details.context[open] summary::before{content:"▾ ";}
 /* results */
 .results-empty{
   display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center;
-  padding:70px 30px; color:var(--slate-soft); gap:10px;
+  padding:44px 24px; color:var(--slate-soft); gap:10px;
 }
-.results-empty svg{width:44px; height:44px; opacity:.5;}
+.results-empty svg{width:40px; height:40px; opacity:.5;}
 .results-empty p{margin:0; font-size:14px; max-width:36ch;}
 
 .results{display:none;}
@@ -174,7 +241,7 @@ details.context[open] summary::before{content:"▾ ";}
 
 .analysing-state{
   display:none; flex-direction:column; align-items:center; justify-content:center; text-align:center;
-  padding:70px 30px; gap:8px;
+  padding:44px 24px; gap:8px;
 }
 .analysing-state.show{display:flex;}
 .analysing-spinner{
@@ -209,6 +276,7 @@ details.context[open] summary::before{content:"▾ ";}
 .action-band.elevated{background:var(--risk-med-tint); color:var(--risk-med);}
 .action-band.high{background:var(--risk-high-tint); color:var(--risk-high);}
 .action-text{font-size:14.5px; color:var(--ink); margin:0;}
+.transcript-source-note{font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--slate-soft); margin:6px 0 0;}
 
 .components{display:flex; flex-direction:column; gap:12px; margin-bottom:22px;}
 .component-row .top-line{display:flex; justify-content:space-between; align-items:baseline; margin-bottom:5px;}
@@ -310,17 +378,7 @@ details.context[open] summary::before{content:"▾ ";}
 }
 .history-delete:hover{color:var(--risk-high); background:var(--risk-high-tint);}
 
-footer.foot{margin-top:36px; padding-top:18px; border-top:1px solid var(--line); font-size:12px; color:var(--slate-soft); display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px;}
-footer.foot a{color:var(--slate-soft);}
-
-/* how-it-works trigger + modal */
-.howitworks-btn{
-  display:flex; align-items:center; gap:6px; font-size:12.5px; font-weight:600; color:var(--accent-ink);
-  background:var(--accent-tint); border:1px solid transparent; border-radius:100px; padding:7px 13px; cursor:pointer;
-}
-.howitworks-btn svg{width:15px; height:15px; flex-shrink:0;}
-.howitworks-btn:hover{border-color:var(--accent);}
-
+/* how-it-works modal */
 .hiw-overlay{
   display:none; position:fixed; inset:0; background:rgba(10,12,14,.55); z-index:100;
   align-items:flex-start; justify-content:center; padding:32px 16px; overflow-y:auto;
@@ -368,9 +426,12 @@ footer.foot a{color:var(--slate-soft);}
 </style>
 </head>
 <body>
-<div class="shell">
+<div class="app-shell" id="appShell">
 
-  <header class="top">
+  <header class="appbar">
+    <button class="icon-btn" id="hamburgerBtn" type="button" aria-label="Open menu" aria-expanded="false">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+    </button>
     <div class="brand">
       <svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Satya-Vani mark">
         <path d="M83,99.8 A46,46 0 1 1 103.2,75.7" fill="none" stroke="var(--accent)" stroke-width="5" stroke-linecap="round"/>
@@ -383,165 +444,193 @@ footer.foot a{color:var(--slate-soft);}
         <rect x="80.5" y="65" width="7" height="9" rx="3.5" fill="var(--risk-high)"/>
         <rect x="92.5" y="56" width="7" height="18" rx="3.5" fill="var(--risk-high)"/>
       </svg>
-      <div class="brand-text">
-        <span class="brand-name">Satya<span class="vani">-Vani</span></span>
-        <span class="brand-sub">LIVE CALL PATH · SIH26104</span>
-      </div>
+      <span class="brand-name">Satya<span class="vani">-Vani</span></span>
     </div>
-    <div style="display:flex; align-items:center; gap:10px;">
-      <button class="howitworks-btn" id="howItWorksBtn" type="button">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9.5"/><path d="M9.5 9a2.5 2.5 0 114.2 1.8c-.7.65-1.7 1.05-1.7 2.2"/><circle cx="12" cy="16.6" r=".6" fill="currentColor" stroke="none"/></svg>
-        How this score is calculated
-      </button>
-      <span class="health-chip" id="healthChip"><span class="health-dot"></span><span id="healthText">checking…</span></span>
-    </div>
+    <div class="appbar-spacer"></div>
+    <span class="health-chip" id="healthChip"><span class="health-dot"></span><span id="healthText">checking…</span></span>
+    <button class="icon-btn" id="themeToggleBtn" type="button" aria-label="Change color theme"></button>
   </header>
 
-  <div class="grid">
-    <!-- INPUT -->
-    <div>
-      <div class="card">
-        <h2>Analyse a call</h2>
-        <p class="hint">Upload a recording, or speak into your microphone and watch the risk score move live.</p>
+  <div class="body-row">
+    <div class="backdrop" id="backdrop"></div>
 
-        <div class="tabs">
-          <button class="tab-btn active" data-tab="upload">Upload a file</button>
-          <button class="tab-btn" data-tab="mic">Microphone (live)</button>
-          <button class="tab-btn" data-tab="enroll">Voiceprints</button>
-          <button class="tab-btn" data-tab="history">History</button>
+    <nav class="drawer" id="drawer">
+      <div class="drawer-nav">
+        <div class="drawer-section-label">Analyse</div>
+        <button class="tab-btn active" data-tab="upload" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M12 16V4M12 4l-4 4M12 4l4 4M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
+          Upload a file
+        </button>
+        <button class="tab-btn" data-tab="mic" type="button">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a3 3 0 003-3V6a3 3 0 10-6 0v5a3 3 0 003 3z"/><path d="M19 11a1 1 0 00-2 0 5 5 0 01-10 0 1 1 0 00-2 0 7 7 0 006 6.93V20H8a1 1 0 000 2h8a1 1 0 000-2h-3v-2.07A7 7 0 0019 11z"/></svg>
+          Microphone (live)
+        </button>
+        <div class="drawer-section-label">Manage</div>
+        <button class="tab-btn" data-tab="enroll" type="button">
+          <svg viewBox="0 0 24 24" fill="currentColor"><rect x="2.5" y="9" width="2.6" height="6" rx="1.3"/><rect x="7.2" y="5.5" width="2.6" height="13" rx="1.3"/><rect x="11.9" y="2.5" width="2.6" height="19" rx="1.3"/><rect x="16.6" y="5.5" width="2.6" height="13" rx="1.3"/><rect x="21.3" y="9" width="2.6" height="6" rx="1.3"/></svg>
+          Voiceprints
+        </button>
+        <button class="tab-btn" data-tab="history" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="12" r="9" stroke-linecap="butt"/><path d="M12 7v5l3.5 2"/></svg>
+          History
+        </button>
+        <div class="drawer-section-label">Help</div>
+        <button class="howitworks-btn" id="howItWorksBtn" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9.5"/><path d="M9.5 9a2.5 2.5 0 114.2 1.8c-.7.65-1.7 1.05-1.7 2.2"/><circle cx="12" cy="16.6" r=".6" fill="currentColor" stroke="none"/></svg>
+          How this score is calculated
+        </button>
+      </div>
+      <div class="drawer-footer">
+        <span>Formula version <span class="mono" id="formulaVersion">–</span></span>
+        <span class="links">
+          <a href="__SATYA_VANI_BASE_PATH__/docs">API docs</a> · <a href="https://github.com/clovaai/aasist" target="_blank" rel="noopener">AASIST model</a> · <a href="#" id="howItWorksFootLink">How this score is calculated</a>
+        </span>
+      </div>
+    </nav>
+
+    <main class="main">
+      <div class="mobile-switch">
+        <button class="active" id="mobileSwitchInput" data-pane="input" type="button">Analyse</button>
+        <button id="mobileSwitchResults" data-pane="results" type="button">Results</button>
+      </div>
+
+      <div class="panes">
+        <!-- INPUT -->
+        <div class="pane pane-input active" id="paneInput">
+          <div class="card">
+
+            <div class="tab-panel active" id="tab-upload">
+              <p class="hint">Upload a recording — the risk score and its full breakdown will appear here.</p>
+              <div class="dropzone" id="dropzone" tabindex="0">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 16V4M12 4l-4 4M12 4l4 4M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
+                <div>Drop a WAV/FLAC/MP3/OGG file here, or click to choose one</div>
+                <div class="filename" id="fileName"></div>
+              </div>
+              <input type="file" id="fileInput" accept="audio/*" hidden>
+              <div class="field checkbox" style="margin-top:14px;">
+                <input type="checkbox" id="diarizeCheck">
+                <label for="diarizeCheck">Detect multiple speakers (diarize)</label>
+                <span class="help-icon" data-help="Splits the recording into voice clusters and scores each speaker's audio separately, alongside the whole-call score. File-upload only — not available on the live microphone tab yet.">?</span>
+              </div>
+              <details class="context" id="ctxUpload">
+                <summary>Call details (optional — feeds the contextual signal)</summary>
+                <div class="field-grid"></div>
+              </details>
+              <button class="primary-btn" id="analyzeFileBtn" disabled>Analyse file</button>
+              <div class="error-box" id="uploadError"></div>
+            </div>
+
+            <div class="tab-panel" id="tab-mic">
+              <div class="mic-row">
+                <button class="mic-btn" id="micBtn" title="Start recording">
+                  <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a3 3 0 003-3V6a3 3 0 10-6 0v5a3 3 0 003 3z"/><path d="M19 11a1 1 0 00-2 0 5 5 0 01-10 0 1 1 0 00-2 0 7 7 0 006 6.93V20H8a1 1 0 000 2h8a1 1 0 000-2h-3v-2.07A7 7 0 0019 11z"/></svg>
+                </button>
+                <div>
+                  <div class="mic-status" id="micStatus">Click to start — your browser will ask for microphone permission.</div>
+                  <div class="level-meter"><div id="levelBar"></div></div>
+                </div>
+              </div>
+              <div class="field checkbox" style="margin-top:10px;">
+                <input type="checkbox" id="recordMicCheckbox">
+                <label for="recordMicCheckbox">Record this session (download as .wav afterward)</label>
+              </div>
+              <a class="raw-toggle" id="micRecordingDownload" style="display:none; margin-top:8px;" download="live-call-recording.wav">⬇ Download recording (.wav)</a>
+              <details class="context" id="ctxMic" open>
+                <summary>Call details (optional — feeds the contextual signal)</summary>
+                <div class="field-grid"></div>
+              </details>
+              <div class="error-box" id="micError"></div>
+            </div>
+
+            <div class="tab-panel" id="tab-enroll">
+              <p class="hint" style="margin-bottom:14px;">Enroll a caller's voiceprint once, then set "Claimed caller identity" (in Call details, above) to that same name when scoring a call — the Third signal will compare the live voice against this enrollment instead of abstaining.</p>
+              <div class="dropzone" id="enrollDropzone" tabindex="0">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 16V4M12 4l-4 4M12 4l4 4M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
+                <div>Drop a clean voice sample (WAV/FLAC/MP3/OGG), or click to choose one</div>
+                <div class="filename" id="enrollFileName"></div>
+              </div>
+              <input type="file" id="enrollFileInput" accept="audio/*" hidden>
+              <div class="field" style="margin-top:14px;">
+                <label>Identity to enroll as</label>
+                <input type="text" id="enrollIdentity" placeholder="e.g. alice, cust-00042">
+              </div>
+              <button class="primary-btn" id="enrollBtn" disabled>Enroll voiceprint</button>
+              <div class="error-box" id="enrollError"></div>
+
+              <details class="context" open style="margin-top:22px;">
+                <summary>Enrolled voiceprints</summary>
+                <button class="raw-toggle" id="refreshEnrollmentsBtn" style="margin-top:12px; margin-bottom:12px;">↻ refresh</button>
+                <div id="enrollmentList"></div>
+              </details>
+            </div>
+
+            <div class="tab-panel" id="tab-history">
+              <p class="hint" style="margin-bottom:14px;">Every window ever scored is kept here — pick a past session to replay it. Nothing is lost when you close this tab or restart the browser.</p>
+              <button class="raw-toggle" id="refreshHistoryBtn" style="margin-bottom:12px;">↻ refresh</button>
+              <div id="historyList"></div>
+              <div class="error-box" id="historyError"></div>
+            </div>
+
+          </div>
         </div>
 
-        <div class="tab-panel active" id="tab-upload">
-          <div class="dropzone" id="dropzone" tabindex="0">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 16V4M12 4l-4 4M12 4l4 4M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
-            <div>Drop a WAV/FLAC/MP3/OGG file here, or click to choose one</div>
-            <div class="filename" id="fileName"></div>
-          </div>
-          <input type="file" id="fileInput" accept="audio/*" hidden>
-          <div class="field checkbox" style="margin-top:14px;">
-            <input type="checkbox" id="diarizeCheck">
-            <label for="diarizeCheck">Detect multiple speakers (diarize)</label>
-            <span class="help-icon" data-help="Splits the recording into voice clusters and scores each speaker's audio separately, alongside the whole-call score. File-upload only — not available on the live microphone tab yet.">?</span>
-          </div>
-          <details class="context" id="ctxUpload">
-            <summary>Call details (optional — feeds the contextual signal)</summary>
-            <div class="field-grid"></div>
-          </details>
-          <button class="primary-btn" id="analyzeFileBtn" disabled>Analyse file</button>
-          <div class="error-box" id="uploadError"></div>
-        </div>
+        <!-- RESULTS -->
+        <div class="pane pane-results" id="paneResults">
+          <div class="card">
+            <div class="results-empty" id="resultsEmpty">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg>
+              <p>Upload a call recording or start the microphone — the risk score and its full breakdown will appear here.</p>
+            </div>
 
-        <div class="tab-panel" id="tab-mic">
-          <div class="mic-row">
-            <button class="mic-btn" id="micBtn" title="Start recording">
-              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a3 3 0 003-3V6a3 3 0 10-6 0v5a3 3 0 003 3z"/><path d="M19 11a1 1 0 00-2 0 5 5 0 01-10 0 1 1 0 00-2 0 7 7 0 006 6.93V20H8a1 1 0 000 2h8a1 1 0 000-2h-3v-2.07A7 7 0 0019 11z"/></svg>
-            </button>
-            <div>
-              <div class="mic-status" id="micStatus">Click to start — your browser will ask for microphone permission.</div>
-              <div class="level-meter"><div id="levelBar"></div></div>
+            <div class="analysing-state" id="analysingState">
+              <div class="analysing-spinner"></div>
+              <p class="analysing-title">Analysing<span class="dots"><span>.</span><span>.</span><span>.</span></span></p>
+              <p class="analysing-detail" id="analysingDetail">Running every configured detector over every window.</p>
+              <p class="analysing-elapsed mono" id="analysingElapsed">0.0s elapsed</p>
+            </div>
+
+            <div class="results" id="results">
+              <div class="gauge-row">
+                <div class="gauge-wrap">
+                  <svg viewBox="0 0 150 150">
+                    <circle cx="75" cy="75" r="62" fill="none" stroke="var(--line-soft)" stroke-width="14"/>
+                    <circle id="gaugeArc" cx="75" cy="75" r="62" fill="none" stroke="var(--risk-low)" stroke-width="14"
+                      stroke-linecap="round" stroke-dasharray="389.6" stroke-dashoffset="389.6"/>
+                  </svg>
+                  <div class="gauge-label">
+                    <div class="gauge-score mono" id="gaugeScore">–</div>
+                    <div class="gauge-band" id="gaugeBand" style="color:var(--slate-soft);">no data yet</div>
+                  </div>
+                </div>
+                <div class="action-block">
+                  <span class="action-band" id="actionBand"></span>
+                  <p class="action-text" id="actionText">Run an analysis to see a recommended action here.</p>
+                  <p class="transcript-source-note" id="transcriptSourceNote" style="display:none;"></p>
+                </div>
+              </div>
+
+              <div class="components" id="components"></div>
+
+              <div class="chart-wrap">
+                <div class="chart-label">Score over time</div>
+                <svg id="traceChart" viewBox="0 0 600 140" preserveAspectRatio="none"></svg>
+                <div class="chart-tooltip" id="chartTooltip"></div>
+                <div class="chart-legend" id="chartLegend"></div>
+              </div>
+
+              <div id="speakersSection" style="display:none; margin-bottom:18px;">
+                <div class="chart-label" style="margin-bottom:10px;">Per-speaker breakdown (diarized)</div>
+                <div id="speakerCards" style="display:flex; flex-direction:column; gap:10px;"></div>
+              </div>
+
+              <button class="raw-toggle" id="rawToggle">▸ view raw JSON</button>
+              <pre class="raw-json mono" id="rawJson"></pre>
             </div>
           </div>
-          <div class="field checkbox" style="margin-top:10px;">
-            <input type="checkbox" id="recordMicCheckbox">
-            <label for="recordMicCheckbox">Record this session (download as .wav afterward)</label>
-          </div>
-          <a class="raw-toggle" id="micRecordingDownload" style="display:none; margin-top:8px;" download="live-call-recording.wav">⬇ Download recording (.wav)</a>
-          <details class="context" id="ctxMic" open>
-            <summary>Call details (optional — feeds the contextual signal)</summary>
-            <div class="field-grid"></div>
-          </details>
-          <div class="error-box" id="micError"></div>
-        </div>
-
-        <div class="tab-panel" id="tab-enroll">
-          <p class="hint" style="margin-bottom:14px;">Enroll a caller's voiceprint once, then set "Claimed caller identity" (in Call details, above) to that same name when scoring a call — the Third signal will compare the live voice against this enrollment instead of abstaining.</p>
-          <div class="dropzone" id="enrollDropzone" tabindex="0">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 16V4M12 4l-4 4M12 4l4 4M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
-            <div>Drop a clean voice sample (WAV/FLAC/MP3/OGG), or click to choose one</div>
-            <div class="filename" id="enrollFileName"></div>
-          </div>
-          <input type="file" id="enrollFileInput" accept="audio/*" hidden>
-          <div class="field" style="margin-top:14px;">
-            <label>Identity to enroll as</label>
-            <input type="text" id="enrollIdentity" placeholder="e.g. alice, cust-00042">
-          </div>
-          <button class="primary-btn" id="enrollBtn" disabled>Enroll voiceprint</button>
-          <div class="error-box" id="enrollError"></div>
-
-          <details class="context" open style="margin-top:22px;">
-            <summary>Enrolled voiceprints</summary>
-            <button class="raw-toggle" id="refreshEnrollmentsBtn" style="margin-top:12px; margin-bottom:12px;">↻ refresh</button>
-            <div id="enrollmentList"></div>
-          </details>
-        </div>
-
-        <div class="tab-panel" id="tab-history">
-          <p class="hint" style="margin-bottom:14px;">Every window ever scored is kept here — pick a past session to replay it. Nothing is lost when you close this tab or restart the browser.</p>
-          <button class="raw-toggle" id="refreshHistoryBtn" style="margin-bottom:12px;">↻ refresh</button>
-          <div id="historyList"></div>
-          <div class="error-box" id="historyError"></div>
         </div>
       </div>
-    </div>
-
-    <!-- RESULTS -->
-    <div class="card">
-      <div class="results-empty" id="resultsEmpty">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg>
-        <p>Upload a call recording or start the microphone — the risk score and its full breakdown will appear here.</p>
-      </div>
-
-      <div class="analysing-state" id="analysingState">
-        <div class="analysing-spinner"></div>
-        <p class="analysing-title">Analysing<span class="dots"><span>.</span><span>.</span><span>.</span></span></p>
-        <p class="analysing-detail" id="analysingDetail">Running every configured detector over every window.</p>
-        <p class="analysing-elapsed mono" id="analysingElapsed">0.0s elapsed</p>
-      </div>
-
-      <div class="results" id="results">
-        <div class="gauge-row">
-          <div class="gauge-wrap">
-            <svg viewBox="0 0 150 150">
-              <circle cx="75" cy="75" r="62" fill="none" stroke="var(--line-soft)" stroke-width="14"/>
-              <circle id="gaugeArc" cx="75" cy="75" r="62" fill="none" stroke="var(--risk-low)" stroke-width="14"
-                stroke-linecap="round" stroke-dasharray="389.6" stroke-dashoffset="389.6"/>
-            </svg>
-            <div class="gauge-label">
-              <div class="gauge-score mono" id="gaugeScore">–</div>
-              <div class="gauge-band" id="gaugeBand" style="color:var(--slate-soft);">no data yet</div>
-            </div>
-          </div>
-          <div class="action-block">
-            <span class="action-band" id="actionBand"></span>
-            <p class="action-text" id="actionText">Run an analysis to see a recommended action here.</p>
-            <p class="transcript-source-note" id="transcriptSourceNote" style="display:none;"></p>
-          </div>
-        </div>
-
-        <div class="components" id="components"></div>
-
-        <div class="chart-wrap">
-          <div class="chart-label">Score over time</div>
-          <svg id="traceChart" viewBox="0 0 600 140" preserveAspectRatio="none"></svg>
-          <div class="chart-tooltip" id="chartTooltip"></div>
-          <div class="chart-legend" id="chartLegend"></div>
-        </div>
-
-        <div id="speakersSection" style="display:none; margin-bottom:18px;">
-          <div class="chart-label" style="margin-bottom:10px;">Per-speaker breakdown (diarized)</div>
-          <div id="speakerCards" style="display:flex; flex-direction:column; gap:10px;"></div>
-        </div>
-
-        <button class="raw-toggle" id="rawToggle">▸ view raw JSON</button>
-        <pre class="raw-json mono" id="rawJson"></pre>
-      </div>
-    </div>
+    </main>
   </div>
-
-  <footer class="foot">
-    <span>Formula version <span class="mono" id="formulaVersion">–</span></span>
-    <span><a href="__SATYA_VANI_BASE_PATH__/docs">API docs</a> · <a href="https://github.com/clovaai/aasist" target="_blank" rel="noopener">AASIST model</a> · <a href="#" id="howItWorksFootLink">How this score is calculated</a></span>
-  </footer>
 </div>
 
 <!-- HOW IT WORKS — full pictorial breakdown of every factor and the final formula -->
@@ -653,6 +742,95 @@ footer.foot a{color:var(--slate-soft);}
   </div>
 </div>
 
+<script>
+(function(){
+  "use strict";
+  var shell = document.getElementById("appShell");
+  var hamburgerBtn = document.getElementById("hamburgerBtn");
+  var backdrop = document.getElementById("backdrop");
+
+  // the same toggle class means opposite things at different widths:
+  // on mobile the rail starts hidden and the class reveals it as an overlay;
+  // on desktop/tablet the rail starts visible (persistent) and the class collapses it.
+  var mobileQuery = window.matchMedia("(max-width:880px)");
+  function isDrawerVisible(){
+    var toggled = shell.classList.contains("drawer-toggled");
+    return mobileQuery.matches ? toggled : !toggled;
+  }
+  function syncAria(){
+    hamburgerBtn.setAttribute("aria-expanded", isDrawerVisible() ? "true" : "false");
+  }
+  function closeDrawer(){
+    shell.classList.remove("drawer-toggled");
+    syncAria();
+  }
+  function toggleDrawer(){
+    shell.classList.toggle("drawer-toggled");
+    syncAria();
+  }
+  syncAria();
+  hamburgerBtn.addEventListener("click", toggleDrawer);
+  backdrop.addEventListener("click", closeDrawer);
+  document.querySelectorAll(".drawer-nav button").forEach(function(btn){
+    btn.addEventListener("click", closeDrawer);
+  });
+
+  // ---- theme toggle: system -> light -> dark -> system ----
+  var THEME_KEY = "satya-vani-theme";
+  var root = document.documentElement;
+  var themeBtn = document.getElementById("themeToggleBtn");
+  var ICONS = {
+    system: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 3a9 9 0 000 18z" fill="currentColor"/></svg>',
+    light:  '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4" fill="currentColor"/><g stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></g></svg>',
+    dark:   '<svg viewBox="0 0 24 24"><path d="M20 14.5A8.5 8.5 0 019.5 4a8.5 8.5 0 1010.5 10.5z" fill="currentColor"/></svg>'
+  };
+  var LABELS = { system: "Theme: system", light: "Theme: light", dark: "Theme: dark" };
+  var ORDER = ["system", "light", "dark"];
+
+  function applyTheme(mode){
+    if (mode === "system") root.removeAttribute("data-theme");
+    else root.setAttribute("data-theme", mode);
+    themeBtn.innerHTML = ICONS[mode] + '<span class="sr-only">' + LABELS[mode] + '</span>';
+    themeBtn.title = LABELS[mode] + " — click to change";
+    try { localStorage.setItem(THEME_KEY, mode); } catch (e) {}
+  }
+  var savedTheme = "system";
+  try { savedTheme = localStorage.getItem(THEME_KEY) || "system"; } catch (e) {}
+  if (ORDER.indexOf(savedTheme) === -1) savedTheme = "system";
+  applyTheme(savedTheme);
+  themeBtn.addEventListener("click", function(){
+    var current = root.getAttribute("data-theme") || "system";
+    var next = ORDER[(ORDER.indexOf(current) + 1) % ORDER.length];
+    applyTheme(next);
+  });
+
+  // ---- mobile: single-pane "Analyse" / "Results" screens ----
+  var paneInput = document.getElementById("paneInput");
+  var paneResults = document.getElementById("paneResults");
+  var switchInput = document.getElementById("mobileSwitchInput");
+  var switchResults = document.getElementById("mobileSwitchResults");
+
+  function showPane(name){
+    var toResults = name === "results";
+    paneInput.classList.toggle("active", !toResults);
+    paneResults.classList.toggle("active", toResults);
+    switchInput.classList.toggle("active", !toResults);
+    switchResults.classList.toggle("active", toResults);
+  }
+  switchInput.addEventListener("click", function(){ showPane("input"); });
+  switchResults.addEventListener("click", function(){ showPane("results"); });
+
+  // jump straight to the results screen on mobile once an analysis starts
+  var analyzeFileBtn = document.getElementById("analyzeFileBtn");
+  var micBtn = document.getElementById("micBtn");
+  var historyList = document.getElementById("historyList");
+  if (analyzeFileBtn) analyzeFileBtn.addEventListener("click", function(){ showPane("results"); });
+  if (micBtn) micBtn.addEventListener("click", function(){ showPane("results"); });
+  if (historyList) historyList.addEventListener("click", function(e){
+    if (e.target.closest(".history-row")) showPane("results");
+  });
+})();
+</script>
 <!-- Substituted by app/main.py's "/" route (see its own docstring for why:
      this app's UI/API/WS code is root-relative, which only works when
      served at the origin's root — app.js reads this to prefix every
