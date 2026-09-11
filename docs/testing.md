@@ -9,7 +9,7 @@ pip install -r requirements-dev.txt                   # first time only
 pytest tests/ -v
 ```
 
-217 tests (190 unit, 27 integration), no Docker needed — unit tests for each detector (including
+286 tests (256 unit, 30 integration), no Docker needed — unit tests for each detector (including
 `test_acoustic_aasist.py`'s coverage of the optional Hindi-recalibrated
 `finetuned_out_layer_path`, verifying it actually changes the score, not
 just that the parameter is accepted; `test_perth_watermark.py`,
@@ -36,8 +36,15 @@ live WebSocket path's incremental speaker tracker
 tests, plus one test through the real ECAPA-TDNN model proving actual
 same/different-speaker separation, not just that the arithmetic is
 right; see app/pipeline/live_diarization.py), the
-Whisper transcriber and its urgency/financial/authority-claim keyword
-detection, the zero-shot intent classifier (`test_zero_shot_
+Whisper transcriber (`test_whisper_transcriber.py`), the
+language-routed VEXYL-STT transcriber (`test_vexyl_stt_transcriber.py`),
+the `RoutingTranscriber` that gates between them by detected language
+(`test_routing_transcriber.py`), the live-mic `WhisperLiveTranscriber`
+(`test_whisperlive_transcriber.py`), the `transcript_source`/
+`transcript_language` fields the engine now records
+(`test_engine_transcript_source.py`), and the urgency/financial/
+authority-claim keyword detection those transcripts feed, the
+zero-shot intent classifier (`test_zero_shot_
 intent_classifier.py` — includes a KNOWN LIMITATION test that documents,
 rather than hides, the real calibration problem that keeps it weighted
 low) and its detector (`test_intent_risk.py`), the local semantic-risk

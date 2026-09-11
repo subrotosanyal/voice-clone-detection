@@ -41,10 +41,13 @@ projects on a shared dev machine. Change it in `docker-compose.yml` if
 Audio is cut into overlapping 2-second windows. Each window is scored by
 several independent, pluggable **detectors** (acoustic — AASIST; prosodic —
 Parselmouth/Praat; and a config-selectable "third signal" — rule-based
-context, fed by real **Whisper** transcription and transparent urgency/
-financial-language/authority-claim keyword detection — an authority claim
-plus a financial request together fires its own explicit combined-pressure
-rule — or real ECAPA-TDNN voiceprint consistency). A **fusion** step
+context, fed by real transcription — **Whisper**, plus **VEXYL-STT**
+(ai4bharat/indic-conformer-600m-multilingual) automatically routed in for
+14 Indian languages on the file-upload path, see "Transcription" below —
+and transparent urgency/financial-language/authority-claim keyword
+detection — an authority claim plus a financial request together fires
+its own explicit combined-pressure rule — or real ECAPA-TDNN voiceprint
+consistency). A **fusion** step
 combines their scores into one 0–100 risk number with a full,
 human-readable breakdown of exactly which signal contributed what, plus a
 one-sentence plain-language explanation of *why* under each component. On
@@ -74,7 +77,8 @@ services/live-call-api/         # the one service that exists so far
                                  # enrollment_store.py, diarizer.py, transcriber.py,
                                  # intent_classifier.py
     adapters/                   # concrete detectors + fusion + history/enrollment stores +
-                                 # diarizer + transcription/ (Whisper + urgency/authority-
+                                 # diarizer + transcription/ (Whisper + VEXYL-STT, routed by
+                                 # language; see "Transcription" below + urgency/authority-
                                  # claim keyword detection) + intent/ (zero-shot classifier,
                                  # active by default, known calibration caveat) + the shared
                                  # ECAPA-TDNN embedding extractor + the plugin registry
@@ -120,14 +124,26 @@ implementations, not hand-rolled heuristics alone:
   (`speechbrain/spkrec-ecapa-voxceleb`, Apache-2.0) voiceprint comparison
   against an enrollment (`POST /v1/enroll`); abstains gracefully until
   someone is enrolled.
-- **Third signal (contextual mode)** — now fed by real transcription:
-  **Whisper** (MIT) transcribes each uploaded call once (and, on the live
-  microphone path, periodically in the background as the call proceeds —
-  see `docs/architecture.md`, "Live transcription"), and a transparent
+- **Third signal (contextual mode)** — now fed by real transcription (see
+  "Transcription" below for which engine actually runs), and a transparent
   keyword list flags urgency/financial-request/authority-claim language in
   English, Hindi, and Marathi — no manual keyword entry required, though
   you still can. An authority claim ("this is your bank") paired with a
   financial request fires its own explicit combined-pressure rule.
+- **Transcription** — **mixed Whisper + VEXYL-STT**, routed by detected
+  language, not Whisper alone. On the **file-upload** path
+  (`RoutingTranscriber`), a cheap Whisper language-ID pass routes any of
+  14 Indian languages (Hindi, Tamil, Telugu, Kannada, Bengali, Gujarati,
+  Marathi, Punjabi, Odia, Assamese, Urdu, Sanskrit, Nepali, Malayalam) to
+  **VEXYL-STT** (`ai4bharat/indic-conformer-600m-multilingual`, a gated
+  HuggingFace model — building its sidecar needs your own HF account
+  granted access, see `services/vexyl-stt/fetch_model.py`); English or any
+  undetected/unsupported language still goes to **Whisper** (MIT). On the
+  **live microphone** path, transcription is **WhisperLive only** — a
+  routed live-mic version was tried and reverted the same day (a real
+  backlog/latency regression under streaming load); see
+  `docs/risk-model.md` for the full account and `docs/architecture.md`,
+  "Live transcription" for the live-path design.
 - **Intent classification** — a zero-shot NLI classifier
   (`MoritzLaurer/mDeBERTa-v3-base-mnli-xnli`, MIT, real Hindi coverage)
   that scores the transcript against fraud-relevant candidate labels, on

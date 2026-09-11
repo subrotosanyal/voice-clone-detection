@@ -15,10 +15,12 @@ adapters/   concrete implementations of the ports, plus the registry that
             embeddings/     shared ECAPA-TDNN speaker-embedding extractor,
                             used by both the voiceprint consistency detector
                             and the diarizer (not itself a port — see below).
-            transcription/  Whisper-based TranscriberPort implementation +
-                            the transparent urgency/financial-language/
-                            authority-claim keyword detector it feeds (see
-                            "Transcription" below).
+            transcription/  TranscriberPort implementations — Whisper, plus
+                            VEXYL-STT (routed in for 14 Indian languages
+                            on the file-upload path only, see
+                            "Transcription" below) — and the transparent
+                            urgency/financial-language/authority-claim
+                            keyword detector they feed.
             intent/         zero-shot IntentClassifierPort implementation —
                             active by default, weighted low, with a known
                             calibration caveat (see "Intent detection"
@@ -323,17 +325,40 @@ below it, whole-call and per-speaker alike.
 
 ## Transcription — feeding real call language into the contextual signal
 
-`app/ports/transcriber.py` (`TranscriberPort`) + `app/adapters/transcription/
-whisper_transcriber.py` (`WhisperTranscriber`) answer "what did the caller
-actually say", using OpenAI's Whisper (MIT, confirmed ungated). On
-`POST /v1/score/file`, the whole buffer is transcribed once by
-`Engine.score_call()` and merged into `context["transcript"]` before
-windowing, so every window's third signal sees the same transcript.
+`app/ports/transcriber.py` (`TranscriberPort`) answers "what did the caller
+actually say". On `POST /v1/score/file`, the whole buffer is transcribed
+once by `Engine.score_call()` and merged into `context["transcript"]`
+before windowing, so every window's third signal sees the same
+transcript.
+
+**Mixed Whisper + VEXYL-STT, routed by language (added 2026-09-10)**: the
+file-upload path's transcriber is `app/adapters/transcription/
+routing_transcriber.py` (`RoutingTranscriber`), not `WhisperTranscriber`
+directly. It runs a cheap Whisper language-ID pass (one encoder forward
+pass, not a full decode) and routes any of 14 Indian languages (Hindi,
+Tamil, Telugu, Kannada, Bengali, Gujarati, Marathi, Punjabi, Odia,
+Assamese, Urdu, Sanskrit, Nepali, Malayalam) to `app/adapters/
+transcription/vexyl_stt_transcriber.py` (`VexylSttTranscriber`, wrapping
+`ai4bharat/indic-conformer-600m-multilingual` over a WebSocket sidecar) —
+measured more accurate AND 6-20x faster on CPU than Whisper on real
+Hindi/Marathi audio, but it silently mis-transcribes unsupported
+languages if used directly (verified by hand: English audio came back
+phonetically transliterated into Malayalam script, no error, no
+abstain — exactly why the language-ID gate exists). English or any
+undetected/unsupported language, or an empty VEXYL-STT result, falls back
+to `WhisperTranscriber` (OpenAI's Whisper, MIT, confirmed ungated).
+`FusedScore.transcript_source`/`transcript_language`
+(`app/domain/models.py`) record which transcriber actually produced a
+given result, surfaced in the dashboard. Building the `vexyl-stt` sidecar
+needs your own HuggingFace account granted access to the gated model —
+see `services/vexyl-stt/fetch_model.py`'s docstring. Full evaluation
+account, caveats, and the exact routing rule: `docs/risk-model.md`.
 
 **Live WebSocket path (added 2026-09-08)**: `app/pipeline/
 live_transcription.py` (`LiveTranscriptionBuffer`) brings the same
 signal to `/v1/stream/{session_id}` — see "Live transcription" below for
-how.
+how. Unlike the file-upload path, the live path is **not** routed to
+VEXYL-STT (see that section for why).
 
 **Model size — verified by hand, not assumed**: the smaller "base" model
 mis-transcribed real Hindi speech into Urdu script (a real, reproducible
@@ -406,6 +431,21 @@ transcription, but still real latency for that specific signal). If a WS
 client's hop doesn't match `windowing.hop_ms`, the reconstructed buffer
 stretches or compresses relative to real time — a documented limitation,
 not a silent one. See the module's own docstring for the full account.
+
+**Not routed to VEXYL-STT, unlike file-upload (tried and reverted, same
+day, 2026-09-10)**: `RoutingTranscriber` was briefly wired in here too,
+then reverted after a real regression — a growing per-window backlog (9-13s
+by the end of a ~17s test session), not a one-off glitch. Root cause: the
+live path's real-time cadence can't absorb RoutingTranscriber's two added
+costs — a third in-process Whisper model (`lid_transcriber`) competing for
+the same CPU/thread pool as AASIST/Parselmouth/ECAPA every ~4s cycle
+(exactly the contention WhisperLive was built to eliminate), and
+`VexylSttTranscriber` opening a brand-new WebSocket connection to
+`vexyl-stt` every cycle, which the sidecar visibly couldn't keep up with.
+This path stays on plain `WhisperLiveTranscriber` until both costs are
+fixed (caching the language-ID decision once per session, and/or a
+persistent `vexyl-stt` connection per session) — neither is implemented.
+Full account: `docs/risk-model.md`.
 
 ## Live diarization — incremental "who's talking now" for the WebSocket path
 
