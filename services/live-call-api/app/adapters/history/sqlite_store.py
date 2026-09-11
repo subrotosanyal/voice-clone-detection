@@ -18,6 +18,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from app.domain.models import Band, ComponentContribution, FusedScore, SessionSummary, SpeakerCallSummary
+from app.logging_setup import get_logger
+
+logger = get_logger(component="sqlite_history_store")
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS fused_scores (
@@ -142,7 +145,31 @@ class SqliteHistoryStore:
                    FROM fused_scores WHERE session_id = ? ORDER BY seq ASC""",
                 (session_id,),
             ).fetchall()
-        return [_row_to_fused_score(r) for r in rows]
+        trace: list[FusedScore] = []
+        for r in rows:
+            try:
+                trace.append(_row_to_fused_score(r))
+            except (json.JSONDecodeError, KeyError, ValueError, TypeError):
+                # REAL BUG found 2026-09-11: GET /v1/sessions/{id} 500'd for
+                # a session whose underlying sessions.db had genuine
+                # page-level corruption (confirmed via `PRAGMA
+                # integrity_check`) — components_json for a few of that
+                # session's windows was truncated mid-array, so json.loads()
+                # raised and took the ENTIRE session detail view down with
+                # it, even though most of that session's windows were fine.
+                # Same "abstain quietly" shape used elsewhere in this file
+                # (see _row_to_fused_score's own smoothed_score .get() note):
+                # skip the one unreadable window and still show the rest,
+                # rather than a 500 for the whole session. A row that's bad
+                # for a reason other than JSON syntax (a missing required
+                # key, or a `band` value that doesn't match the Band enum)
+                # is handled the same way, on the same principle.
+                logger.warning(
+                    "history_row_unreadable_skipping",
+                    session_id=session_id,
+                    seq=r[1],
+                )
+        return trace
 
     def delete_session(self, session_id: str) -> bool:
         with self._lock:
