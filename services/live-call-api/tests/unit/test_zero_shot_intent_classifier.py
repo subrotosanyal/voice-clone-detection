@@ -74,3 +74,58 @@ def test_known_limitation_ordinary_conversation_is_not_reliably_detected(classif
     # obviously-ordinary sentence.
     assert result.top_label != _ORDINARY_LABEL
     assert result.label_scores[_ORDINARY_LABEL] < 0.5
+
+
+def test_concurrent_ensure_loaded_calls_load_the_model_only_once(monkeypatch):
+    """Regression test for a real bug found 2026-09-11, via a home-lab
+    production log (`ImportError: cannot import name 'pipeline' from
+    'transformers'`, raised inside Engine.diarize_and_score()'s per-speaker
+    scoring): _ensure_loaded() used to be a plain, unsynchronized
+    `if self._pipeline is None:` check — safe only as long as a single
+    shared ZeroShotIntentClassifier instance (see app/main.py's one-time
+    app.state.engine construction) was never asked to classify() from more
+    than one thread at once. That stopped being true once
+    Engine.diarize_and_score() started scoring different speakers
+    CONCURRENTLY via a thread pool — the exact same race already found and
+    fixed in local_llm_semantic_classifier.py's own _ensure_loaded() (see
+    test_local_llm_semantic_classifier.py's own
+    test_concurrent_ensure_loaded_calls_load_the_model_only_once, which
+    this test mirrors), just missed here at the time. Proves the fix:
+    double-checked locking around the load."""
+    import sys
+    import threading
+    import time
+    import types
+
+    load_count = 0
+    max_concurrent_loads = 0
+    current_loads = 0
+    counter_lock = threading.Lock()
+
+    fake_transformers_module = types.ModuleType("transformers")
+
+    def _slow_fake_pipeline(*args, **kwargs):
+        nonlocal load_count, max_concurrent_loads, current_loads
+        with counter_lock:
+            current_loads += 1
+            max_concurrent_loads = max(max_concurrent_loads, current_loads)
+            load_count += 1
+        time.sleep(0.1)  # long enough for a second thread to reach the check first
+        with counter_lock:
+            current_loads -= 1
+        return "fake-pipeline-object"
+
+    fake_transformers_module.pipeline = _slow_fake_pipeline
+    monkeypatch.setitem(sys.modules, "transformers", fake_transformers_module)
+
+    clf = ZeroShotIntentClassifier()
+
+    threads = [threading.Thread(target=clf._ensure_loaded) for _ in range(4)]
+    for th in threads:
+        th.start()
+    for th in threads:
+        th.join()
+
+    assert load_count == 1, f"model was loaded {load_count} times, not once"
+    assert max_concurrent_loads == 1, "two threads loaded the model concurrently — not actually serialized"
+    assert clf._pipeline == "fake-pipeline-object"

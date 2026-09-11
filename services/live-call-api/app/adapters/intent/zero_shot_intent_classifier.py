@@ -67,6 +67,8 @@ threshold, or a different base model.
 """
 from __future__ import annotations
 
+import threading
+
 from app.domain.models import IntentClassificationResult
 
 # A starting point, not validated against real fraud-call transcripts —
@@ -99,10 +101,42 @@ class ZeroShotIntentClassifier:
     ) -> None:
         self.model_name = model_name
         self.cache_dir = cache_dir
+        self._lock = threading.Lock()
         self._pipeline = None  # lazy-loaded — see _ensure_loaded()
 
     def _ensure_loaded(self) -> None:
-        if self._pipeline is None:
+        # REAL BUG found 2026-09-11, via a home-lab production log
+        # (`ImportError: cannot import name 'pipeline' from 'transformers'`,
+        # raised inside Engine.diarize_and_score()'s per-speaker scoring):
+        # this used to be a plain, unsynchronized `if self._pipeline is
+        # None:` check — safe only as long as a single Engine (and
+        # therefore a single shared ZeroShotIntentClassifier instance,
+        # see app/main.py's one-time app.state.engine construction) was
+        # never asked to classify() from more than one thread at once.
+        # That stopped being true once Engine.diarize_and_score() started
+        # scoring different speakers CONCURRENTLY via a thread pool (see
+        # that method's own REAL BUG note) — the exact same shape of race
+        # already found and fixed in
+        # app/adapters/semantic_risk/local_llm_semantic_classifier.py's
+        # own _ensure_loaded(), just missed here at the time. Two threads
+        # both seeing self._pipeline is None and both racing into
+        # `from transformers import pipeline` for the first time in this
+        # process is consistent with the observed failure: transformers'
+        # top-level `__init__.py` is a lazy module (attributes are
+        # resolved into `sys.modules`/internal caches on first access, not
+        # eagerly at import time), and that lazy resolution is not
+        # documented as safe against two threads triggering it
+        # concurrently for the same name. Fixed the same way as the LLM
+        # classifier: double-checked locking around the load, using the
+        # SAME lock classify() below now also takes for the actual
+        # inference call — "one shared expensive model, one lock", the
+        # same pattern this project already applies to Whisper, Parselmouth,
+        # and the local LLM classifier.
+        if self._pipeline is not None:
+            return
+        with self._lock:
+            if self._pipeline is not None:  # another thread may have just finished loading
+                return
             from transformers import pipeline  # local import: heavy, only needed if actually used
 
             self._pipeline = pipeline(
@@ -120,7 +154,12 @@ class ZeroShotIntentClassifier:
 
     def classify(self, text: str) -> IntentClassificationResult:
         self._ensure_loaded()
-        result = self._pipeline(text, candidate_labels=_CANDIDATE_LABELS)
+        # Same lock as the load above — untested against concurrent
+        # inference on one shared pipeline instance, so serialize actual
+        # calls too, same "one shared expensive model, one lock"
+        # discipline as local_llm_semantic_classifier.py's analyze().
+        with self._lock:
+            result = self._pipeline(text, candidate_labels=_CANDIDATE_LABELS)
         label_scores = {label: float(score) for label, score in zip(result["labels"], result["scores"])}
         top_label = result["labels"][0]
         top_score = float(result["scores"][0])
