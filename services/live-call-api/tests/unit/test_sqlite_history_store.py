@@ -1,3 +1,5 @@
+import sqlite3
+
 from app.adapters.history.sqlite_store import SqliteHistoryStore
 from app.domain.models import Band, ComponentContribution, FusedScore, SpeakerCallSummary
 
@@ -60,6 +62,62 @@ def test_save_and_get_session_round_trips_everything(tmp_path):
 def test_get_unknown_session_returns_empty_list(tmp_path):
     store = SqliteHistoryStore(str(tmp_path / "sessions.db"))
     assert store.get_session("does-not-exist") == []
+
+
+def test_get_session_skips_a_row_with_corrupted_components_json(tmp_path):
+    """REAL BUG found 2026-09-11: GET /v1/sessions/{id} 500'd for a real
+    session because `PRAGMA integrity_check` on that deployment's
+    sessions.db reported actual page-level corruption — a few of that
+    session's rows had components_json truncated mid-array, so
+    json.loads() raised json.JSONDecodeError inside _row_to_fused_score()
+    and took the whole request down with it, even though most of that
+    session's windows were perfectly readable. get_session() must skip an
+    unreadable row (JSON syntax error, or a required key/enum value
+    missing/invalid) rather than letting one bad window 500 an entire
+    session — same "abstain quietly" shape used elsewhere in this store."""
+    db_path = str(tmp_path / "sessions.db")
+    store = SqliteHistoryStore(db_path)
+    store.save(_fused("s1", 0, 10.0))
+    store.save(_fused("s1", 1, 20.0))
+    store.save(_fused("s1", 2, 30.0))
+
+    # Simulate the real corruption directly: truncate seq=1's
+    # components_json mid-array so it's no longer valid JSON, bypassing
+    # the store's own save() (which always writes well-formed JSON) the
+    # same way real disk/page-level corruption would.
+    conn = sqlite3.connect(db_path)
+    good = conn.execute(
+        "SELECT components_json FROM fused_scores WHERE session_id = 's1' AND seq = 1"
+    ).fetchone()[0]
+    truncated = good[: len(good) // 2]
+    conn.execute(
+        "UPDATE fused_scores SET components_json = ? WHERE session_id = 's1' AND seq = 1",
+        (truncated,),
+    )
+    conn.commit()
+    conn.close()
+
+    trace = store.get_session("s1")
+
+    # The corrupted seq=1 window is skipped; the two good windows still
+    # come back — no exception propagates out of get_session().
+    assert [f.seq for f in trace] == [0, 2]
+
+
+def test_get_session_returns_empty_list_when_every_row_is_corrupted(tmp_path):
+    db_path = str(tmp_path / "sessions.db")
+    store = SqliteHistoryStore(db_path)
+    store.save(_fused("s1", 0, 10.0))
+
+    conn = sqlite3.connect(db_path)
+    conn.execute("UPDATE fused_scores SET components_json = 'not json at all' WHERE session_id = 's1'")
+    conn.commit()
+    conn.close()
+
+    # Same shape as an unknown session — the API layer 404s on this,
+    # rather than 500ing (see tests/integration/test_history_api.py's
+    # test_unknown_session_returns_404).
+    assert store.get_session("s1") == []
 
 
 def test_list_sessions_orders_most_recent_first_and_summarises(tmp_path):
