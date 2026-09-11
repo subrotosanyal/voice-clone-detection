@@ -112,6 +112,11 @@ _MAX_BUFFER_MS = 15000  # hard cap so a long call's buffer doesn't grow unbounde
 # at a generous multiple of a normal hop rather than hop_ms itself,
 # since hop_ms varies by config.
 _MAX_PLAUSIBLE_GAP_MULTIPLE = 10
+# Safety bound for flush()'s catch-up loop (see its own docstring) —
+# normal operation converges in 1-2 passes; this only guards against a
+# hypothetical transcriber whose own _transcribe() somehow never lets
+# _new_ms_since_transcription settle at zero.
+_MAX_FLUSH_PASSES = 10
 
 
 class LiveTranscriptionBuffer:
@@ -147,6 +152,10 @@ class LiveTranscriptionBuffer:
         self._intent_task: Optional[asyncio.Task] = None
         self._semantic_task: Optional[asyncio.Task] = None
         self._last_window_start_ms: Optional[int] = None
+        # Set on every ingest() call — reused by flush() below, which has
+        # no sample_rate of its own to work with (it isn't handed one at
+        # call time, unlike a normal cycle).
+        self._last_sample_rate: Optional[int] = None
         # Naive whole-session concatenation, display-only — see this
         # class's own FULL-SESSION TRANSCRIPT docstring note for the
         # honest overlap-duplication caveat. Never read by a detector.
@@ -163,18 +172,48 @@ class LiveTranscriptionBuffer:
         equal `hop_ms` — see this module's REAL BUG note (2026-09-10).
         Omitting it (every existing caller before this fix) reproduces the
         old fixed-hop behaviour exactly.
+
+        REAL BUG found and fixed 2026-09-11, via eval/wer_eval.py's own
+        word-level WER comparison against file-upload on the same real
+        audio: the file-upload transcript reliably captured a call's
+        OPENING words; the live path's did not, on almost every clip
+        tested. Root cause, confirmed by hand-tracing the arithmetic:
+        `window_start_ms = max(0, elapsed - WINDOW_MS)` (see app/ui/
+        app.js's own mic-capture code) is CLAMPED to 0 for the client's
+        first WINDOW_MS (2s by default) of real time, since a trailing
+        window can't start before the recording began. But the delta-
+        based derivation above reads "same window_start_ms as last call"
+        as "no new audio arrived" — so for every call during that initial
+        clamped period (2-3 consecutive calls at the default 500ms hop),
+        `delta` computed 0, hit the `elapsed_ms <= 0: return` guard below,
+        and silently discarded real, new audio. Measured impact on a real
+        7.78s clip: ~1.5s missing from the buffer, right at the start —
+        proportionally worse for short calls, but present on every call
+        of any length, in every language, every time.
         """
         if self._transcriber is None:
             return
+        self._last_sample_rate = sample_rate
 
         elapsed_ms = self._hop_ms
         if window_start_ms is not None:
             if self._last_window_start_ms is not None:
-                delta = window_start_ms - self._last_window_start_ms
-                # Clamp: never negative (an out-of-order or duplicate
-                # window_start_ms), never an implausible single jump (see
-                # _MAX_PLAUSIBLE_GAP_MULTIPLE above).
-                elapsed_ms = max(0, min(delta, self._hop_ms * _MAX_PLAUSIBLE_GAP_MULTIPLE))
+                if window_start_ms == 0:
+                    # Still in the client's own initial clamped period
+                    # (real elapsed time hasn't yet exceeded WINDOW_MS) —
+                    # window_start_ms reads 0 on every one of these calls
+                    # regardless of how much real new audio arrived, so a
+                    # delta against the previous call is meaningless here
+                    # (see this method's own REAL BUG note above). Fall
+                    # back to hop_ms, same as the very first call always
+                    # has to.
+                    elapsed_ms = self._hop_ms
+                else:
+                    delta = window_start_ms - self._last_window_start_ms
+                    # Clamp: never negative (an out-of-order or duplicate
+                    # window_start_ms), never an implausible single jump
+                    # (see _MAX_PLAUSIBLE_GAP_MULTIPLE above).
+                    elapsed_ms = max(0, min(delta, self._hop_ms * _MAX_PLAUSIBLE_GAP_MULTIPLE))
             self._last_window_start_ms = window_start_ms
 
         if elapsed_ms <= 0:
@@ -195,11 +234,74 @@ class LiveTranscriptionBuffer:
         already_running = self._transcribe_task is not None and not self._transcribe_task.done()
         if self._new_ms_since_transcription >= _TRANSCRIBE_EVERY_MS and not already_running:
             self._new_ms_since_transcription = 0
-            window_samples = np.concatenate(self._buffer)
-            trailing_samples = round(sample_rate * _TRANSCRIPTION_WINDOW_MS / 1000)
-            if window_samples.size > trailing_samples:
-                window_samples = window_samples[-trailing_samples:]
+            window_samples = self._trailing_window(sample_rate)
             self._transcribe_task = asyncio.create_task(self._transcribe(window_samples, sample_rate))
+
+    def _trailing_window(self, sample_rate: int) -> np.ndarray:
+        window_samples = np.concatenate(self._buffer)
+        trailing_samples = round(sample_rate * _TRANSCRIPTION_WINDOW_MS / 1000)
+        if window_samples.size > trailing_samples:
+            window_samples = window_samples[-trailing_samples:]
+        return window_samples
+
+    async def flush(self) -> None:
+        """Fires transcription(s) of whatever unflushed audio remains in
+        the buffer, if any — added 2026-09-11 after eval/wer_eval.py's
+        own real, measured WER comparison against labeled reference audio
+        found live calls shorter than _TRANSCRIBE_EVERY_MS (4s) could
+        produce ZERO transcript, EVER: a real, not theoretical, gap.
+        ingest()'s own cycle only fires once that much NEW audio has
+        accumulated since the last one — with no equivalent to the
+        file-upload path's "always transcribe the whole buffer at least
+        once" guarantee (see app/pipeline/engine.py's score_call()). A
+        call ending mid-cycle (the common case for anything shorter than
+        ~8s) previously lost whatever was said after the last completed
+        cycle, silently.
+
+        LOOPS rather than firing a single final cycle — REAL BUG found
+        2026-09-11 via eval/wer_eval.py's own simulate_live_path(): if a
+        transcription is already in flight, MORE audio can keep
+        accumulating on top of it (ingest() doesn't block on an in-flight
+        cycle, by design — see its own already_running guard) — awaiting
+        that first cycle and stopping, as this method originally did,
+        silently drops whatever piled up in the meantime. This isn't
+        just a batch-simulation artifact: it can happen for real too, if
+        a call ends right as a slow cycle is still finishing. Each pass
+        below either transcribes real accumulated audio (converging
+        quickly — there's only ever this one session's own buffer to
+        catch up on) or finds nothing left and returns; capped at
+        _MAX_FLUSH_PASSES purely as a safety bound against a hypothetical
+        transcriber that never lets `_new_ms_since_transcription` reach
+        zero, not because normal operation is expected to need many.
+
+        Call this ONCE, when a live session ends (see app/api/
+        ws_router.py's WS disconnect handling), BEFORE aclose() cancels
+        anything still in flight. This method AWAITS its own
+        transcription(s) rather than scheduling background tasks, so
+        `latest_context` reflects the final state by the time this
+        returns — the caller can safely read `latest_context` for a
+        final hangup summary right after calling this.
+
+        Safe no-op when: no transcriber is configured, nothing was ever
+        ingested, or there's no unflushed new audio at all (the normal
+        ingest()-driven path already covered everything)."""
+        if self._transcriber is None or not self._buffer or self._last_sample_rate is None:
+            return
+
+        for _ in range(_MAX_FLUSH_PASSES):
+            already_running = self._transcribe_task is not None and not self._transcribe_task.done()
+            if already_running:
+                await self._transcribe_task
+                # Falls through to re-check _new_ms_since_transcription
+                # below rather than returning — audio ingested WHILE that
+                # cycle was running is not covered by its result.
+
+            if self._new_ms_since_transcription <= 0:
+                return  # genuinely caught up — nothing left to flush
+
+            self._new_ms_since_transcription = 0
+            window_samples = self._trailing_window(self._last_sample_rate)
+            await self._transcribe(window_samples, self._last_sample_rate)
 
     async def _transcribe(self, samples: np.ndarray, sample_rate: int) -> None:
         try:

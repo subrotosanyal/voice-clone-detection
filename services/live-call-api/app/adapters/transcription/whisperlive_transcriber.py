@@ -128,6 +128,10 @@ class WhisperLiveTranscriber:
         use_vad: bool = True,
         connect_timeout_s: float = 5.0,
         result_timeout_s: float = 20.0,
+        idle_timeout_s: float = 3.0,
+        initial_prompt: Optional[str] = None,
+        hotwords: Optional[str] = None,
+        vad_parameters: Optional[dict[str, Any]] = None,
     ) -> None:
         self.host = host
         self.port = port
@@ -136,6 +140,27 @@ class WhisperLiveTranscriber:
         self.use_vad = use_vad
         self.connect_timeout_s = connect_timeout_s
         self.result_timeout_s = result_timeout_s
+        # Added 2026-09-11 alongside the idle-based collection change below
+        # — a fixed budget MEASURED FROM THE FIRST MESSAGE onward, distinct
+        # from result_timeout_s's TOTAL budget. See _collect_segments's own
+        # comment for why both are needed together, not one or the other.
+        self.idle_timeout_s = idle_timeout_s
+        # Added 2026-09-11 — these three fields were already part of the
+        # handshake message (_build_config_message below), always sent as
+        # None/hardcoded defaults; now real constructor params so a
+        # deployment can actually use them. initial_prompt/hotwords: no
+        # decoding-quality controls at all were configurable here before
+        # (unlike whisper_transcriber.py's pinned temperature/degenerate-
+        # segment filtering) — domain-vocabulary priming is a real,
+        # low-risk accuracy lever WhisperLive/faster-whisper supports.
+        # vad_parameters: left None (server/library default) unless a
+        # caller sets it — this project has no vendored copy of
+        # WhisperLive's server source to verify field-level VAD tuning
+        # against (unlike vexyl-stt, which IS vendored here), so no
+        # specific values are guessed; only the wiring is added.
+        self.initial_prompt = initial_prompt
+        self.hotwords = hotwords
+        self.vad_parameters = vad_parameters
         self.version = f"whisperlive@{model}"
 
     def transcribe(self, samples: np.ndarray, sample_rate: int) -> TranscriptResult:
@@ -208,13 +233,13 @@ class WhisperLiveTranscriber:
             "same_output_threshold": 10,
             "enable_translation": False,
             "target_language": None,
-            "hotwords": None,
+            "hotwords": self.hotwords,
             "enable_diarization": False,
             "max_speakers": 1,
             "known_speakers": None,
             "word_timestamps": False,
-            "initial_prompt": None,
-            "vad_parameters": None,
+            "initial_prompt": self.initial_prompt,
+            "vad_parameters": self.vad_parameters,
         }
 
     def _wait_for_server_ready(self, ws) -> bool:
@@ -222,24 +247,43 @@ class WhisperLiveTranscriber:
         return bool(message) and message.get("message") == "SERVER_READY"
 
     def _collect_segments(self, ws) -> tuple[list[str], Optional[str]]:
-        """Collects whatever segment/language messages arrive, bounded to
-        `result_timeout_s` TOTAL (not per-message) — a per-message budget
-        that resets on every new message could otherwise let one call run
-        far longer than intended if the server keeps streaming updates
-        steadily, which matters now that this runs BEFORE END_OF_AUDIO
-        (see this module's own REAL BUG note) rather than racing a
-        DISCONNECT that may never come at all pre-EOF."""
+        """Collects whatever segment/language messages arrive, bounded by
+        TWO independent budgets, not one:
+
+        - `result_timeout_s` TOTAL from the start of collection (unchanged
+          from before this method had an idle budget too) — a hard ceiling
+          so one call can never run arbitrarily long.
+        - `idle_timeout_s` since the LAST message actually received, reset
+          on every new message. Added 2026-09-11 to narrow (not fully
+          close — see this module's own HONESTY NOTE, still not fully
+          solved) the documented gap where the very last moment of speech
+          in a window could be missed: without an idle budget, a message
+          arriving late in the total window (e.g. because a cold/slow
+          model finally started producing output) got the same shrinking
+          `remaining` time as everything before it; with one, a server
+          that's ACTIVELY still sending things gets a fresh
+          `idle_timeout_s` grace each time, right up until `result_timeout_s`
+          total is reached — so a burst of trailing segments near the
+          overall deadline isn't cut off just because the wall-clock total
+          happened to run out at an inconvenient moment.
+
+        Whichever budget is tighter at any given instant wins — this can
+        only ever SHORTEN or match the old total-only wait, never lengthen
+        it past `result_timeout_s`."""
         deadline = time.monotonic() + self.result_timeout_s
+        idle_deadline = time.monotonic() + self.idle_timeout_s
         segment_texts: list[str] = []
         detected_language: Optional[str] = None
 
         while True:
-            remaining = deadline - time.monotonic()
+            now = time.monotonic()
+            remaining = min(deadline, idle_deadline) - now
             if remaining <= 0:
                 break
             message = self._recv_json(ws, timeout=remaining)
             if message is None:
-                break  # nothing new before the remaining budget ran out
+                break  # nothing new before whichever budget ran out first
+            idle_deadline = time.monotonic() + self.idle_timeout_s
             if message.get("status") == "ERROR":
                 logger.warning("whisperlive_server_error", detail=message.get("message"))
                 break

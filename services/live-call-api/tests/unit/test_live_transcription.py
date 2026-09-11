@@ -284,6 +284,34 @@ def test_window_start_ms_clamps_a_negative_or_duplicate_delta_to_zero():
     assert buf._buffer_ms == HOP_MS  # the second call contributed nothing
 
 
+def test_window_start_ms_zero_does_not_silently_discard_the_opening_of_a_call():
+    """REAL BUG found and fixed 2026-09-11, via eval/wer_eval.py's own
+    word-level comparison against file-upload on real audio: a client's
+    own `window_start_ms = max(0, elapsed - WINDOW_MS)` (see app/ui/
+    app.js) stays clamped at 0 for the first WINDOW_MS (2s by default) of
+    ANY call — so several CONSECUTIVE calls report the identical
+    window_start_ms=0, and the delta-based logic used to read that as
+    "no new audio arrived" every time, silently dropping real audio.
+    Measured real-world impact: ~1.5s missing from the very start of
+    every live call, in every language, regardless of length."""
+    buf = LiveTranscriptionBuffer(transcriber=_FakeTranscriber(), intent_classifier=None, hop_ms=HOP_MS)
+    buf.ingest(_hop_samples(1), SR, window_start_ms=0)  # first call — no prior reference
+    buf.ingest(_hop_samples(1), SR, window_start_ms=0)  # still ramping up — must NOT be treated as "no new audio"
+    buf.ingest(_hop_samples(1), SR, window_start_ms=0)  # same
+    assert buf._buffer_ms == 3 * HOP_MS, "each call during the client's clamped ramp-up period must still count as hop_ms of new audio"
+
+
+def test_window_start_ms_zero_transitions_cleanly_to_delta_based_accounting():
+    """Once real elapsed time exceeds WINDOW_MS, window_start_ms starts
+    advancing normally — the buffer accounting must pick back up exactly
+    where the ramp-up period left off, not double-count or gap."""
+    buf = LiveTranscriptionBuffer(transcriber=_FakeTranscriber(), intent_classifier=None, hop_ms=HOP_MS)
+    buf.ingest(_hop_samples(1), SR, window_start_ms=0)
+    buf.ingest(_hop_samples(1), SR, window_start_ms=0)
+    buf.ingest(_hop_samples(1), SR, window_start_ms=HOP_MS)  # ramp-up over, normal delta-based accounting resumes
+    assert buf._buffer_ms == 2 * HOP_MS + HOP_MS  # 2 ramp-up calls + one normal HOP_MS delta
+
+
 def test_full_session_transcript_accumulates_across_cycles():
     """#2 Option A: a naive whole-session concatenation, for display/audit
     only — proves it grows across cycles rather than only holding the
@@ -318,5 +346,148 @@ def test_aclose_cancels_an_in_flight_transcription():
         assert buf._transcribe_task is not None and not buf._transcribe_task.done()
         await buf.aclose()  # must not raise
         assert buf._transcribe_task.cancelled() or buf._transcribe_task.done()
+
+    asyncio.run(_run())
+
+
+def test_flush_transcribes_a_call_shorter_than_transcribe_every_ms():
+    """The real gap eval/wer_eval.py's own WER measurement found: a call
+    shorter than _TRANSCRIBE_EVERY_MS never crosses ingest()'s own
+    threshold, so without flush() it would produce ZERO transcript,
+    ever — regardless of how much was actually said."""
+
+    async def _run():
+        transcriber = _FakeTranscriber(text="a short call")
+        buf = LiveTranscriptionBuffer(transcriber=transcriber, intent_classifier=None, hop_ms=HOP_MS)
+        short_hops = (_TRANSCRIBE_EVERY_MS // HOP_MS) - 1  # deliberately under the normal threshold
+        for _ in range(short_hops):
+            buf.ingest(_hop_samples(1), SR)
+        assert buf._transcribe_task is None, "must not have fired a normal cycle yet — that's the point of this test"
+        assert buf.latest_context == {}
+
+        await buf.flush()
+
+        assert buf.latest_context["transcript"] == "a short call"
+        assert transcriber.calls == 1
+
+    asyncio.run(_run())
+
+
+def test_flush_is_a_noop_when_nothing_was_ever_ingested():
+    async def _run():
+        transcriber = _FakeTranscriber()
+        buf = LiveTranscriptionBuffer(transcriber=transcriber, intent_classifier=None, hop_ms=HOP_MS)
+
+        await buf.flush()  # must not raise
+
+        assert transcriber.calls == 0
+        assert buf.latest_context == {}
+
+    asyncio.run(_run())
+
+
+def test_flush_is_a_noop_without_a_transcriber():
+    async def _run():
+        buf = LiveTranscriptionBuffer(transcriber=None, intent_classifier=None, hop_ms=HOP_MS)
+        buf.ingest(_hop_samples(1), SR)  # no-ops without a transcriber anyway
+
+        await buf.flush()  # must not raise (no _last_sample_rate/_buffer to work with)
+
+    asyncio.run(_run())
+
+
+def test_flush_does_not_re_transcribe_when_the_normal_cycle_already_covered_everything():
+    """If ingest() already fired a cycle and no NEW audio arrived since,
+    flush() must not fire a redundant second transcription."""
+
+    async def _run():
+        transcriber = _FakeTranscriber()
+        buf = LiveTranscriptionBuffer(transcriber=transcriber, intent_classifier=None, hop_ms=HOP_MS)
+        hops_needed = _TRANSCRIBE_EVERY_MS // HOP_MS
+        for _ in range(hops_needed):
+            buf.ingest(_hop_samples(1), SR)
+        await buf._transcribe_task
+        assert transcriber.calls == 1
+
+        await buf.flush()
+
+        assert transcriber.calls == 1, "nothing new since the last cycle — flush() must not re-transcribe"
+
+    asyncio.run(_run())
+
+
+def test_flush_waits_for_an_already_in_flight_transcription_instead_of_starting_a_second_one():
+    async def _run():
+        transcriber = _SlowFakeTranscriber(text="in flight result")
+        buf = LiveTranscriptionBuffer(transcriber=transcriber, intent_classifier=None, hop_ms=HOP_MS)
+        hops_needed = _TRANSCRIBE_EVERY_MS // HOP_MS
+        for _ in range(hops_needed):
+            buf.ingest(_hop_samples(1), SR)
+        assert buf._transcribe_task is not None and not buf._transcribe_task.done()
+
+        await buf.flush()  # must wait for the in-flight cycle, not fire a second transcribe() call
+
+        assert transcriber.calls == 1
+        assert buf.latest_context["transcript"] == "in flight result"
+
+    asyncio.run(_run())
+
+
+def test_flush_catches_up_on_a_backlog_that_accumulated_while_a_cycle_was_in_flight():
+    """REAL BUG found 2026-09-11 via eval/wer_eval.py's own real WER
+    measurement: audio can keep accumulating (ingest() never blocks on
+    an in-flight cycle) while a slow transcription is still running.
+    flush() awaiting that first cycle and stopping — its original
+    behavior — silently dropped whatever piled up in the meantime. A
+    real, not simulation-only, risk: a call ending right as a slow
+    cycle is still finishing hits this exact case."""
+
+    async def _run():
+        transcriber = _SlowFakeTranscriber(text="first cycle result")
+        buf = LiveTranscriptionBuffer(transcriber=transcriber, intent_classifier=None, hop_ms=HOP_MS)
+        hops_needed = _TRANSCRIBE_EVERY_MS // HOP_MS
+        for _ in range(hops_needed):
+            buf.ingest(_hop_samples(1), SR)
+        assert buf._transcribe_task is not None and not buf._transcribe_task.done()
+
+        # More audio arrives WHILE that first cycle is still running — not
+        # awaited here, matching eval/wer_eval.py's own simulate_live_path()
+        # (and a real call whose transcriber is slower than how fast more
+        # audio keeps arriving).
+        transcriber.text = "backlog result"
+        for _ in range(hops_needed):
+            buf.ingest(_hop_samples(1), SR)
+            await asyncio.sleep(0)
+        assert buf._new_ms_since_transcription > 0, "audio must have accumulated without starting a second cycle"
+
+        await buf.flush()
+
+        assert transcriber.calls == 2, "flush() must fire a SECOND cycle for the backlog, not just await the first"
+        assert buf.latest_context["transcript"] == "backlog result"
+
+    asyncio.run(_run())
+
+
+def test_flush_captures_trailing_audio_after_the_last_completed_cycle():
+    """The other half of the real gap: even a call that DID cross the
+    normal threshold at least once still loses whatever was said between
+    the last completed cycle and the call ending, without a flush."""
+
+    async def _run():
+        transcriber = _FakeTranscriber(text="first cycle")
+        buf = LiveTranscriptionBuffer(transcriber=transcriber, intent_classifier=None, hop_ms=HOP_MS)
+        hops_needed = _TRANSCRIBE_EVERY_MS // HOP_MS
+        for _ in range(hops_needed):
+            buf.ingest(_hop_samples(1), SR)
+        await buf._transcribe_task
+        assert transcriber.calls == 1
+
+        transcriber.text = "trailing words after the first cycle"
+        buf.ingest(_hop_samples(1), SR)  # some new audio, but not enough to cross the threshold again
+
+        await buf.flush()
+
+        assert transcriber.calls == 2
+        assert buf.latest_context["transcript"] == "trailing words after the first cycle"
 
     asyncio.run(_run())

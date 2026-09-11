@@ -9,7 +9,7 @@ pip install -r requirements-dev.txt                   # first time only
 pytest tests/ -v
 ```
 
-286 tests (256 unit, 30 integration), no Docker needed — unit tests for each detector (including
+309 tests (279 unit, 30 integration), no Docker needed — unit tests for each detector (including
 `test_acoustic_aasist.py`'s coverage of the optional Hindi-recalibrated
 `finetuned_out_layer_path`, verifying it actually changes the score, not
 just that the parameter is accepted; `test_perth_watermark.py`,
@@ -38,11 +38,17 @@ same/different-speaker separation, not just that the arithmetic is
 right; see app/pipeline/live_diarization.py), the
 Whisper transcriber (`test_whisper_transcriber.py`), the
 language-routed VEXYL-STT transcriber (`test_vexyl_stt_transcriber.py`),
-the `RoutingTranscriber` that gates between them by detected language
-(`test_routing_transcriber.py`), the live-mic `WhisperLiveTranscriber`
+the `RoutingTranscriber` that gates between them by detected language,
+including its per-live-session wrapper that caches the language decision
+once and holds one persistent indic connection instead of paying for
+either per cycle (`test_routing_transcriber.py`), the live-mic
+`WhisperLiveTranscriber` — including its idle-timeout result-collection
+window and initial_prompt/hotwords/vad_parameters handshake fields
 (`test_whisperlive_transcriber.py`), the `transcript_source`/
 `transcript_language` fields the engine now records
-(`test_engine_transcript_source.py`), and the urgency/financial/
+(`test_engine_transcript_source.py`), the standalone word-error-rate
+metric `eval/wer_eval.py` uses to measure live-mic transcription accuracy
+against a labeled reference (`test_wer_eval.py`), and the urgency/financial/
 authority-claim keyword detection those transcripts feed, the
 zero-shot intent classifier (`test_zero_shot_
 intent_classifier.py` — includes a KNOWN LIMITATION test that documents,
