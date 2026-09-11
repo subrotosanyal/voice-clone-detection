@@ -126,8 +126,30 @@ class WhisperLiveTranscriber:
         model: str = "small",
         language: Optional[str] = None,
         use_vad: bool = True,
-        connect_timeout_s: float = 5.0,
-        result_timeout_s: float = 20.0,
+        # REAL BUG found and fixed 2026-09-11, alongside _collect_segments'
+        # own idle-timeout fix (see that method's docstring): both of these
+        # defaults were measured, by hand, against real speech on both the
+        # local and home-lab whisper-live sidecars, to be too tight for
+        # this integration's actual real-world cost — a FRESH model load
+        # on every single connection (see this class's own CALLING PATTERN
+        # note), not a cheap warm call. Measured end-to-end round trips on
+        # an already-warm container: ~13-16s for a real ~7s clip in the
+        # best case, up to ~70s in a slower one (concurrent load on a
+        # shared host, same "model reloads from scratch every cycle" cost
+        # each time) — nowhere close to the old 5s/20s ceilings, which is
+        # why every single live call was failing, not just some. Raised to
+        # comfortably cover the slower end of what was actually measured,
+        # not a guess: a live call now (best-effort) waits longer per
+        # cycle rather than silently producing nothing, matching this
+        # project's "abstain never, empty only when genuinely nothing
+        # came back" discipline elsewhere. HONEST COST: a slow cycle can
+        # now legitimately take up to result_timeout_s, so the live path's
+        # transcript can lag further behind real time than before on a
+        # loaded host — a latency/correctness trade explicitly accepted
+        # here, not something to silently tune back down without
+        # re-measuring first.
+        connect_timeout_s: float = 20.0,
+        result_timeout_s: float = 75.0,
         idle_timeout_s: float = 3.0,
         initial_prompt: Optional[str] = None,
         hotwords: Optional[str] = None,
@@ -267,17 +289,40 @@ class WhisperLiveTranscriber:
           overall deadline isn't cut off just because the wall-clock total
           happened to run out at an inconvenient moment.
 
-        Whichever budget is tighter at any given instant wins — this can
-        only ever SHORTEN or match the old total-only wait, never lengthen
-        it past `result_timeout_s`."""
+        REAL BUG found and fixed 2026-09-11 (same day as the idle-timeout
+        feature above — a fresh user report, "live transcribing is not
+        working at all anymore", confirmed with real audio against both
+        the local and home-lab whisper-live sidecars): the idle deadline
+        used to be seeded ONE `idle_timeout_s` after collection STARTS, not
+        after the first message arrives — so it governed the wait for the
+        very FIRST message too, not just gaps BETWEEN messages as the
+        paragraph above describes. Measured by hand against a real,
+        already-warm whisper-live server: ~13s from connecting to its
+        FIRST message (language detection) on a real ~7s speech window —
+        routine cold-model-per-connection latency (see this class's own
+        CALLING PATTERN note: a fresh connection, and therefore a fresh
+        model load, every single cycle), nowhere close to a stall. Against
+        `idle_timeout_s`'s default of 3.0s, EVERY call's very first wait
+        expired before the server could ever say anything at all — not an
+        occasional miss, a 100%-of-calls failure, exactly matching the
+        report. Fixed by not creating an idle deadline until AFTER the
+        first message is received; before that, only the full
+        `result_timeout_s` budget applies, same as before idle_timeout_s
+        existed — restoring the original intent (guard against a stall
+        AFTER the model starts talking, don't also gate how long a cold
+        model takes to start).
+
+        Whichever budget is tighter at any given instant wins (once both
+        are active) — this can only ever SHORTEN or match the old
+        total-only wait, never lengthen it past `result_timeout_s`."""
         deadline = time.monotonic() + self.result_timeout_s
-        idle_deadline = time.monotonic() + self.idle_timeout_s
+        idle_deadline: Optional[float] = None  # set only once the first message arrives
         segment_texts: list[str] = []
         detected_language: Optional[str] = None
 
         while True:
             now = time.monotonic()
-            remaining = min(deadline, idle_deadline) - now
+            remaining = (min(deadline, idle_deadline) if idle_deadline is not None else deadline) - now
             if remaining <= 0:
                 break
             message = self._recv_json(ws, timeout=remaining)

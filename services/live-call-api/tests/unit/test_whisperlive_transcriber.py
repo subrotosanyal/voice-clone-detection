@@ -296,6 +296,54 @@ def test_idle_timeout_gives_a_fresh_grace_period_after_each_message(transcriber,
     assert result.text == "first second third", "each 2s gap is under idle_timeout_s=3.0 — none should be cut off"
 
 
+def test_the_first_message_is_governed_by_result_timeout_not_idle_timeout(transcriber, monkeypatch):
+    """Regression test for a real bug found 2026-09-11 (a fresh user
+    report, "live transcribing is not working at all anymore", confirmed
+    with real audio against both the local and home-lab whisper-live
+    sidecars): the idle deadline used to be seeded one idle_timeout_s
+    after collection STARTS, not after the first message arrives — so it
+    (wrongly) governed the wait for the very FIRST message too, not just
+    gaps BETWEEN messages. Every real connection reloads its model from
+    scratch (see this class's own CALLING PATTERN note) and can easily
+    take longer than a few seconds just to say anything at all — measured
+    by hand at ~13s to the first message on an already-warm real server.
+    Simulates exactly that: the first message ("language") arrives well
+    PAST idle_timeout_s but comfortably inside result_timeout_s — before
+    the fix, this was cut off every time; after it, only result_timeout_s
+    gates the wait for a first message."""
+    transcriber.result_timeout_s = 100.0
+    transcriber.idle_timeout_s = 3.0  # deliberately much shorter than the first message's own delay
+
+    clock = {"t": 0.0}
+    monkeypatch.setattr(wl_module.time, "monotonic", lambda: clock["t"])
+
+    messages = [_server_ready(), _language("hi"), _segments("namaste duniya")]
+    # First message ("language") arrives 13s in — comfortably past
+    # idle_timeout_s=3.0, exactly like the real measured cold-start delay.
+    gaps = [0.0, 13.0, 0.0]
+
+    class _PacedFakeWS(_FakeWS):
+        def recv(self, timeout=None):
+            gap = gaps.pop(0) if gaps else 0.0
+            if timeout is not None and gap > timeout:
+                clock["t"] += timeout
+                raise TimeoutError("fake server: message arrives after the caller's timeout")
+            clock["t"] += gap
+            return super().recv(timeout=timeout)
+
+    ws = _PacedFakeWS(messages)
+    monkeypatch.setattr(wl_module, "connect", lambda uri, open_timeout=None: ws)
+    samples = np.random.default_rng(0).uniform(-0.5, 0.5, size=SR).astype(np.float32)
+
+    result = transcriber.transcribe(samples, SR)
+
+    assert result.text == "namaste duniya", (
+        "a slow-to-start server must not be cut off before its first message, "
+        "even though that first gap exceeds idle_timeout_s"
+    )
+    assert result.language == "hi"
+
+
 def test_total_result_timeout_s_still_caps_overall_wait(transcriber, monkeypatch):
     """The idle timeout must never let a call run past result_timeout_s
     TOTAL — a message arriving right when the total budget expires must
