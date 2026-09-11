@@ -225,46 +225,36 @@ async def stream(websocket: WebSocket, session_id: str) -> None:
     except WebSocketDisconnect:
         logger.info("ws_session_closed", session_id=session_id)
     finally:
-        # Flush whatever unflushed audio is still in the buffer BEFORE
-        # capturing final_context — added 2026-09-11 after eval/
-        # wer_eval.py's own real WER measurement found short live calls
-        # (under LiveTranscriptionBuffer's own _TRANSCRIBE_EVERY_MS, 4s)
-        # could end with ZERO transcript ever produced. See flush()'s own
-        # docstring for the full account; it's a safe no-op when there's
-        # nothing left to flush.
-        await live_transcription.flush()
-        # Capture the best-known transcript-derived context BEFORE
-        # aclose() (which cancels any in-flight transcription/intent/
-        # semantic-risk task, but does not clear already-completed
-        # results out of latest_context).
-        final_context = _build_hangup_context(live_transcription.latest_context)
-        await live_transcription.aclose()
-        # Closes the persistent indic connection opened above, if any —
-        # see RoutingTranscriber._RoutingSession.close()'s own docstring.
-        # A plain (non-session) transcriber has no `.close()`, so this is
-        # a no-op for every configuration that isn't the new session-aware
-        # RoutingTranscriber path.
-        session_close = getattr(session_transcriber, "close", None)
-        if session_close is not None:
-            try:
-                session_close()
-            except Exception:  # noqa: BLE001 — best-effort cleanup, never break session teardown
-                logger.exception("live_session_transcriber_close_failed", session_id=session_id)
-        # REAL BUG found while testing this feature: awaiting
-        # _diarize_on_hangup() directly here got silently CancelledError'd
-        # partway through (confirmed via the ASGI framework's own cancel
-        # scope, not this project's code) — the moment the WebSocket's
-        # underlying connection is fully closed, Starlette/anyio tears
-        # down the request's cancel scope, killing anything still running
-        # in it, including work in this `finally` block, REGARDLESS of
-        # whether it's "cleanup" in intent. A likely real production risk
-        # too, not just a test artifact — the ASGI server has no way to
-        # know this background work should outlive the connection unless
-        # it's genuinely detached from that scope. Fixed by scheduling it
-        # as an independent asyncio task instead of awaiting it inline —
-        # see _schedule_diarize_on_hangup() below for how it's kept alive
-        # (an unreferenced task can be silently garbage-collected).
-        _schedule_diarize_on_hangup(engine, session_id, session_recorder, final_context)
+        # REAL BUG found and fixed 2026-09-11, the same day
+        # whisperlive_transcriber.py's own result_timeout_s was raised
+        # 20s -> 75s to fix a DIFFERENT bug (see that module's own REAL
+        # BUG note): flush() used to be awaited INLINE, right here, in
+        # this `finally` block — exactly the same shape already found and
+        # fixed for _diarize_on_hangup() below (see this function's own
+        # "REAL BUG found while testing this feature" note, still true,
+        # just no longer the only thing affected): the instant the
+        # WebSocket's underlying connection is fully closed, Starlette/
+        # anyio tears down the request's cancel scope, killing anything
+        # still running in it, `finally` block included, regardless of
+        # whether it's "cleanup" in intent. flush() finishing in well
+        # under a second (the OLD, buggy WhisperLive timeouts) never gave
+        # this enough rope to matter in practice; now that a real live
+        # cycle can legitimately take up to result_timeout_s (75s) to
+        # produce a transcript, flush() routinely got killed mid-flight
+        # before it could ever populate final_context — confirmed via a
+        # real user report: a live call's own transcript reached
+        # live_transcription.py's OWN logs (live_transcript_computed,
+        # real English text, real intent classification) but the
+        # post-hangup summary UI still showed intent/semantic_risk
+        # "abstained: no transcript-derived ... available", meaning
+        # flush()'s result never survived long enough to be captured.
+        # Fixed the same way diarization already was: flush() + building
+        # final_context + aclose() + closing the session transcriber all
+        # now run inside ONE independent, detached asyncio task (see
+        # _schedule_post_hangup_work below) instead of inline here, so a
+        # slow flush() outlives this connection's own cancel scope the
+        # same way _diarize_on_hangup() already does.
+        _schedule_post_hangup_work(engine, session_id, session_recorder, live_transcription, session_transcriber)
 
 
 # Kept alive here so asyncio doesn't garbage-collect an in-flight
@@ -290,6 +280,86 @@ _HANGUP_DIARIZE_TIMEOUT_S = 120.0
 # hangup diarizations to finish before giving up and returning anyway —
 # see drain_pending_hangup_diarizations() below.
 _HANGUP_DRAIN_TIMEOUT_S = 30.0
+
+
+def _schedule_post_hangup_work(
+    engine,
+    session_id: str,
+    session_recorder: "LiveSessionRecorder",
+    live_transcription: LiveTranscriptionBuffer,
+    session_transcriber,
+) -> None:
+    """Entry point called from the WS handler's own `finally` block — see
+    that block's 2026-09-11 REAL BUG note for why flush() can no longer
+    be awaited inline there. Tracked in the same _pending_hangup_
+    diarizations set _schedule_diarize_on_hangup below also uses, so an
+    unreferenced task can't be silently garbage-collected — same
+    reasoning as that function's own, though this one calls
+    _diarize_on_hangup directly rather than going through that scheduler
+    (see _finish_live_transcription_then_diarize's own note on why: this
+    task is already its own detachment point, a second one underneath it
+    would just reintroduce the exact drain-visibility bug this exists to
+    avoid)."""
+    task = asyncio.create_task(
+        _finish_live_transcription_then_diarize(
+            engine, session_id, session_recorder, live_transcription, session_transcriber
+        )
+    )
+    _pending_hangup_diarizations.add(task)
+    task.add_done_callback(_pending_hangup_diarizations.discard)
+
+
+async def _finish_live_transcription_then_diarize(
+    engine,
+    session_id: str,
+    session_recorder: "LiveSessionRecorder",
+    live_transcription: LiveTranscriptionBuffer,
+    session_transcriber,
+) -> None:
+    """Runs detached from the WebSocket's own cancel scope — see
+    _schedule_post_hangup_work's caller (the WS handler's `finally`
+    block) for why. Never raises past this point for the transcription-
+    cleanup steps (each already carries its own best-effort discipline);
+    _diarize_on_hangup at the end has the exact same guarantee for its
+    own work."""
+    # Flush whatever unflushed audio is still in the buffer BEFORE
+    # capturing final_context — added 2026-09-11 after eval/wer_eval.py's
+    # own real WER measurement found short live calls (under
+    # LiveTranscriptionBuffer's own _TRANSCRIBE_EVERY_MS, 4s) could end
+    # with ZERO transcript ever produced. See flush()'s own docstring for
+    # the full account; it's a safe no-op when there's nothing left to
+    # flush.
+    await live_transcription.flush()
+    # Capture the best-known transcript-derived context BEFORE aclose()
+    # (which cancels any in-flight transcription/intent/semantic-risk
+    # task, but does not clear already-completed results out of
+    # latest_context).
+    final_context = _build_hangup_context(live_transcription.latest_context)
+    await live_transcription.aclose()
+    # Closes the persistent indic connection opened above, if any — see
+    # RoutingTranscriber._RoutingSession.close()'s own docstring. A plain
+    # (non-session) transcriber has no `.close()`, so this is a no-op for
+    # every configuration that isn't the session-aware RoutingTranscriber
+    # path.
+    session_close = getattr(session_transcriber, "close", None)
+    if session_close is not None:
+        try:
+            session_close()
+        except Exception:  # noqa: BLE001 — best-effort cleanup, never break session teardown
+            logger.exception("live_session_transcriber_close_failed", session_id=session_id)
+    # Awaited directly, NOT via _schedule_diarize_on_hangup — this whole
+    # function already runs inside its own detached task (see
+    # _schedule_post_hangup_work), so diarization doesn't need a SECOND
+    # level of detachment. REAL BUG caught while writing this function's
+    # own regression test: scheduling a second task here means it's only
+    # added to _pending_hangup_diarizations partway through THIS task's
+    # execution — a caller that drains once, right as this task finishes,
+    # can see the set as already empty and never wait for the diarize
+    # task it just spawned, silently abandoning it (app/main.py's
+    # shutdown drain calls drain_pending_hangup_diarizations exactly
+    # once). Awaiting it inline instead means one entry in that set
+    # covers the whole chain, start to finish.
+    await _diarize_on_hangup(engine, session_id, session_recorder, final_context)
 
 
 def _schedule_diarize_on_hangup(

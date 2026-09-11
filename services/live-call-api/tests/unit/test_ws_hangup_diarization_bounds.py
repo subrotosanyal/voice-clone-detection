@@ -11,6 +11,7 @@ test_whisper_transcriber.py's own concurrency regression test
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import threading
 import time
 
@@ -57,6 +58,36 @@ def _recorder_with_audio() -> LiveSessionRecorder:
     recorder = LiveSessionRecorder(hop_ms=500)
     recorder.ingest(np.zeros(SR, dtype=np.float32), SR)  # 1s of "audio", first-call full-window path
     return recorder
+
+
+class _FakeLiveTranscription:
+    """Stands in for LiveTranscriptionBuffer — just enough surface for
+    _finish_live_transcription_then_diarize: an async flush() that takes
+    real (if brief) time, same shape as a real WhisperLive cycle that can
+    now legitimately take up to result_timeout_s (75s, see that module's
+    own 2026-09-11 REAL BUG note) to produce a transcript."""
+
+    def __init__(self, flush_delay_s: float = 0.05) -> None:
+        self.flush_delay_s = flush_delay_s
+        self.flushed = False
+        self.closed = False
+        self.latest_context: dict = {}
+
+    async def flush(self) -> None:
+        await asyncio.sleep(self.flush_delay_s)
+        self.flushed = True
+        self.latest_context = {"transcript": "hello from flush", "transcript_language": "en"}
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+
+class _FakeSessionTranscriber:
+    def __init__(self) -> None:
+        self.closed = False
+
+    def close(self) -> None:
+        self.closed = True
 
 
 @pytest.fixture(autouse=True)
@@ -135,3 +166,49 @@ async def test_drain_gives_up_after_its_timeout_instead_of_hanging_forever():
 @pytest.mark.asyncio
 async def test_drain_is_a_no_op_when_nothing_is_pending():
     await ws_router.drain_pending_hangup_diarizations(timeout_s=1.0)  # must not raise
+
+
+@pytest.mark.asyncio
+async def test_post_hangup_work_survives_cancellation_of_the_caller():
+    """Regression test for a real bug found 2026-09-11, via a fresh user
+    report (a live call's own logs showed a real, correct transcript
+    computed — but the post-hangup summary UI still showed intent/
+    semantic_risk "abstained: no transcript-derived ... available"):
+    flush() used to be awaited INLINE in the WS handler's own `finally`
+    block — the exact same shape already found and fixed for
+    _diarize_on_hangup() (see this module's docstring), just not also
+    applied to flush() at the time. The instant a WebSocket's underlying
+    connection is fully closed, Starlette/anyio tears down the request's
+    cancel scope, killing anything still running in it, `finally` block
+    included. flush() finishing in well under a second (the OLD, buggy
+    WhisperLive timeouts) never gave this enough rope to matter; now that
+    a real live cycle can legitimately take up to result_timeout_s (75s),
+    flush() routinely got killed mid-flight before final_context was ever
+    built. Proves the fix: cancelling the CALLER right after it schedules
+    the work (simulating the WS connection closing) must not stop
+    flush()/aclose()/session-close/diarize from all still running to
+    completion in the background."""
+    engine = _SlowFakeEngine(sleep_s=0.01)
+    live_transcription = _FakeLiveTranscription(flush_delay_s=0.1)
+    session_transcriber = _FakeSessionTranscriber()
+    scheduled = asyncio.Event()
+
+    async def _caller():
+        ws_router._schedule_post_hangup_work(
+            engine, "sess-cancel", _recorder_with_audio(), live_transcription, session_transcriber
+        )
+        scheduled.set()
+        await asyncio.sleep(10)  # stands in for the rest of the WS handler's own scope
+
+    caller_task = asyncio.create_task(_caller())
+    await scheduled.wait()
+    caller_task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await caller_task
+
+    await ws_router.drain_pending_hangup_diarizations(timeout_s=2.0)
+
+    assert live_transcription.flushed, "flush() must survive even though the calling task was cancelled"
+    assert live_transcription.closed
+    assert session_transcriber.closed
+    assert engine.call_count == 1, "diarize_and_score must still run, using flush()'s own transcript"
