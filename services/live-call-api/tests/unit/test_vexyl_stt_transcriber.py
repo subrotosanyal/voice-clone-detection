@@ -25,6 +25,7 @@ class _FakeWS:
     def __init__(self, incoming: list) -> None:
         self._incoming = list(incoming)
         self.sent: list = []
+        self.closed = False
 
     def send(self, data):
         self.sent.append(data)
@@ -33,6 +34,9 @@ class _FakeWS:
         if not self._incoming:
             raise TimeoutError("fake server: no more scripted messages")
         return self._incoming.pop(0)
+
+    def close(self):
+        self.closed = True
 
     def __enter__(self):
         return self
@@ -201,6 +205,77 @@ def test_resamples_non_16k_audio_before_sending(transcriber, monkeypatch):
     total_audio_bytes = sum(len(f) for f in ws.sent[1:-1])
     # int16 = 2 bytes/sample; resampled 48k->16k roughly a third the sample count.
     assert total_audio_bytes == pytest.approx(16_000 * 2, rel=0.05)
+
+
+def test_open_session_reuses_one_connection_across_multiple_cycles(transcriber, monkeypatch):
+    """The whole point of open_session() (added 2026-09-11, re-enabling
+    live-path routing — see routing_transcriber.py's RoutingTranscriber.
+    create_session()): one connect() call, N start/audio/stop cycles."""
+    connect_calls = []
+
+    def _connect(uri, open_timeout=None):
+        connect_calls.append(uri)
+        return _FakeWS(
+            [
+                _ready(),
+                _started(), _final("first"), _stopped(),
+                _started(), _final("second"), _stopped(),
+            ]
+        )
+
+    monkeypatch.setattr(vs_module, "connect", _connect)
+    samples = np.random.default_rng(0).uniform(-0.5, 0.5, size=SR).astype(np.float32)
+
+    session = transcriber.open_session()
+    result1 = session.transcribe_lang(samples, SR, "hi")
+    result2 = session.transcribe_lang(samples, SR, "hi")
+
+    assert len(connect_calls) == 1, "must open exactly ONE connection, not one per cycle"
+    assert result1.text == "first"
+    assert result2.text == "second"
+
+
+def test_open_session_closes_the_underlying_connection(transcriber, monkeypatch):
+    ws_holder = {}
+
+    def _connect(uri, open_timeout=None):
+        ws = _FakeWS([_ready()])
+        ws_holder["ws"] = ws
+        return ws
+
+    monkeypatch.setattr(vs_module, "connect", _connect)
+
+    session = transcriber.open_session()
+    session.close()
+
+    assert ws_holder["ws"].closed is True
+
+
+def test_open_session_raises_if_server_never_says_ready(transcriber, monkeypatch):
+    def _connect(uri, open_timeout=None):
+        return _FakeWS([])  # recv() raises TimeoutError immediately
+
+    monkeypatch.setattr(vs_module, "connect", _connect)
+
+    with pytest.raises(ConnectionError):
+        transcriber.open_session()
+
+
+def test_session_transcribe_lang_never_raises_on_a_bad_cycle(transcriber, monkeypatch):
+    """Same 'abstain, never crash' discipline as the one-shot path — one
+    bad cycle (e.g. the server hiccups) must return an empty result, not
+    take down the whole live session."""
+
+    def _connect(uri, open_timeout=None):
+        return _FakeWS([_ready()])  # "started" never arrives
+
+    monkeypatch.setattr(vs_module, "connect", _connect)
+    samples = np.random.default_rng(0).uniform(-0.5, 0.5, size=SR).astype(np.float32)
+
+    session = transcriber.open_session()
+    result = session.transcribe_lang(samples, SR, "hi")
+
+    assert result.text == ""
 
 
 def test_empty_final_text_is_not_included(transcriber, monkeypatch):

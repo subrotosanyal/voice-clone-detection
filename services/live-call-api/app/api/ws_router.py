@@ -119,19 +119,37 @@ async def stream(websocket: WebSocket, session_id: str) -> None:
     logger.info("ws_session_opened", session_id=session_id)
 
     hop_ms = engine.pipeline.config["windowing"]["hop_ms"]
+    # Prefer the live-only transcriber (config/risk_formula.yaml's
+    # `live_transcription:` section, see app/adapters/registry.py's
+    # _build_live_transcriber) — see
+    # app/adapters/transcription/whisperlive_transcriber.py's own
+    # docstring for why the live path specifically needed its
+    # transcriber moved out of this process (CPU contention with the
+    # per-window detectors below). Falls back to the shared
+    # `transcription:` transcriber when `live_transcription:` is
+    # omitted (or the pipeline was built before this existed), same
+    # "degrade, don't disable" shape as every other optional
+    # feature's fallback in this codebase.
+    live_transcriber = engine.live_transcriber or engine.transcriber
+    # Added 2026-09-11: if the configured transcriber is a shared,
+    # cross-session RoutingTranscriber (see routing_transcriber.py's own
+    # docstring), get THIS session its own stateful wrapper instead of
+    # calling the shared instance directly — caches the language decision
+    # once per session and holds one persistent indic connection, instead
+    # of re-detecting language and reconnecting every ~4s cycle (the two
+    # real costs that made live-path routing regress on 2026-09-10).
+    # Duck-typed, not an isinstance check, so any future TranscriberPort
+    # implementation can opt into the same per-session pattern without
+    # this file needing to know about it. Plain WhisperLiveTranscriber/
+    # WhisperTranscriber (no `create_session`) are used exactly as
+    # before — this is purely additive.
+    session_transcriber = live_transcriber
+    create_session = getattr(live_transcriber, "create_session", None)
+    if create_session is not None:
+        session_transcriber = create_session()
+
     live_transcription = LiveTranscriptionBuffer(
-        # Prefer the live-only transcriber (config/risk_formula.yaml's
-        # `live_transcription:` section, see app/adapters/registry.py's
-        # _build_live_transcriber) — see
-        # app/adapters/transcription/whisperlive_transcriber.py's own
-        # docstring for why the live path specifically needed its
-        # transcriber moved out of this process (CPU contention with the
-        # per-window detectors below). Falls back to the shared
-        # `transcription:` transcriber when `live_transcription:` is
-        # omitted (or the pipeline was built before this existed), same
-        # "degrade, don't disable" shape as every other optional
-        # feature's fallback in this codebase.
-        transcriber=engine.live_transcriber or engine.transcriber,
+        transcriber=session_transcriber,
         intent_classifier=engine.intent_classifier,
         semantic_risk_classifier=engine.semantic_risk_classifier,
         hop_ms=hop_ms,
@@ -207,12 +225,31 @@ async def stream(websocket: WebSocket, session_id: str) -> None:
     except WebSocketDisconnect:
         logger.info("ws_session_closed", session_id=session_id)
     finally:
+        # Flush whatever unflushed audio is still in the buffer BEFORE
+        # capturing final_context — added 2026-09-11 after eval/
+        # wer_eval.py's own real WER measurement found short live calls
+        # (under LiveTranscriptionBuffer's own _TRANSCRIBE_EVERY_MS, 4s)
+        # could end with ZERO transcript ever produced. See flush()'s own
+        # docstring for the full account; it's a safe no-op when there's
+        # nothing left to flush.
+        await live_transcription.flush()
         # Capture the best-known transcript-derived context BEFORE
         # aclose() (which cancels any in-flight transcription/intent/
         # semantic-risk task, but does not clear already-completed
         # results out of latest_context).
         final_context = _build_hangup_context(live_transcription.latest_context)
         await live_transcription.aclose()
+        # Closes the persistent indic connection opened above, if any —
+        # see RoutingTranscriber._RoutingSession.close()'s own docstring.
+        # A plain (non-session) transcriber has no `.close()`, so this is
+        # a no-op for every configuration that isn't the new session-aware
+        # RoutingTranscriber path.
+        session_close = getattr(session_transcriber, "close", None)
+        if session_close is not None:
+            try:
+                session_close()
+            except Exception:  # noqa: BLE001 — best-effort cleanup, never break session teardown
+                logger.exception("live_session_transcriber_close_failed", session_id=session_id)
         # REAL BUG found while testing this feature: awaiting
         # _diarize_on_hangup() directly here got silently CancelledError'd
         # partway through (confirmed via the ASGI framework's own cancel

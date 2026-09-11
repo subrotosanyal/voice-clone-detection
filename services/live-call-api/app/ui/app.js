@@ -1010,11 +1010,23 @@ async function startMic() {
   analyserNode.fftSize = 512;
   source.connect(analyserNode);
 
-  // ScriptProcessorNode is deprecated in favour of AudioWorkletNode, but it
-  // needs no separate module file to load and works in every current
-  // browser — a reasonable trade-off for an internal demo tool. Swap for
-  // AudioWorkletNode if this is ever hardened for production.
-  processorNode = audioCtx.createScriptProcessor(4096, 1, 1);
+  // AudioWorkletNode (migrated 2026-09-11 from the deprecated
+  // ScriptProcessorNode — see mic-worklet.js's own docstring for why:
+  // ScriptProcessorNode's callback runs on the main thread, so page JS
+  // or a GC pause can delay/drop audio callbacks, a real source of
+  // missing samples feeding live transcription, not just an API-
+  // cleanliness concern). addModule() is itself async, so this can
+  // fail (404, insecure context, browser without AudioWorklet support)
+  // — surfaced as a real micError rather than a silent dead mic.
+  try {
+    await audioCtx.audioWorklet.addModule(`${BASE_PATH}/mic-worklet.js`);
+  } catch (err) {
+    showError("micError", "Could not load the audio capture module: " + err.message);
+    mediaStream.getTracks().forEach((t) => t.stop());
+    audioCtx.close();
+    return;
+  }
+  processorNode = new AudioWorkletNode(audioCtx, "mic-capture-processor");
   source.connect(processorNode);
   processorNode.connect(audioCtx.destination); // required to keep it firing in some browsers; we never write to the output buffer, so it stays silent
 
@@ -1028,13 +1040,13 @@ async function startMic() {
   };
   ws.onerror = () => showError("micError", "WebSocket connection error — is the service reachable?");
 
-  processorNode.onaudioprocess = (e) => {
-    const input = e.inputBuffer.getChannelData(0);
-    sampleChunks.push(new Float32Array(input));
+  processorNode.port.onmessage = (e) => {
+    const input = e.data; // Float32Array, 4096 samples — same chunk size the old ScriptProcessorNode used
+    sampleChunks.push(input);
     totalSamples += input.length;
     samplesSinceLastEmit += input.length;
 
-    if (recordFullSession) recordedChunks.push(new Float32Array(input)); // never trimmed — see its own declaration comment
+    if (recordFullSession) recordedChunks.push(input); // never trimmed — see its own declaration comment
 
     const hopSamples = Math.round(audioCtx.sampleRate * (HOP_MS / 1000));
     const windowSamples = Math.round(audioCtx.sampleRate * (WINDOW_MS / 1000));
@@ -1099,7 +1111,7 @@ function stopMic() {
   levelBar.style.width = "0%";
   if (levelRAF) cancelAnimationFrame(levelRAF);
   const sampleRateForRecording = audioCtx ? audioCtx.sampleRate : null;
-  if (processorNode) { processorNode.disconnect(); processorNode.onaudioprocess = null; }
+  if (processorNode) { processorNode.disconnect(); processorNode.port.onmessage = null; }
   if (analyserNode) analyserNode.disconnect();
   if (audioCtx) audioCtx.close();
   if (mediaStream) mediaStream.getTracks().forEach((t) => t.stop());
@@ -1114,8 +1126,8 @@ function stopMic() {
   recordedChunks = [];
 }
 
-// Encodes raw float32 PCM chunks (as captured from Web Audio's
-// ScriptProcessorNode above) into a standard 16-bit-PCM mono WAV file —
+// Encodes raw float32 PCM chunks (as captured from mic-worklet.js's
+// AudioWorkletNode above) into a standard 16-bit-PCM mono WAV file —
 // no server round-trip, no library: just a 44-byte RIFF/WAVE/fmt/data
 // header written directly into an ArrayBuffer ahead of the sample data.
 // Kept entirely client-side since this is a convenience download of

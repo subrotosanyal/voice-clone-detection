@@ -254,6 +254,103 @@ def test_stops_collecting_promptly_once_the_scripted_queue_runs_dry(transcriber,
     assert elapsed < 2.0, f"took {elapsed:.2f}s — collection loop may be busy-waiting instead of exiting promptly"
 
 
+def test_idle_timeout_gives_a_fresh_grace_period_after_each_message(transcriber, monkeypatch):
+    """Added 2026-09-11 — narrows (doesn't fully close, see this module's
+    own HONESTY NOTE) the documented gap where a message arriving late in
+    the TOTAL window got less time to be followed by more segments than
+    one arriving early. Simulates three messages each 2s apart (each well
+    under idle_timeout_s=3.0, but 6s total — comfortably past a naive
+    fixed idle_timeout_s=3.0 TOTAL budget, proving this is measured
+    per-gap, not once for the whole call) with a generous result_timeout_s
+    so only the idle logic is under test."""
+    transcriber.result_timeout_s = 100.0
+    transcriber.idle_timeout_s = 3.0
+
+    clock = {"t": 0.0}
+    monkeypatch.setattr(wl_module.time, "monotonic", lambda: clock["t"])
+
+    messages = [_server_ready(), _segments("first"), _segments("first", "second"), _segments("first", "second", "third"), _disconnect()]
+    gaps = [0.0, 0.0, 2.0, 2.0, 2.0]  # simulated inter-arrival delay before each recv
+
+    class _PacedFakeWS(_FakeWS):
+        """Models a REAL blocking recv(timeout=...): if the next message's
+        simulated arrival gap exceeds the caller's timeout, time out
+        (advancing the clock only by `timeout`, not the full gap) instead
+        of returning it anyway — a naive clock-advance-then-return fake
+        would let a message "arrive" long after the caller gave up."""
+
+        def recv(self, timeout=None):
+            gap = gaps.pop(0) if gaps else 0.0
+            if timeout is not None and gap > timeout:
+                clock["t"] += timeout
+                raise TimeoutError("fake server: message arrives after the caller's timeout")
+            clock["t"] += gap
+            return super().recv(timeout=timeout)
+
+    ws = _PacedFakeWS(messages)
+    monkeypatch.setattr(wl_module, "connect", lambda uri, open_timeout=None: ws)
+    samples = np.random.default_rng(0).uniform(-0.5, 0.5, size=SR).astype(np.float32)
+
+    result = transcriber.transcribe(samples, SR)
+
+    assert result.text == "first second third", "each 2s gap is under idle_timeout_s=3.0 — none should be cut off"
+
+
+def test_total_result_timeout_s_still_caps_overall_wait(transcriber, monkeypatch):
+    """The idle timeout must never let a call run past result_timeout_s
+    TOTAL — a message arriving right when the total budget expires must
+    not be waited for."""
+    transcriber.result_timeout_s = 5.0
+    transcriber.idle_timeout_s = 3.0  # generous per-gap, irrelevant here
+
+    clock = {"t": 0.0}
+    monkeypatch.setattr(wl_module.time, "monotonic", lambda: clock["t"])
+
+    messages = [_server_ready(), _segments("only this")]
+    gaps = [0.0, 6.0]  # the second message "arrives" only after the 5s total budget
+
+    class _PacedFakeWS(_FakeWS):
+        def recv(self, timeout=None):
+            gap = gaps.pop(0) if gaps else 0.0
+            if timeout is not None and gap > timeout:
+                clock["t"] += timeout
+                raise TimeoutError("fake server: message arrives after the caller's timeout")
+            clock["t"] += gap
+            return super().recv(timeout=timeout)
+
+    ws = _PacedFakeWS(messages)
+    monkeypatch.setattr(wl_module, "connect", lambda uri, open_timeout=None: ws)
+    samples = np.random.default_rng(0).uniform(-0.5, 0.5, size=SR).astype(np.float32)
+
+    result = transcriber.transcribe(samples, SR)
+
+    assert result.text == "", "must not wait past result_timeout_s total, even with idle budget to spare"
+
+
+def test_initial_prompt_and_hotwords_and_vad_parameters_are_sent_when_configured(monkeypatch):
+    """These three handshake fields already existed (always hardcoded to
+    None before 2026-09-11) — this locks in that a caller-supplied value
+    for each one actually reaches the server, not just the constructor."""
+    transcriber = WhisperLiveTranscriber(
+        host="whisper-live",
+        port=9090,
+        model="small",
+        initial_prompt="This is a phone call about OTP and UPI.",
+        hotwords="OTP,UPI,KYC",
+        vad_parameters={"min_silence_duration_ms": 500},
+    )
+    connect_fn, ws = _fake_connect([_server_ready(), _segments("ok"), _disconnect()])
+    monkeypatch.setattr(wl_module, "connect", connect_fn)
+    samples = np.random.default_rng(0).uniform(-0.5, 0.5, size=SR).astype(np.float32)
+
+    transcriber.transcribe(samples, SR)
+
+    handshake = json.loads(ws.sent[0])
+    assert handshake["initial_prompt"] == "This is a phone call about OTP and UPI."
+    assert handshake["hotwords"] == "OTP,UPI,KYC"
+    assert handshake["vad_parameters"] == {"min_silence_duration_ms": 500}
+
+
 def test_resamples_non_16k_audio_before_sending(transcriber, monkeypatch):
     """Confirms the resample path runs (real scipy resample_poly, no
     mock) rather than sending audio at the wrong sample rate — the

@@ -12,7 +12,7 @@
 # every log line so a score can always be tied back to the exact config
 # that produced it (see docs/risk-model.md, "Reproducibility").
 
-formula_version: "2026.09.17"
+formula_version: "2026.09.18"
 
 detectors:
   # Real pretrained countermeasure (AASIST, ASVspoof2019 LA, MIT licensed —
@@ -289,38 +289,62 @@ transcription:
 # design — see its own "one connection per call" note), and vexyl-stt
 # visibly could not keep up with that churn under real streaming load.
 # `transcription:` above (file-upload, ONE transcription per whole call,
-# no real-time constraint) is UNAFFECTED by either cost and stays on
-# RoutingTranscriber — this revert is scoped to the live path only.
+# no real-time constraint) was UNAFFECTED by either cost and stayed on
+# RoutingTranscriber the whole time.
+#
+# RE-ENABLED 2026-09-11, both real costs above now actually fixed rather
+# than just documented as TODO — see routing_transcriber.py's
+# RoutingTranscriber.create_session()/_RoutingSession (language decided
+# ONCE per live session, not every ~4s cycle) and
+# vexyl_stt_transcriber.py's VexylSttTranscriber.open_session() (one
+# persistent connection per session, verified against the vendored
+# server's own handle_connection() loop — it explicitly supports repeated
+# start/stop cycles on one connection, not a workaround). This is the
+# SAME config shape RoutingTranscriber uses on the file-upload path
+# above, with WhisperLiveTranscriber (not the in-process
+# WhisperTranscriber) as the fallback — app/api/ws_router.py detects the
+# `create_session` method this class now exposes and gets each live
+# session its own stateful wrapper automatically; nothing else changes.
+# If this regresses again, revert to the plain-WhisperLiveTranscriber
+# block kept below (commented) rather than guessing further.
 live_transcription:
-  class: app.adapters.transcription.whisperlive_transcriber:WhisperLiveTranscriber
+  class: app.adapters.transcription.routing_transcriber:RoutingTranscriber
   params:
-    host: whisper-live  # docker-compose.yml's sidecar service name
-    port: 9090
-    model: small  # matches transcription:'s fallback model_size — same verified Hindi/Marathi minimum
-    use_vad: true
+    indic_class: app.adapters.transcription.vexyl_stt_transcriber:VexylSttTranscriber
+    indic_params:
+      host: vexyl-stt  # docker-compose.yml's sidecar service name
+      port: 8091
+    fallback_class: app.adapters.transcription.whisperlive_transcriber:WhisperLiveTranscriber
+    fallback_params:
+      host: whisper-live  # docker-compose.yml's sidecar service name
+      port: 9090
+      model: small  # matches transcription:'s fallback model_size — same verified Hindi/Marathi minimum
+      use_vad: true
+      # Domain-vocabulary priming — added 2026-09-11, real accuracy lever
+      # left unused before (this field existed in the handshake message
+      # but was always sent as None). Names the exact terms
+      # urgency_language.py's own keyword lists already look for, so a
+      # correctly-primed transcript and the keyword detector stay in
+      # sync rather than drifting.
+      initial_prompt: "This is a phone call. It may include words like OTP, one-time password, UPI, bank account, KYC, urgent, block your card, cyber crime, verify your identity."
+    lid_class: app.adapters.transcription.whisper_transcriber:WhisperTranscriber
+    lid_params:
+      model_size: small
 
-# The RoutingTranscriber config this reverted FROM — do not re-enable
-# without first fixing the two real costs the note above documents (at
-# minimum: cache the language-ID decision once per session instead of
-# every ~4s window, and/or keep a persistent vexyl-stt connection per
-# live session instead of one per transcription cycle).
+# PREVIOUS config (WhisperLive only, no Indic routing) — the one this
+# reverted TO on 2026-09-10 and back AWAY from on 2026-09-11. Restore
+# this (commenting out the live_transcription: block above) only if the
+# 2026-09-11 fixes above turn out not to have actually solved the
+# regression — re-detect and re-measure before assuming it's the same
+# bug recurring.
 #
 # live_transcription:
-#   class: app.adapters.transcription.routing_transcriber:RoutingTranscriber
+#   class: app.adapters.transcription.whisperlive_transcriber:WhisperLiveTranscriber
 #   params:
-#     indic_class: app.adapters.transcription.vexyl_stt_transcriber:VexylSttTranscriber
-#     indic_params:
-#       host: vexyl-stt
-#       port: 8091
-#     fallback_class: app.adapters.transcription.whisperlive_transcriber:WhisperLiveTranscriber
-#     fallback_params:
-#       host: whisper-live
-#       port: 9090
-#       model: small
-#       use_vad: true
-#     lid_class: app.adapters.transcription.whisper_transcriber:WhisperTranscriber
-#     lid_params:
-#       model_size: small
+#     host: whisper-live
+#     port: 9090
+#     model: small
+#     use_vad: true
 
 # Feeds the `intent` detector above once per call, same "compute once,
 # read many times" pattern as transcription — see Engine.score_call()'s

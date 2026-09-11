@@ -189,6 +189,78 @@ class VexylSttTranscriber:
     def _empty(self, lang: str) -> TranscriptResult:
         return TranscriptResult(text="", language=lang, detector_name=self.name, detector_version=self.version)
 
+    def open_session(self) -> "VexylSttSession":
+        """Opens ONE persistent connection, reused across multiple
+        transcribe_lang() calls — added 2026-09-11 to re-enable live-path
+        routing (see routing_transcriber.py's RoutingTranscriber.
+        create_session()) without reintroducing the connection-churn
+        regression that got live-path routing reverted on 2026-09-10 (see
+        this module's own WHY note): opening a fresh WS connection every
+        ~4s cycle was one of the two real costs vexyl-stt couldn't keep up
+        with under streaming load.
+
+        VERIFIED server-side, not assumed: services/vexyl-stt/vendor/
+        vexyl_stt_server.py's handle_connection() loop explicitly supports
+        repeated start -> audio -> stop cycles on one connection — `session`
+        is reset to `None` after a `stop` message, ready for a new `start`,
+        all inside the same `async for message in websocket` loop. This is
+        a server-supported pattern, not a workaround.
+
+        Caller owns the returned session's lifetime — call `.close()` when
+        the live-mic session ends (see LiveTranscriptionBuffer/ws_router.py)
+        so the connection doesn't linger."""
+        uri = f"ws://{self.host}:{self.port}"
+        ws = connect(uri, open_timeout=self.connect_timeout_s)
+        if not self._wait_for_type(ws, "ready", self.connect_timeout_s):
+            ws.close()
+            raise ConnectionError(f"vexyl-stt at {uri} did not send 'ready' on connect")
+        return VexylSttSession(ws, self)
+
+
+class VexylSttSession:
+    """One persistent vexyl-stt connection, reused across multiple
+    transcribe_lang() calls for the lifetime of a live-mic session — see
+    VexylSttTranscriber.open_session()'s own docstring for why this exists
+    and why the server supports it."""
+
+    def __init__(self, ws: Any, owner: "VexylSttTranscriber") -> None:
+        self._ws = ws
+        self._owner = owner
+
+    def transcribe_lang(self, samples: np.ndarray, sample_rate: int, lang: str) -> TranscriptResult:
+        if samples.size == 0:
+            return self._owner._empty(lang)
+
+        if sample_rate != _MODEL_SAMPLE_RATE:
+            samples = _resample(samples, sample_rate, _MODEL_SAMPLE_RATE)
+
+        try:
+            return self._send_cycle(samples, lang)
+        except Exception:  # noqa: BLE001 — best-effort, must never break live scoring
+            logger.exception("vexyl_stt_session_transcription_failed")
+            return self._owner._empty(lang)
+
+    def _send_cycle(self, samples: np.ndarray, lang: str) -> TranscriptResult:
+        pcm16 = (np.clip(samples, -1.0, 1.0) * 32767.0).astype(np.int16)
+
+        self._ws.send(json.dumps({"type": "start", "lang": lang, "session_id": str(uuid.uuid4())}))
+        if not self._owner._wait_for_type(self._ws, "started", self._owner.connect_timeout_s):
+            return self._owner._empty(lang)
+
+        chunk_bytes = 4096 * 2  # int16 = 2 bytes/sample, matches the one-shot path's own chunk size
+        pcm_bytes = pcm16.tobytes()
+        for offset in range(0, len(pcm_bytes), chunk_bytes):
+            self._ws.send(pcm_bytes[offset : offset + chunk_bytes])
+
+        self._ws.send(json.dumps({"type": "stop"}))
+        return self._owner._collect_result(self._ws, lang)
+
+    def close(self) -> None:
+        try:
+            self._ws.close()
+        except Exception:  # noqa: BLE001 — best-effort cleanup, connection may already be gone
+            pass
+
 
 def _resample(samples: np.ndarray, orig_sr: int, target_sr: int) -> np.ndarray:
     from scipy.signal import resample_poly
