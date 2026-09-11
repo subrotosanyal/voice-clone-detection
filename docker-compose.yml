@@ -62,10 +62,12 @@ services:
       # first live-mic session right after `docker compose up`.
       - whisper-live
       # Same reasoning, now that config/risk_formula.yaml's
-      # `transcription:`/`live_transcription:` route Indic-language
-      # calls here (2026-09-10) — routing_transcriber.py already
-      # degrades to the Whisper fallback path if vexyl-stt isn't
-      # reachable yet, same "abstain, don't break the call" discipline.
+      # `transcription:` (file-upload path only — see the note on the
+      # vexyl-stt service below for why `live_transcription:` does NOT
+      # route here) sends Indic-language calls to vexyl-stt (2026-09-10)
+      # — routing_transcriber.py already degrades to the Whisper fallback
+      # path if vexyl-stt isn't reachable yet, same "abstain, don't break
+      # the call" discipline.
       - vexyl-stt
 
   # Real-time transcription backend for the LIVE WebSocket path only
@@ -104,15 +106,19 @@ services:
 
   # Indic-language transcription sidecar — vexyl-ai/vexyl-stt (Apache
   # 2.0), wrapping the GATED ai4bharat/indic-conformer-600m-multilingual
-  # model. ACTIVE as of 2026-09-10: config/risk_formula.yaml's
-  # `transcription:`/`live_transcription:` now both point at
+  # model. ACTIVE as of 2026-09-10 on the FILE-UPLOAD path only:
+  # config/risk_formula.yaml's `transcription:` points at
   # RoutingTranscriber, which sends Hindi/Marathi/etc. calls here (more
   # accurate AND faster than Whisper on real audio — see
   # app/adapters/transcription/vexyl_stt_transcriber.py's own WHY note)
   # and everything else (English, an undetected language) to Whisper —
   # see routing_transcriber.py's own docstring for why a plain swap
   # would have been wrong (this model silently mangles English into
-  # Malayalam-script gibberish, verified by hand).
+  # Malayalam-script gibberish, verified by hand). `live_transcription:`
+  # (the live-mic path) does NOT route here — reverted the same day after
+  # a real backlog/latency regression under streaming load; stays on
+  # plain WhisperLiveTranscriber below. See docs/risk-model.md for the
+  # full account of both.
   #
   # REAL EXTRA STEP vs. every other model this project fetches: building
   # this image needs YOUR OWN HuggingFace account to have requested and

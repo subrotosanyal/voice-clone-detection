@@ -6,18 +6,33 @@
 docker compose up --build
 ```
 
-Optional: set `HF_TOKEN` in your shell first for faster, authenticated
-HuggingFace Hub downloads during the build's model-fetch steps (ECAPA,
-the intent classifier, and the ~2.4GB Phi-3-mini GGUF) —
-`export HF_TOKEN=hf_...`. Never baked into the built image (see the
-Dockerfile's own HF_TOKEN note); safe to leave unset, same anonymous
-downloads as before this existed.
+Set `HF_TOKEN` in your shell first — `export HF_TOKEN=hf_...`. For
+`live-call-api`'s own models (ECAPA, the intent classifier, the ~2.4GB
+Phi-3-mini GGUF) this is **optional**, just faster/authenticated
+downloads — never baked into the built image (see the Dockerfile's own
+HF_TOKEN note); safe to leave unset there, same anonymous downloads as
+before this existed. But it is **required** to build the `vexyl-stt`
+sidecar (below): that image wraps a GATED HuggingFace model
+(`ai4bharat/indic-conformer-600m-multilingual`), and `docker compose
+build`/`up --build` **fails outright** without a token from an account
+that has requested and been granted access to it (free, one-time
+click-through — see `services/vexyl-stt/fetch_model.py`'s docstring) —
+there is no anonymous fallback for this one image.
 
 This starts:
 
 - **`live-call-api`** — the FastAPI service, on http://localhost:8020
   (mapped from container port 8000 — see the comment in `docker-compose.yml`
   if you need to change the host port).
+- **`whisper-live`** — real-time transcription backend for the live
+  microphone WebSocket path only (collabora/WhisperLive), on its own
+  container so its model inference doesn't compete with this app's own
+  detectors for CPU. File-upload transcription is unaffected — see
+  below.
+- **`vexyl-stt`** — Indic-language transcription sidecar
+  (`ai4bharat/indic-conformer-600m-multilingual`), used by the
+  file-upload path for 14 Indian languages — see below, and
+  `docs/architecture.md`, "Transcription", for the full routing rule.
 - **`dozzle`** — a central log viewer, on http://localhost:8888.
 
 `config/risk_formula.yaml` is mounted read-only into the container, so
@@ -89,8 +104,13 @@ speakers" checkbox.
 
 Transcription runs automatically on every `/v1/score/file` call when
 configured (the default — see `config/risk_formula.yaml`'s
-`transcription:` section) — no flag needed. The transcript and any
-detected urgency/financial-request/authority-claim language show up in
+`transcription:` section) — no flag needed. It's a **mix of Whisper and
+VEXYL-STT**, not Whisper alone: a cheap language-ID pass routes 14 Indian
+languages to the `vexyl-stt` sidecar and everything else to Whisper (see
+`docs/architecture.md`, "Transcription", for the exact rule and why). The
+response's `transcript_source`/`transcript_language` fields (and the
+dashboard) show which one actually ran for a given call. The transcript
+and any detected urgency/financial-request/authority-claim language show up in
 the `third_signal` component's `detail` (`detail.transcript`,
 `detail.urgency_keywords_from_transcript`,
 `detail.is_financial_request_from_transcript`,
