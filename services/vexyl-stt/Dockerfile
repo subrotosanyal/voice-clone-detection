@@ -42,6 +42,17 @@ RUN --mount=type=secret,id=hf_token,env=HF_TOKEN \
 
 COPY vendor/vexyl_stt_server.py .
 
+# REAL BUG found on the Portainer/Unraid deployment: the model above is
+# baked into the image, but at startup transformers still asks the Hub
+# whether config.json changed. The runtime container has no token (on
+# purpose — the secret is build-time only), so the gated repo answers 401
+# and transformers raises instead of falling back to the cached copy,
+# crash-looping the container. Offline mode makes it load straight from
+# the baked-in cache. Set AFTER fetch_model.py so the build step above
+# can still download.
+ENV HF_HUB_OFFLINE=1 \
+    TRANSFORMERS_OFFLINE=1
+
 # Cloud Run injects PORT; VEXYL_STT_PORT is this project's own default
 # for local docker-compose use (see docker-compose.yml's own vexyl-stt
 # service block).
