@@ -1,7 +1,13 @@
 # Core ML / inference
-transformers
+# REAL BUG found rebuilding on 2026-10-24: unpinned, the build picked up
+# huggingface_hub 2.x, whose cache stores the model's .onnx and its
+# external-data weight files under different blob directories. onnxruntime
+# then refuses the weights ("External data path escapes model directory")
+# and the server crash-loops at startup. Pinned to the last known-good set
+# (the 2026-09-10 image); bump together and re-test model load.
+transformers==5.17.0
 numpy
-onnxruntime
+onnxruntime==1.29.0
 safetensors
 
 # Audio decoding (libsndfile wrapper — WAV/FLAC/OGG)
@@ -10,8 +16,8 @@ soundfile
 # WebSocket server
 websockets>=16.0
 
-# HuggingFace model download
-huggingface_hub
+# HuggingFace model download (pinned: see the note at the top)
+huggingface_hub==1.31.0
 
 # Note: torch and torchaudio are installed separately in the Dockerfile
 # with --index-url https://download.pytorch.org/whl/cpu for CPU-only builds.
