@@ -185,6 +185,13 @@ services:
       # note on why this app needs it (root-relative asset/API/WS paths),
       # unlike life-balance's own stack.
       - "traefik.http.middlewares.satya-vani-stripprefix.stripprefix.prefixes=/satya-vani"
+      - "homepage.group=Play"
+      - "homepage.name=Satya Vani"
+      - "homepage.icon=mdi-account-voice"
+      - "homepage.href=https://play.sanyal.net/satya-vani"
+      - "homepage.description=Voice clone detection"
+      - "homepage.siteMonitor=https://play.sanyal.net/satya-vani"
+      - "homepage.weight=50"
 
   # Real-time transcription backend for the LIVE WebSocket path only — see
   # docker-compose.yml's own long-form comment for why this runs as its own
