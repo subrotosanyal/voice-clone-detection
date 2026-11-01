@@ -26,15 +26,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 RUN pip wheel --no-cache-dir --wheel-dir /wheels praat-parselmouth==0.4.7
 
-# llama-cpp-python (app/adapters/semantic_risk/local_llm_semantic_classifier.py)
-# compiles llama.cpp's C++ core at install time — same "no prebuilt wheel
-# for this arch" situation as Parselmouth above, same fix: a dedicated
-# builder stage with the compiler toolchain, so the final image below
-# still never installs one. Reuses build-essential/cmake/ninja-build
-# already installed in the stage above.
-FROM parselmouth-builder AS llm-builder
-RUN pip wheel --no-cache-dir --wheel-dir /llm-wheels llama-cpp-python==0.3.35
-
 
 FROM python:3.12-slim
 
@@ -54,10 +45,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends libsndfile1 \
 COPY --from=parselmouth-builder /wheels /wheels
 RUN pip install --no-cache-dir /wheels/praat_parselmouth-*.whl
 
-# Same reasoning, for llama-cpp-python's wheel (see the llm-builder stage
-# above).
-COPY --from=llm-builder /llm-wheels /llm-wheels
-RUN pip install --no-cache-dir /llm-wheels/llama_cpp_python-*.whl
+# llama-cpp-python (app/adapters/semantic_risk/local_llm_semantic_classifier.py)
+# — installed first for the same reason as the Parselmouth wheel above.
+# PyPI only ships its sdist, which compiles llama.cpp's C++ core at
+# install time; this used to happen in a dedicated `llm-builder` stage.
+# REAL PROBLEM found 2026-10-31 on the Portainer/Unraid deployment: that
+# compile is the slowest single step of this build, and together with the
+# model fetches below it pushed a cold `docker compose build` past
+# Portainer's hard-coded 15-minute stack-deploy deadline ("failed to
+# solve: DeadlineExceeded"), so the stack could not deploy at all. The
+# project's own CPU wheel index publishes prebuilt 0.3.35 wheels for
+# manylinux x86_64 AND aarch64 (py3-none — llama.cpp is loaded via ctypes,
+# not a CPython extension), so installing from there skips the compile on
+# both the Unraid host and Apple Silicon. `--extra-index-url`, not
+# `--index-url`: its dependencies (numpy, jinja2, ...) still come from PyPI.
+RUN pip install --no-cache-dir llama-cpp-python==0.3.35 \
+    --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
 
 # torch + torchaudio next, from PyTorch's own CPU-only wheel index — plain
 # `pip install torch` on linux resolves the CUDA-bundled build, which drags
